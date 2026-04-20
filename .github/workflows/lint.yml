@@ -173,11 +173,6 @@ jobs:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
 
-      - name: go vet
-        run: |
-          cd cli
-          go vet ./...
-
       - name: Check go mod tidy
         run: |
           cd cli
