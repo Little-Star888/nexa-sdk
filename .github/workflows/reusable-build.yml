@@ -70,10 +70,9 @@ jobs:
         env:
           TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
-          echo "https://x-access-token:${TOKEN}@github.com" > ~/.git-credentials
-          git config --global credential.helper "store --file ~/.git-credentials"
           git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive
+          git -c "http.https://github.com/.extraheader=Authorization: basic $(echo -n x-access-token:${TOKEN} | base64 -w0)" \
+            submodule update --init --recursive
 
       - name: Detect build version
         id: version
