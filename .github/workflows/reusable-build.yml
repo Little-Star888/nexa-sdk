@@ -58,28 +58,21 @@ jobs:
           git config --global core.fscache true
           git config --global core.preloadindex true
 
-      - name: Setup deploy key for private submodules
-        shell: bash
-        env:
-          DEPLOY_KEY: ${{ secrets.ACCESS_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/qnn_run_deploy_key
-          chmod 600 ~/.ssh/qnn_run_deploy_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          printf 'Host github.com\n  IdentityFile ~/.ssh/qnn_run_deploy_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-
       - name: Checkout source
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: false
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Init submodules
         shell: bash
+        env:
+          GH_PAT: ${{ secrets.GH_PAT || github.token }}
         run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
           git submodule update --init --recursive
+          git config --global --unset "url.https://x-access-token:${GH_PAT}@github.com/.insteadOf" || true
 
       - name: Detect build version
         id: version
