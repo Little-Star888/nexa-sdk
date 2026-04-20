@@ -17,6 +17,18 @@ if(GENIEX_MODEL_MANAGER)
     )
     install(FILES "${CMAKE_SOURCE_DIR}/model-manager/include/ml_model.h"
         DESTINATION include)
+
+    if(GENIEX_TEST)
+        add_executable(test_model_manager
+            "${CMAKE_SOURCE_DIR}/model-manager/tests/test_model_manager.c"
+        )
+        target_include_directories(test_model_manager PRIVATE
+            ${COMMON_INCLUDE}
+            "${CMAKE_SOURCE_DIR}/model-manager/include"
+        )
+        target_link_libraries(test_model_manager PRIVATE geniex)
+        add_test(NAME test_model_manager COMMAND test_model_manager)
+    endif()
 endif()
 
 install(TARGETS geniex
