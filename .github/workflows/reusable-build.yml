@@ -63,6 +63,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Detect build version
         id: version
