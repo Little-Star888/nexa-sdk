@@ -60,16 +60,18 @@ jobs:
 
       - name: Setup deploy key for private submodules
         shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.ACCESS_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ACCESS_KEY }}" > ~/.ssh/qnn_run_deploy_key
+          printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/qnn_run_deploy_key
           chmod 600 ~/.ssh/qnn_run_deploy_key
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           cat >> ~/.ssh/config <<'EOF'
-          Host github.com
-            IdentityFile ~/.ssh/qnn_run_deploy_key
-            IdentitiesOnly yes
-          EOF
+Host github.com
+  IdentityFile ~/.ssh/qnn_run_deploy_key
+  IdentitiesOnly yes
+EOF
 
       - name: Checkout source
         uses: actions/checkout@v6
