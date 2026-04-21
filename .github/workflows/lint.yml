@@ -44,8 +44,8 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             files=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD)
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            git fetch --no-tags --depth=1 origin main
-            base_ref=$(git merge-base HEAD origin/main || true)
+            git fetch --no-tags --depth=1 origin master
+            base_ref=$(git merge-base HEAD origin/master || true)
             if [ -n "$base_ref" ]; then
               files=$(git diff --name-only "$base_ref"..HEAD)
             else
@@ -120,8 +120,8 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             files=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD)
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            git fetch --no-tags --depth=1 origin main
-            base_ref=$(git merge-base HEAD origin/main || true)
+            git fetch --no-tags --depth=1 origin master
+            base_ref=$(git merge-base HEAD origin/master || true)
             if [ -n "$base_ref" ]; then
               files=$(git diff --name-only "$base_ref"..HEAD)
             else
