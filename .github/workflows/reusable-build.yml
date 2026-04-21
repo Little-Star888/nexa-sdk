@@ -63,7 +63,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: false
-          token: ${{ secrets.GH_PAT || github.token }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: Init submodules
         shell: bash
