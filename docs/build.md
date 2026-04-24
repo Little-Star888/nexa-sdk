@@ -44,6 +44,10 @@ Bazel requires symlink support on Windows. To enable this:
 
 If you want to manually run the generated executable, you can find it in `bazel-bin/cli/cmd/geniex/geniex_/` and runtime files in `bazel-bin/cli/cmd/geniex/geniex_/geniex.runfiles/_main`.
 
+# Geniex Python Bindings
+
+See [bindings/python/README.md](../bindings/python/README.md) for build and install instructions for the Python bindings.
+
 # Geniex SDK
 
 ## Build Bridge/Plugin First (Required for local SDK)
