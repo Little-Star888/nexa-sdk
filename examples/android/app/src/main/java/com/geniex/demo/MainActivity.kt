@@ -563,7 +563,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
                             tokenizer_path = selectModelData.tokenFile(this@MainActivity)?.absolutePath,
                             config = conf,
                             plugin_id = pluginId,
-                            device_id = deviceId ?: DeviceIdValue.NPU.value
+                            device_id = deviceId ?: DeviceIdValue.CPU.value
                         )
                     ).build().onSuccess { wrapper ->
                         isLoadLlmModel = true
@@ -1165,7 +1165,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
                         which: Int
                     ) {
                         nGpuLayers = 0
-                        var ggufLlmDeviceId: String? = null
+                        var ggufLlmDeviceId: String? = DeviceIdValue.CPU.value
                         val checkedId = dialogBinding.rgSelectPluginId.checkedRadioButtonId
                         if (checkedId == R.id.rb_gpu) {
                             if (dialogBinding.llGpuLayers.visibility == View.VISIBLE) {

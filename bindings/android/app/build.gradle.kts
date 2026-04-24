@@ -52,7 +52,7 @@ android {
 
 // Copy the prebuilt geniex libraries from sdk/pkg-geniex so they get packaged
 // into jniLibs (and therefore into the final APK of any consumer).
-val pkgGeniexDir = file("$projectDir/../../../sdk/pkg-geniex")
+val pkgGeniexDir = file("$projectDir/../../../sdk/pkg-geniex-android")
 val jniOutDir = file("$projectDir/src/main/jniLibs/arm64-v8a")
 
 val copyBridgeLibs = tasks.register<Copy>("copyBridgeLibs") {

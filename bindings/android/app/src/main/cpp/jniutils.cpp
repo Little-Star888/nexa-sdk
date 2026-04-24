@@ -64,18 +64,13 @@ std::string translate_device_id(const std::string& device_id) {
 /**
  * Resolves the effective device_id string to set on a create-input struct.
  *
- * When device_id is unset (empty) and plugin_id is "llama_cpp", the device
- * defaults to NPU ("HTP0,HTP1,HTP2,HTP3") instead of CPU.  For all other
- * cases the normal translate_device_id() mapping applies.
+ * When device_id is unset (empty), leave it unset so the SDK picks its own
+ * default (CPU for llama_cpp).  Otherwise apply the normal
+ * translate_device_id() mapping.
  */
 static std::string resolve_llama_cpp_device_default(const char* plugin_id, const std::string& raw_device_id) {
+    (void)plugin_id;
     if (raw_device_id.empty()) {
-        if (plugin_id && std::string(plugin_id) == "llama_cpp") {
-            LOGi(
-                "[JNI] resolve_device: plugin_id='llama_cpp', device_id unset -> defaulting to NPU "
-                "'HTP0,HTP1,HTP2,HTP3'");
-            return "HTP0,HTP1,HTP2,HTP3";
-        }
         return raw_device_id;
     }
     return translate_device_id(raw_device_id);
