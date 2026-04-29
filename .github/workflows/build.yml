@@ -81,5 +81,5 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
     with:
-      runner: ubuntu-latest
+      runner: linux-arm64
       push: false

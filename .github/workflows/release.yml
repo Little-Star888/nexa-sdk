@@ -314,7 +314,7 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
     with:
-      runner: ubuntu-latest
+      runner: linux-arm64
       push: true
       image_tags: |
         ghcr.io/qcom-ai-hub/geniex-cli:${{ needs.resolve-tag.outputs.tag }}
