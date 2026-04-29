@@ -65,10 +65,12 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          # ccache for build cache; make + aarch64-linux-gnu-{gcc,g++} are the
-          # tools the arm64-linux-gnu.cmake toolchain file expects.
+          # ccache + make + aarch64-linux-gnu-{gcc,g++} for the CMake cross
+          # build. Rust target installed separately because the runner
+          # ships rustup but only the host x86_64 std.
           sudo apt-get install -y --no-install-recommends \
             ccache make gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
           echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
           ccache --max-size=1G
 
