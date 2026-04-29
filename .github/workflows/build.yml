@@ -58,26 +58,30 @@ jobs:
       runner: ubuntu-latest
       upload_artifact: true
 
-  # TEMP: build-cli disabled alongside windows-arm64 SDK; restore before
-  # merging (see #224).
-  # build-cli:
-  #   name: build-cli (${{ matrix.platform }})
-  #   needs: [build-sdk]
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - platform: windows-arm64
-  #           runner: windows-arm64
-  #   uses: ./.github/workflows/build-cli.yml
-  #   secrets: inherit
-  #   with:
-  #     platform: ${{ matrix.platform }}
-  #     runner: ${{ matrix.runner }}
+  # TEMP: windows-arm64 build-cli matrix row is commented out while
+  # iterating on the linux-arm64 docker pipeline; restore before merging
+  # (see #224).
+  build-cli:
+    name: build-cli (${{ matrix.platform }})
+    needs: [build-sdk]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # - platform: windows-arm64
+          #   runner: windows-arm64
+          - platform: linux-arm64
+            runner: linux-arm64
+    uses: ./.github/workflows/build-cli.yml
+    secrets: inherit
+    with:
+      platform: ${{ matrix.platform }}
+      runner: ${{ matrix.runner }}
+      upload_artifact: true
 
   build-docker:
     name: build-docker (linux-arm64)
-    needs: [build-sdk]
+    needs: [build-cli]
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
     with:

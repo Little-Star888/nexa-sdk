@@ -1,14 +1,15 @@
 name: Build Docker
 
-# Reusable workflow: assemble the linux-arm64 GenieX-CLI Docker image from
-# the sdk-pkg-linux-arm64 artifact (cross-compiled upstream on x64) and an
-# ARM64-native CLI binary built here. PR-time callers pass push=false to
-# validate the image builds and loads; release-time callers pass push=true
-# plus image_tags to push to GHCR.
+# Reusable workflow: bake the linux-arm64 GenieX-CLI Docker image from the
+# geniex-cli-linux-arm64 artifact (a pkg_zip containing the CLI binary
+# plus the SDK runtime libs, produced by //cli:artifact upstream).
 #
-# Runs on the self-hosted `linux-arm64` runner so the Go CLI is built
-# natively — no cross-compile toolchain needed, and the resulting image
-# loads and runs on the same machine for a smoke test.
+# PR-time callers pass push=false to validate the image builds + loads;
+# release-time callers pass push=true plus image_tags to push to GHCR.
+#
+# Runs on the self-hosted `linux-arm64` runner so the resulting image
+# loads and runs natively for a smoke test, and `docker build` doesn't
+# need QEMU.
 
 on:
   workflow_call:
@@ -36,7 +37,7 @@ jobs:
   build-docker:
     name: build-docker
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Checkout source
@@ -46,51 +47,23 @@ jobs:
           submodules: false
           token: ${{ secrets.GH_PAT }}
 
-      - name: Detect build version
-        id: version
-        uses: ./.github/actions/version
-
-      - name: Download linux-arm64 SDK artifact
+      - name: Download linux-arm64 CLI artifact
         uses: actions/download-artifact@v5
         with:
-          name: sdk-pkg-linux-arm64
-          path: sdk/pkg-geniex/
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
-
-      # Native arm64 build — CGO picks up the host gcc + the SDK headers /
-      # libs from the artifact. Binary is dropped directly into the Docker
-      # context so `COPY geniex/ /opt/geniex/` finds it.
-      - name: Build geniex CLI (linux-arm64 native)
-        shell: bash
-        env:
-          CGO_ENABLED: "1"
-          CGO_CFLAGS: "-I${{ github.workspace }}/sdk/pkg-geniex/include"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/sdk/pkg-geniex/lib -lgeniex -Wl,-rpath,$ORIGIN"
-          VERSION: ${{ steps.version.outputs.version }}
-        working-directory: cli
-        run: |
-          set -euo pipefail
-          mkdir -p "${{ github.workspace }}/docker-context/geniex"
-          go build -trimpath \
-            -ldflags "-X main.Version=${VERSION}" \
-            -tags avx \
-            -o "${{ github.workspace }}/docker-context/geniex/geniex" \
-            ./cmd/geniex
+          name: geniex-cli-linux-arm64
+          path: cli-artifact/
 
       - name: Assemble Docker build context
         shell: bash
         run: |
           set -euo pipefail
           ctx="${{ github.workspace }}/docker-context"
-          # Layout matches the Dockerfile's `COPY geniex/ /opt/geniex/`.
-          # Binary is already in ${ctx}/geniex/geniex; ship the SDK shared
-          # libraries next to it so the $ORIGIN rpath resolves them.
-          cp -a sdk/pkg-geniex/lib/. "${ctx}/geniex/"
+          mkdir -p "${ctx}/geniex"
+          # //cli:artifact is a pkg_zip containing the geniex binary plus
+          # the SDK runtime libs at the root of the archive; unzip into
+          # ${ctx}/geniex/ so the Dockerfile's `COPY geniex/ /opt/geniex/`
+          # picks up both the binary and its shared-library dependencies.
+          unzip -q cli-artifact/artifact.zip -d "${ctx}/geniex/"
           cp cli/release/linux/Dockerfile "${ctx}/Dockerfile"
           echo "Context tree:"
           find "${ctx}" -maxdepth 3 -printf "  %p\n" | head -40
