@@ -19,16 +19,16 @@ EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS:-}"
 
 case "$PLATFORM" in
   linux-arm64)
+    # Runs inside ghcr.io/snapdragon-toolchain/arm64-linux which provides
+    # HEXAGON_SDK_ROOT + HEXAGON_TOOLS_ROOT + OPENCL_SDK_ROOT, so GGML_HEXAGON
+    # and GENIEX_MODEL_MANAGER (Rust cross w/ aarch64-unknown-linux-gnu) can
+    # stay on the preset defaults.
     PRESET="arm64-linux-snapdragon-release"
-    # Linux/arm64 runtime images (GHCR publish target) don't ship with the
-    # Hexagon NPU stack; disable the hexagon backend so the build doesn't
-    # demand HEXAGON_SDK_ROOT / Hexagon Tools on the ubuntu-latest runner.
-    # GENIEX_MODEL_MANAGER is disabled because the Rust crate has no
-    # cross-build wiring yet (same as android; tracked as #222).
-    EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DGGML_HEXAGON=OFF -DGENIEX_MODEL_MANAGER=OFF"
     ;;
   android-arm64)
     PRESET="arm64-android-snapdragon-release"
+    # GENIEX_MODEL_MANAGER has no cross-build wiring for android-arm64 yet
+    # (tracked as #222); keep it disabled until that lands.
     EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DGENIEX_MODEL_MANAGER=OFF"
     ;;
   *)
