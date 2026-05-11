@@ -1,0 +1,163 @@
+[
+  {
+    "name": "Gemma-3-1B-it",
+    "url": "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_0.gguf"
+  },
+  {
+    "name": "Gemma-3-4B-it",
+    "url": "https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_0.gguf"
+  },
+  {
+    "name": "Gemma-3n-E2B-it",
+    "url": "https://huggingface.co/unsloth/gemma-3n-E2B-it-GGUF/resolve/main/gemma-3n-E2B-it-Q4_0.gguf"
+  },
+  {
+    "name": "Gemma-3n-E4B-it",
+    "url": "https://huggingface.co/unsloth/gemma-3n-E4B-it-GGUF/resolve/main/gemma-3n-E4B-it-Q4_0.gguf"
+  },
+  {
+    "name": "Gemma-4-E4B-it",
+    "url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf"
+  },
+  {
+    "name": "Gemma-4-E2B-it",
+    "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_0.gguf"
+  },
+  {
+    "name": "Llama-3.1-8B-Instruct",
+    "url": "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-IQ4_NL.gguf"
+  },
+  {
+    "name": "Llama-3.2-1B-Instruct",
+    "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Llama-3.2-3B-Instruct",
+    "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Ministral-3B",
+    "url": "https://huggingface.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_0.gguf"
+  },
+  {
+    "name": "OLMoE-1B-7B-0125",
+    "url": "https://huggingface.co/allenai/OLMoE-1B-7B-0125-GGUF/resolve/main/OLMoE-1B-7B-0125-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen2-1.5B-Instruct",
+    "url": "https://huggingface.co/Qwen/Qwen2-1.5B-Instruct-GGUF/resolve/main/qwen2-1_5b-instruct-q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-0.5B-Instruct",
+    "url": "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-1.5B",
+    "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-3B-Instruct",
+    "url": "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-7B-Instruct",
+    "url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-Coder-1.5B-Instruct",
+    "url": "https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-Coder-3B-Instruct",
+    "url": "https://huggingface.co/bartowski/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-3B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen2.5-Coder-7B-Instruct",
+    "url": "https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3-0.6B",
+    "url": "https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3-1.7B",
+    "url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3-4B",
+    "url": "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3-8B",
+    "url": "https://huggingface.co/unsloth/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-IQ4_NL.gguf"
+  },
+  {
+    "name": "Qwen3.5-0.8B",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3.5-2B",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3.5-4B",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3.5-9B",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_0.gguf"
+  },
+  {
+    "name": "gemma-3-270m-it",
+    "url": "https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/main/gemma-3-270m-it-Q4_0.gguf"
+  },
+  {
+    "name": "phi-4-mini-instruct",
+    "url": "https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3-VL-2B-Instruct",
+    "url": "https://huggingface.co/unsloth/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3-VL-2B-Instruct-Q4_0.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
+  },
+  {
+    "name": "Qwen2.5-VL-7B-Instruct",
+    "url": "https://huggingface.co/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-Q4_0.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
+  },
+  {
+    "name": "Qwen2.5-VL-3B-Instruct",
+    "url": "https://huggingface.co/unsloth/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_0.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
+  },
+  {
+    "name": "Qwen3-VL-8B-Instruct",
+    "url": "https://huggingface.co/unsloth/Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen3-VL-8B-Instruct-Q4_0.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
+  },
+  {
+    "name": "Qwen3-14B",
+    "url": "https://huggingface.co/unsloth/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_0.gguf"
+  },
+  {
+    "name": "Qwen3-VL-4B-Instruct",
+    "url": "https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3-VL-4B-Instruct-Q4_0.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-F16.gguf"
+  },
+  {
+    "name": "gemma-3-12b-it",
+    "url": "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf"
+  },
+  {
+    "name": "Granite-4-Micro",
+    "url": "https://huggingface.co/unsloth/granite-4.0-h-micro-GGUF/resolve/main/granite-4.0-h-micro-Q4_0.gguf"
+  },
+  {
+    "name": "Gemma-4-E2B-it-pure",
+    "url": "https://huggingface.co/macolomb/gemma4-pure/resolve/main/gemma-4-E2B-it-Q4_0-pure.gguf"
+  },
+  {
+    "name": "GPT-OSS-20B",
+    "url": "https://huggingface.co/ggml-org/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-mxfp4.gguf"
+  }
+]
