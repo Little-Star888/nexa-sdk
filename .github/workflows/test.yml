@@ -1,18 +1,119 @@
-name: Test
-
-# Placeholder for the pytest-via-FFI harness (matrix: plugin x platform).
+name: "Scorecard Workflow"
+run-name: "PR Workflow — ggml/llama.cpp#${{ github.event.client_payload.pr_number || github.run_number }}"
 
 on:
+  repository_dispatch:
+    types: [pr-ci]
   workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.client_payload.pr_number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  build-android:
+    uses: ./.github/workflows/build-hexagon.yml
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    secrets: inherit
+    with:
+      device: SM8750
+      pr_number: ${{ github.event.client_payload.pr_number || '' }}
+      head_sha: ${{ github.event.client_payload.head_sha || '' }}
+      head_repo: ${{ github.event.client_payload.head_repo || '' }}
+
+  build-linux:
+    uses: ./.github/workflows/build-hexagon.yml
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    secrets: inherit
+    with:
+      device: QCS9075M
+      pr_number: ${{ github.event.client_payload.pr_number || '' }}
+      head_sha: ${{ github.event.client_payload.head_sha || '' }}
+      head_repo: ${{ github.event.client_payload.head_repo || '' }}
+
+  test-hexagon-qdc:
+    name: Test on QDC Device (${{ matrix.device }})
+    needs: [build-android, build-linux]
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [SM8750, SM8650, SM8850, QCS9075M]
+
     steps:
-      - name: Placeholder
-        run: 'echo "TODO: wire pytest harness."'
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ startsWith(matrix.device, 'QCS') && 'llama-cpp-linux-artifact' || 'llama-cpp-android-artifact' }}
+          path: pkg-snapdragon/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: pip
+
+      - name: Install QDC SDK
+        uses: ./.github/actions/install-qdc-sdk
+
+      - name: Run QDC tests (${{ matrix.device }})
+        run: |
+          python scripts/snapdragon/qdc/run_qdc_jobs.py \
+              --test       all \
+              --pkg-dir    pkg-snapdragon/llama.cpp \
+              --model-url  "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf" \
+              --device     ${{ matrix.device }}
+        env:
+          QDC_API_KEY: ${{ startsWith(matrix.device, 'QCS') && secrets.QDC_API_KEY_IOT || secrets.QDC_API_KEY }}
+          QDC_SSH_KEY: ${{ startsWith(matrix.device, 'QCS') && secrets.QDC_SSH_KEY_IOT || secrets.QDC_SSH_KEY }}
+
+      - name: Save result
+        if: always()
+        run: echo "${{ job.status }}" > result-${{ matrix.device }}.txt
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: result-${{ matrix.device }}
+          path: result-${{ matrix.device }}.txt
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf pkg-snapdragon qdc_sdk qdc_sdk.zip result-${{ matrix.device }}.txt
+
+  post-comment:
+    name: Post CI results to PR
+    needs: test-hexagon-qdc
+    if: always() && github.event.client_payload.pr_number != ''
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download results
+        uses: actions/download-artifact@v3
+        with:
+          path: results/
+
+      - name: Post comment
+        env:
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          python3 scripts/ci/post_pr_comment.py \
+            --pr-number ${{ github.event.client_payload.pr_number }} \
+            --results-dir results \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Cleanup results
+        if: always()
+        run: rm -rf results/

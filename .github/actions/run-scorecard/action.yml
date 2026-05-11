@@ -1,0 +1,75 @@
+
+name: Run Scorecard
+description: >
+  Shared steps for running a llama.cpp scorecard benchmark on a QDC device.
+  Used by both single-model and batch scorecard workflows.
+
+inputs:
+  device:
+    description: "QDC device chipset"
+    required: true
+  model_url:
+    description: "Direct URL to the GGUF model file"
+    required: true
+  mmproj_url:
+    description: "Direct URL to the mmproj GGUF file (VLM models only)"
+    required: false
+    default: ""
+  upload_name:
+    description: "Artifact name for the uploaded scorecard results"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+        cache: pip
+
+    - name: Resolve build artifact name
+      id: artifact
+      shell: bash
+      run: |
+        case "${{ inputs.device }}" in
+          QCS*)    echo "name=llama-cpp-linux-artifact"   >> "$GITHUB_OUTPUT" ;;
+          SC*|CRD*) echo "name=llama-cpp-windows-artifact" >> "$GITHUB_OUTPUT" ;;
+          *)       echo "name=llama-cpp-android-artifact" >> "$GITHUB_OUTPUT" ;;
+        esac
+
+    - name: Download build artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ steps.artifact.outputs.name }}
+        path: pkg/
+
+    - name: Install QDC SDK
+      uses: ./.github/actions/install-qdc-sdk
+
+    - name: Run Scorecard
+      shell: bash
+      env:
+        INPUT_MMPROJ_URL: ${{ inputs.mmproj_url }}
+      run: |
+        python scripts/snapdragon/qdc/run_qdc_jobs.py \
+          --test       scorecard \
+          --pkg-dir    pkg/llama.cpp \
+          --model-url  "${{ inputs.model_url }}" \
+          --mmproj-url "$INPUT_MMPROJ_URL" \
+          --device     "${{ inputs.device }}" \
+          --results-dir "scorecard_results"
+
+    - name: Upload scorecard results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ inputs.upload_name }}
+        path: scorecard_results/
+        if-no-files-found: ignore
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        rm -rf pkg qdc_sdk qdc_sdk.zip "scorecard_results"

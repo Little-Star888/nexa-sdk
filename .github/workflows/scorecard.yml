@@ -1,0 +1,83 @@
+##
+## Llama.CPP Scorecard: Run benchmarks for multiple models from a list
+##
+name: "Scorecard: Batch (Multi-Model)"
+
+on:
+  schedule:
+    # Run every Sunday at 4pm PDT (11pm UTC)
+    - cron: '0 23 * * 0'
+  workflow_dispatch:
+    inputs:
+      device:
+        description: "QDC device chipset (SM* for Android, QCS* for Linux, SC*/CRD* for Windows)"
+        required: false
+        type: string
+        default: "SM8750"
+
+jobs:
+  load-models:
+    name: Load model list
+    runs-on: self-hosted
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Build matrix
+        id: set-matrix
+        shell: python3 {0}
+        run: |
+          import json, os
+
+          with open("scripts/snapdragon/qdc/scorecard-models.json") as f:
+              models = json.load(f)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"matrix={json.dumps(models)}\n")
+
+  build-hexagon:
+    name: Build Llama.CPP (Hexagon)
+    uses: ./.github/workflows/build-hexagon.yml
+    with:
+      device: ${{ inputs.device || 'SM8750' }}
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    secrets: inherit
+
+  run-scorecard:
+    name: "Scorecard: ${{ matrix.model.name }}"
+    needs: [load-models, build-hexagon]
+    if: always() && needs.build-hexagon.result == 'success'
+    runs-on: self-hosted
+    timeout-minutes: 4320
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        model: ${{ fromJson(needs.load-models.outputs.matrix) }}
+    env:
+      DEVICE: ${{ inputs.device || 'SM8750' }}
+      QDC_API_KEY: ${{ startsWith(inputs.device || 'SM8750', 'QCS') && secrets.QDC_API_KEY_IOT || (startsWith(inputs.device || 'SM8750', 'SC') || startsWith(inputs.device || 'SM8750', 'CRD')) && secrets.QDC_API_KEY_WINDOWS || secrets.QDC_API_KEY }}
+      QDC_SSH_KEY: ${{ startsWith(inputs.device || 'SM8750', 'QCS') && secrets.QDC_SSH_KEY_IOT || (startsWith(inputs.device || 'SM8750', 'SC') || startsWith(inputs.device || 'SM8750', 'CRD')) && secrets.QDC_SSH_KEY_WINDOWS || secrets.QDC_SSH_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Run Scorecard
+        uses: ./.github/actions/run-scorecard
+        with:
+          device: ${{ env.DEVICE }}
+          model_url: ${{ matrix.model.url }}
+          mmproj_url: ${{ matrix.model.mmproj_url || '' }}
+          upload_name: scorecard-${{ matrix.model.name }}-${{ env.DEVICE }}
