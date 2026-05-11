@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause
 
+#include <atomic>
 #include <cstdint>
 #include <string_view>
 
+#include "driver_status.h"
 #include "geniex.h"   // geniex_LogLevel, geniex_log_callback
 #include "logging.h"  // SDK-side global sink: `geniex_log`
 
@@ -47,10 +49,24 @@ geniex_LogLevel toSdkLevel(LogLevel lvl) noexcept {
 }
 
 void filteringSink(LogLevel level, const char* message) {
-    if (shouldSuppress(message)) return;
+    if (shouldSuppress(message)) {
+        // Raw QNN text is never forwarded to end users. But we still want to know
+        // *that* a QNN error happened, so plugin-level code can give the user a
+        // clean, actionable hint (most commonly: update your NPU driver).
+        if (level == LogLevel::Error) {
+            qairt::mark_qnn_error_seen();
+        }
+        return;
+    }
     if (::geniex_log != nullptr && message != nullptr) {
         ::geniex_log(toSdkLevel(level), message);
     }
+}
+
+// Driver-status latch. Atomic so it's safe if QNN logs from worker threads.
+std::atomic<bool>& qnnErrorLatch() noexcept {
+    static std::atomic<bool> latch{false};
+    return latch;
 }
 
 struct LogFilterInstaller {
@@ -59,4 +75,15 @@ struct LogFilterInstaller {
 const LogFilterInstaller g_installer{};
 
 }  // namespace
+
+namespace qairt {
+
+void reset_qnn_error_flag() noexcept { qnnErrorLatch().store(false, std::memory_order_relaxed); }
+
+bool qnn_error_seen() noexcept { return qnnErrorLatch().load(std::memory_order_relaxed); }
+
+void mark_qnn_error_seen() noexcept { qnnErrorLatch().store(true, std::memory_order_relaxed); }
+
+}  // namespace qairt
+
 }  // namespace geniex

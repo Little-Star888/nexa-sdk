@@ -11,6 +11,7 @@
 #define portable_strdup strdup
 #endif
 
+#include "driver_status.h"
 #include "llm_model_registry.h"  // provided by geniex-qairt/models/
 #include "logging.h"
 #include "pipeline/llm_pipeline.h"
@@ -88,9 +89,21 @@ int32_t QairtLlm::create_impl(const geniex_LlmCreateInput* input) {
 
     // Create LLMPipeline via the per-model factory (handles makeModel + chat template internally).
     // Returns std::nullopt on QNN init failure, missing tokenizer, etc.
+    //
+    // Clear the QNN error latch first; if make_pipeline fails and the filter recorded a
+    // suppressed QNN error during the attempt, we attribute the failure to the driver/runtime
+    // environment and emit a clean, user-facing hint (originals stay suppressed).
+    qairt::reset_qnn_error_flag();
     auto pipe = entry.make_pipeline(runtime_cfg, model_cfg);
     if (!pipe) {
-        GENIEX_LOG_ERROR("Failed to create QAIRT LLM pipeline for model: {}", model_name_);
+        if (qairt::qnn_error_seen()) {
+            GENIEX_LOG_ERROR(
+                "Failed to load QAIRT model '{}'. This usually means the Qualcomm NPU / HTP driver "
+                "on this device is too old. Please update your NPU driver to the latest version and try again.",
+                model_name_);
+        } else {
+            GENIEX_LOG_ERROR("Failed to create QAIRT LLM pipeline for model: {}", model_name_);
+        }
         return GENIEX_ERROR_COMMON_MODEL_LOAD;
     }
     pipeline_      = std::make_unique<LLMPipeline>(std::move(*pipe));

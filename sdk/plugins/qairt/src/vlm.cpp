@@ -15,6 +15,7 @@
 #define portable_strdup strdup
 #endif
 
+#include "driver_status.h"
 #include "geniex-proc/types.h"  // ChatMessage, MMContent, Role::, Modality::
 #include "logging.h"
 #include "pipeline/vlm_pipeline.h"
@@ -120,9 +121,19 @@ int32_t QairtVlm::create_impl(const geniex_VlmCreateInput* input) {
     vlm_cfg.llm_config    = std::move(llm_cfg);
     vlm_cfg.vision_config = std::move(vision_cfg);
 
+    // Clear the QNN error latch before attempting the load so we can attribute any
+    // suppressed QNN errors during make_pipeline() to *this* attempt. See llm.cpp for details.
+    qairt::reset_qnn_error_flag();
     auto pipe = it->second.make_pipeline(runtime_cfg, vlm_cfg);
     if (!pipe) {
-        GENIEX_LOG_ERROR("Failed to create QAIRT VLM pipeline for model: {}", model_name_);
+        if (qairt::qnn_error_seen()) {
+            GENIEX_LOG_ERROR(
+                "Failed to load QAIRT VLM model '{}'. This usually means the Qualcomm NPU / HTP driver "
+                "on this device is too old. Please update your NPU driver to the latest version and try again.",
+                model_name_);
+        } else {
+            GENIEX_LOG_ERROR("Failed to create QAIRT VLM pipeline for model: {}", model_name_);
+        }
         return GENIEX_ERROR_COMMON_MODEL_LOAD;
     }
     pipeline_ = std::make_unique<VLMPipeline>(std::move(*pipe));

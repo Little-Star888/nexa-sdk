@@ -386,7 +386,8 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
             GENIEX_LOG_INFO("prefix match: n_past_global rollback to: {}", this->n_past_global);
         } else {
             // match in kvcache, need rollback
-            llama_memory_seq_rm(mem, 0, match_len, this->n_past - match_len);
+            // seq_rm takes [p0, p1) as positions, not a length — p1 = -1 means "to infinity".
+            llama_memory_seq_rm(mem, 0, match_len, -1);
             this->n_past        = match_len;
             this->n_past_global = match_len;
             GENIEX_LOG_INFO("prefix match: n_past_global rollback to: {}", this->n_past_global);
