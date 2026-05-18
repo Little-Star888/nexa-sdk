@@ -80,14 +80,14 @@ jobs:
       - name: Build CLI (Windows)
         if: matrix.platform == 'windows-arm64' && !inputs.build_installer
         shell: cmd
-        run: bazelisk build //cli:artifact --//sdk:sdk_type=local
+        run: bazelisk build //cli:artifact
 
       - name: Build CLI (Linux)
         if: matrix.platform == 'linux-arm64'
         shell: bash
         run: |
           set -euo pipefail
-          bazelisk build //cli:artifact --//sdk:sdk_type=local
+          bazelisk build //cli:artifact
 
       - name: Build Windows installer
         if: inputs.build_installer && matrix.platform == 'windows-arm64'
@@ -97,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           bare="${RAW_VERSION#v}"
-          bazelisk build //cli/release/windows --//sdk:sdk_type=local "--define=VERSION=${bare}"
+          bazelisk build //cli/release/windows "--define=VERSION=${bare}"
 
       - name: Upload Windows installer artifact
         if: inputs.upload_artifact && inputs.build_installer && matrix.platform == 'windows-arm64'

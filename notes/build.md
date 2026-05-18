@@ -16,7 +16,7 @@ bazelisk run //cli -- infer Qwen/Qwen3-0.6B-GGUF
 > `//cli` is a convenience alias for `//cli/cmd/geniex:geniex`. Both are used interchangeably in these docs.
 
 > [!IMPORTANT]
-> When running the CLI in local-SDK mode (the default), build and install the SDK bridge into `sdk/pkg-geniex/` **first** — Bazel expects `sdk/pkg-geniex/lib/geniex.dll` (Windows) or `sdk/pkg-geniex/lib/libgeniex.so` (Linux) to already exist. See [Build the SDK](#build-the-sdk) below.
+> Build and install the SDK bridge into `sdk/pkg-geniex/` **first** — Bazel expects `sdk/pkg-geniex/lib/geniex.dll` (Windows) or `sdk/pkg-geniex/lib/libgeniex.so` (Linux) to already exist. See [Build the SDK](#build-the-sdk) below.
 
 ## CLI build options
 
@@ -24,7 +24,6 @@ Flags for `bazelisk build` and `bazelisk run`:
 
 | Flag                                    | Meaning                                                                                                     |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--//sdk:sdk_type={local,s3,bazel}`     | SDK source. `local` (default) links against `sdk/pkg-geniex`; `s3` and `bazel` are WIP.                     |
 | `--config={linux_arm64,windows_arm64}`  | Cross-compile to the target platform (Go toolchain + CGO + `oci_image` base). `sdk/pkg-geniex/` must match. |
 
 Development targets:
