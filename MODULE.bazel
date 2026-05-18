@@ -60,7 +60,7 @@ bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go"
 # hermetic cc toolchain
 bazel_dep(name = "hermetic_cc_toolchain", version = "4.1.0")
 toolchains = use_extension("@hermetic_cc_toolchain//toolchain:ext.bzl", "toolchains")
-use_repo(toolchains, "zig_sdk")
+use_repo(toolchains, "zig_sdk", "zig_config")
 register_toolchains(
     "@zig_sdk//toolchain:linux_amd64_gnu.2.28",
     "@zig_sdk//toolchain:linux_arm64_gnu.2.28",
@@ -112,5 +112,47 @@ python.toolchain(python_version = "3.12")
 #     name = "rules_python_gazelle_plugin",
 #     version = "1.9.0",
 # )
+
+# ============ cmake / ninja ============
+# Hermetic cmake + ninja (host x86_64 Linux only; the SDK's CMake build
+# itself cross-compiles to ARM64). When other build hosts come online,
+# add per-host http_archive blocks and select on @platforms//cpu/os.
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "cmake_linux_x86_64",
+    url = "https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-x86_64.tar.gz",
+    sha256 = "f747d9b23e1a252a8beafb4ed2bc2ddf78cff7f04a8e4de19f4ff88e9b51dc9d",
+    strip_prefix = "cmake-3.30.5-linux-x86_64",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+# cmake needs its full tree at runtime (bin/, share/Modules, ...).
+filegroup(
+    name = "runtime",
+    srcs = glob(["bin/**", "share/**"]),
+)
+
+filegroup(
+    name = "bin",
+    srcs = ["bin/cmake"],
+)
+""",
+)
+
+http_archive(
+    name = "ninja_linux_x86_64",
+    url = "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux.zip",
+    sha256 = "6f98805688d19672bd699fbbfa2c2cf0fc054ac3df1f0e6a47664d963d530255",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "bin",
+    srcs = ["ninja"],
+)
+""",
+)
 
 # ============ others ============
