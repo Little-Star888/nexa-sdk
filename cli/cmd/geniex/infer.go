@@ -158,13 +158,24 @@ func infer() *cobra.Command {
 			quant = sq
 		}
 
+		// Validate --device before Init(): an invalid alias must not
+		// reach the Init/DeInit cycle, otherwise DeInit unloads plugin
+		// DLLs while their threads are still mid-cgo and the Go
+		// runtime crashes with "exitsyscall: syscall frame is no
+		// longer valid".
+		deviceID, nglResolved, err := resolveDevice(manifest)
+		if err != nil {
+			return err
+		}
+		_, nctxResolved := resolveNglNctx(manifest)
+
 		geniex_sdk.Init()
 
 		switch manifest.ModelType {
 		case types.ModelTypeLLM:
-			err = inferLLM(manifest, quant)
+			err = inferLLM(manifest, quant, deviceID, nglResolved, nctxResolved)
 		case types.ModelTypeVLM:
-			err = inferVLM(manifest, quant)
+			err = inferVLM(manifest, quant, deviceID, nglResolved, nctxResolved)
 		default:
 			geniex_sdk.DeInit()
 			err = fmt.Errorf("unsupported model type: %s", manifest.ModelType)
@@ -350,7 +361,7 @@ func resolveDevice(manifest *types.ModelManifest) (deviceID string, nglOverride 
 	return
 }
 
-func inferLLM(manifest *types.ModelManifest, quant string) error {
+func inferLLM(manifest *types.ModelManifest, quant, deviceID string, nglResolved, nctxResolved int32) error {
 	samplerConfig := &geniex_sdk.SamplerConfig{
 		Temperature:       temperature,
 		TopP:              topP,
@@ -371,12 +382,6 @@ func inferLLM(manifest *types.ModelManifest, quant string) error {
 
 	s := store.Get()
 	modelfile := s.ModelfilePath(manifest.Name, manifest.ModelFile[quant].Name)
-
-	deviceID, nglResolved, err := resolveDevice(manifest)
-	if err != nil {
-		return err
-	}
-	_, nctxResolved := resolveNglNctx(manifest)
 
 	spin := render.NewSpinner("loading model...")
 	spin.Start()
@@ -515,7 +520,7 @@ func inferLLM(manifest *types.ModelManifest, quant string) error {
 	return processor.Process()
 }
 
-func inferVLM(manifest *types.ModelManifest, quant string) error {
+func inferVLM(manifest *types.ModelManifest, quant, deviceID string, nglResolved, nctxResolved int32) error {
 	samplerConfig := &geniex_sdk.SamplerConfig{
 		Temperature:       temperature,
 		TopP:              topP,
@@ -540,11 +545,6 @@ func inferVLM(manifest *types.ModelManifest, quant string) error {
 	if manifest.MMProjFile.Name != "" {
 		mmprojfile = s.ModelfilePath(manifest.Name, manifest.MMProjFile.Name)
 	}
-	deviceID, nglResolved, err := resolveDevice(manifest)
-	if err != nil {
-		return err
-	}
-	_, nctxResolved := resolveNglNctx(manifest)
 
 	spin := render.NewSpinner("loading model...")
 	spin.Start()
