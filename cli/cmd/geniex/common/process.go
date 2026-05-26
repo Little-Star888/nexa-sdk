@@ -37,11 +37,18 @@ var (
 	ErrContextLengthExceeded = errors.New("model context length exceeded; output is truncated")
 )
 
+type RunConfig struct {
+	Backend   string // plugin id, e.g. "llama_cpp" / "qairt"
+	Device    string // resolved alias: "cpu" / "gpu" / "npu" / "hybrid"
+	Precision string // quant key, e.g. "Q4_0"
+}
+
 type Processor struct {
 	ParseFile bool
 
 	Verbose  bool
 	TestMode bool
+	Config   RunConfig
 
 	GetPrompt func() (string, error)
 	Run       func(prompt string, images, audios []string, onToken func(string) bool) (string, geniex_sdk.ProfileData, error)
@@ -315,6 +322,11 @@ stop reason:    %s
 		return
 	}
 
+	device := p.Config.Device
+	if device == "" {
+		device = "default"
+	}
 	fmt.Println(render.GetTheme().Profile.Sprint(text))
+	fmt.Println(render.GetTheme().Profile.Sprintf("backend=%s, device=%s, precision=%s", p.Config.Backend, device, p.Config.Precision))
 	fmt.Println()
 }

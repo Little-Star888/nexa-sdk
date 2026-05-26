@@ -135,6 +135,11 @@ func runCompletions(manifest types.ModelManifest, quant string) error {
 		ParseFile: manifest.ModelType == types.ModelTypeVLM,
 		Verbose:   verbose,
 		TestMode:  testMode,
+		Config: common.RunConfig{
+			Backend:   manifest.PluginId,
+			Device:    device,
+			Precision: quant,
+		},
 		Run: func(prompt string, images, audios []string, onToken func(string) bool) (string, geniex_sdk.ProfileData, error) {
 			if len(images) > 0 || len(audios) > 0 {
 				contents := make([]openai.ChatCompletionContentPartUnionParam, 0)

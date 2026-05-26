@@ -422,6 +422,11 @@ func inferLLM(manifest *types.ModelManifest, quant string) error {
 	processor := &common.Processor{
 		Verbose:  verbose,
 		TestMode: testMode,
+		Config: common.RunConfig{
+			Backend:   manifest.PluginId,
+			Device:    device,
+			Precision: quant,
+		},
 		Run: func(prompt string, _, _ []string, onToken func(string) bool) (string, geniex_sdk.ProfileData, error) {
 			var res geniex_sdk.LlmGenerateOutput
 			var err error
@@ -581,6 +586,11 @@ func inferVLM(manifest *types.ModelManifest, quant string) error {
 		ParseFile: true,
 		Verbose:   verbose,
 		TestMode:  testMode,
+		Config: common.RunConfig{
+			Backend:   manifest.PluginId,
+			Device:    device,
+			Precision: quant,
+		},
 		Run: func(prompt string, images, audios []string, onToken func(string) bool) (string, geniex_sdk.ProfileData, error) {
 			msg := geniex_sdk.VlmChatMessage{Role: geniex_sdk.VlmRoleUser}
 			msg.Contents = append(msg.Contents, geniex_sdk.VlmContent{Type: geniex_sdk.VlmContentTypeText, Text: prompt})
