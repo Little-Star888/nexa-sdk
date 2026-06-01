@@ -18,6 +18,9 @@ go_library(
 
 go_test(
     name = "render_test",
-    srcs = ["theme_test.go"],
+    srcs = [
+        "theme_test.go",
+        "writer_test.go",
+    ],
     embed = [":render"],
 )

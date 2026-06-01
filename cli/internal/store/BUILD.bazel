@@ -23,6 +23,13 @@ go_library(
 
 go_test(
     name = "store_test",
-    srcs = ["package_test.go"],
+    srcs = [
+        "config_test.go",
+        "lock_test.go",
+        "model_test.go",
+    ],
     embed = [":store"],
+    deps = [
+        "//cli/internal/types",
+    ],
 )

@@ -46,6 +46,29 @@ func TestSameHost(t *testing.T) {
 	}
 }
 
+func TestResolveRelativeURL(t *testing.T) {
+	cases := []struct {
+		name     string
+		base     string
+		location string
+		want     string
+	}{
+		{"absolute passes through", "https://h.co/a/b", "https://other.co/x", "https://other.co/x"},
+		{"root-relative resolved", "https://h.co/a/b", "/c/d", "https://h.co/c/d"},
+		{"path-relative resolved", "https://h.co/a/b", "e", "https://h.co/a/e"},
+		{"scheme-relative inherits scheme", "https://h.co/a", "//cdn.co/f", "https://cdn.co/f"},
+		// Unparseable base falls back to the raw location.
+		{"bad base returns location", "://bad", "x", "x"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := resolveRelativeURL(c.base, c.location); got != c.want {
+				t.Errorf("resolveRelativeURL(%q,%q) = %q, want %q", c.base, c.location, got, c.want)
+			}
+		})
+	}
+}
+
 // redirectServer returns a pair (originServer, targetServer) where origin
 // 302-redirects to target. The target records whether Authorization was seen.
 func redirectServer(t *testing.T, targetHost string) (origin *httptest.Server, target *httptest.Server, authSeen *atomic.Bool) {

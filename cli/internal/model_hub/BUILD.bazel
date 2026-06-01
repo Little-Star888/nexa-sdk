@@ -26,12 +26,14 @@ go_library(
 go_test(
     name = "model_hub_test",
     srcs = [
+        "errors_test.go",
         "model_hub_hf_test.go",
         "model_hub_localfs_test.go",
         "model_hub_test.go",
     ],
     embed = [":model_hub"],
     deps = [
+        "//cli/internal/model_hub/aihub",
         "//cli/internal/testutil",
         "//cli/internal/types",
         "@com_github_lmittmann_tint//:tint",
