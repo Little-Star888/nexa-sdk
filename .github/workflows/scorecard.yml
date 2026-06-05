@@ -3,6 +3,12 @@ name: Scorecard
 on:
   push:
     tags: ["v*"]
+  # TEMP: validate Android (SM8850) end-to-end on this PR. Remove before merge.
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/scorecard.yml"
+      - "sdk/tests/benchmark/qdc/**"
   workflow_dispatch:
     inputs:
       device:
@@ -35,7 +41,7 @@ jobs:
           PICK: ${{ github.event.inputs.device }}
         run: |
           echo "matrix=$(jq -c . sdk/tests/benchmark/qdc/scorecard-models.json)" >> "$GITHUB_OUTPUT"
-          all='["QCS9075M","SM8850"]'
+          all='["SM8850"]'
           devices=$([ -n "$PICK" ] && jq -cn --arg d "$PICK" '[$d]' || echo "$all")
           echo "devices=$devices" >> "$GITHUB_OUTPUT"
 
