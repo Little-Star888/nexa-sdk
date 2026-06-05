@@ -65,12 +65,11 @@ def _fetch_and_push(host_tmp: Path, name: str, url: str, kind: str) -> str | Non
                 ["adb", "push", str(local_dir), f"{dev_dir}/bundle"], check=True
             )
             return f"{dev_dir}/bundle"
-        local_gguf = host_tmp / f"{name}.gguf"
-        urllib.request.urlretrieve(url, local_gguf)
-        subprocess.run(
-            ["adb", "push", str(local_gguf), f"{dev_dir}/model.gguf"], check=True
-        )
-        return f"{dev_dir}/model.gguf"
+        # The phone has fast direct internet (and curl); the QDC Appium host
+        # does not reach HuggingFace reliably, so fetch gguf on-device.
+        dev_gguf = f"{dev_dir}/model.gguf"
+        run_adb_command(f"curl -L -fS --retry 3 --retry-delay 5 -o {dev_gguf} '{url}'")
+        return dev_gguf
     except Exception as e:  # noqa: BLE001 — one bad model must not abort the matrix
         print(f"WARNING: {name} fetch/push failed, skipping: {e}")
         return None
