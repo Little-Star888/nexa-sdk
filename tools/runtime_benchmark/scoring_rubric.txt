@@ -5,3 +5,5 @@ it's basically:
 2: catastrophic failure (repeated words, jibberish words)
 7: sound grammar, but strange strange content
 10: no issues
+
+Additional criterion: Do NOT use answer length as a scoring signal. A longer answer does not earn a higher score and a shorter answer does not earn a lower score. Score solely on correctness, grammar, and factual accuracy — a concise correct answer is a 10 and a verbose answer with errors is still a 2 or 7.
