@@ -28,40 +28,28 @@ int32_t LlamaLlm::create_impl(const geniex_LlmCreateInput* input) {
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }
 
-    // If a prior llama.cpp instance tore down HTP sessions to hand off to
-    // QAIRT, the ggml registry still holds cached HTP device pointers whose
-    // session context was nulled out. Recreate those sessions now so the
-    // upcoming device lookup / model load does not dereference a null
-    // session. No-op when HTP is unused or sessions are already live.
-    htp::reacquire_before_load();
-
     const Device             device = classify_device(input->device_id, input->config.n_gpu_layers);
     const geniex_ModelConfig config = build_model_config(input->config, /*n_ctx_default=*/4096, device);
+    llama_model_params       mpar   = build_model_params(config);
 
-    llama_model_params mpar = build_model_params(config);
+    // MoE override + null terminator; must outlive the load_from_file call below.
+    llama_model_tensor_buft_override tensor_overrides[2];
 
-    // Check if model path contains "gpt" and "oss" (case insensitive)
+    // FIX: HTP backend patch
+    { htp::reacquire_before_load(); }
+
+    // FIX: gpt oss offload patch
     {
         std::string model_path_lower(input->model_path);
         std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
         bool is_gpt_oss_model =
             (model_path_lower.find("gpt") != std::string::npos) && (model_path_lower.find("oss") != std::string::npos);
 
-        // Set special token output behavior based on model type
         this->allow_special_tokens = is_gpt_oss_model;
-
-        // Initialize instance-level tensor buffer override array for MoE expert
-        // tensors Force specific MoE expert tensors to run on CPU instead of HTP NPU
-        // These patterns match: blk.{layer}.ffn_{gate|up|down}_exps.{weight|bias}
-        // Only apply this override for GPT OSS models, because mxfp4 data type is not
-        // supported in GGML Hexagon
         if (is_gpt_oss_model) {
-            // Regex pattern to match all MoE expert tensors
-            // This includes: ffn_gate_exps, ffn_up_exps, ffn_down_exps (both .weight
-            // and .bias)
-            this->tensor_overrides[0]  = {"\\.ffn_(up|down|gate)_exps\\.(weight|bias)", ggml_backend_cpu_buffer_type()};
-            this->tensor_overrides[1]  = {nullptr, nullptr};  // Null terminator
-            mpar.tensor_buft_overrides = this->tensor_overrides;
+            tensor_overrides[0]        = {"\\.ffn_(up|down|gate)_exps\\.(weight|bias)", ggml_backend_cpu_buffer_type()};
+            tensor_overrides[1]        = {nullptr, nullptr};  // Null terminator
+            mpar.tensor_buft_overrides = tensor_overrides;
             GENIEX_LOG_INFO(
                 "GPT OSS model detected - MoE expert tensors "
                 "(ffn_*_exps.weight/bias) will be forced to CPU");
@@ -78,13 +66,11 @@ int32_t LlamaLlm::create_impl(const geniex_LlmCreateInput* input) {
         mpar.devices = selection->data();
     }
 
-    // The HTP backend opens FastRPC channels at registry construction time
-    // (ggml_hexagon_registry), not per-instance. Those channels live until we
-    // explicitly call release_sessions, so we mark the guard whenever HTP is
-    // registered — the lifetime to track is the registry, not the
-    // device_id/n_gpu_layers selection of this particular load.
-    if (htp::htp_backend_present()) {
-        htp_guard_.mark_htp();
+    // FIX: HTP backend patch
+    {
+        if (htp::htp_backend_present()) {
+            htp_guard_.mark_htp();
+        }
     }
 
     this->model = llama_model_load_from_file(input->model_path, mpar);
@@ -93,8 +79,7 @@ int32_t LlamaLlm::create_impl(const geniex_LlmCreateInput* input) {
     }
 
     llama_context_params cpar = build_context_params(config, device);
-
-    this->ctx = llama_init_from_model(this->model, cpar);
+    this->ctx                 = llama_init_from_model(this->model, cpar);
     if (!this->ctx) {
         return GENIEX_ERROR_COMMON_MODEL_LOAD;
     }
@@ -121,11 +106,10 @@ int32_t LlamaLlm::create_impl(const geniex_LlmCreateInput* input) {
             this->chat_template_str = buffer.str();
             file.close();
         }
-        // Note: if file reading fails, chat_template_str remains nullopt
     }
 
     this->reset();
-    this->reset_sampler();
+    this->set_sampler(nullptr);
 
     return GENIEX_SUCCESS;
 }
@@ -202,17 +186,10 @@ int32_t LlamaLlm::apply_chat_template(
     // Apply chat template
     auto result = common_chat_templates_apply(tmpls.get(), inputs);
 
-    // Allocate output buffer and copy result
-    size_t len       = result.prompt.length();
-    char*  formatted = (char*)malloc(len + 1);
-    if (!formatted) {
+    output->formatted_text = strdup(result.prompt.c_str());
+    if (!output->formatted_text) {
         return GENIEX_ERROR_COMMON_MEMORY_ALLOCATION;  // error: memory allocation failed
     }
-
-    std::memcpy(formatted, result.prompt.c_str(), len);
-    formatted[len] = '\0';
-
-    output->formatted_text = formatted;
     return GENIEX_SUCCESS;
 }
 
@@ -224,22 +201,18 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
     bool has_prompt_utf8 = input->prompt_utf8 != nullptr;
 
     if (!has_input_ids && !has_prompt_utf8)
-        return GENIEX_ERROR_COMMON_INVALID_INPUT;  // error: neither input_ids nor
-                                                   // prompt_utf8 provided
+        return GENIEX_ERROR_COMMON_INVALID_INPUT;  // error: neither input_ids nor prompt_utf8 provided
 
     geniex_GenerationConfig cfg = input->config ? *input->config : geniex_GenerationConfig{};
     cfg.max_tokens              = cfg.max_tokens > 0 ? cfg.max_tokens : 128;
 
     // Initialzie resources
     this->set_sampler(cfg.sampler_config);
-    auto*              mem     = llama_get_memory(this->ctx);
-    const llama_vocab* vocab   = llama_model_get_vocab(this->model);
-    const int          n_ctx   = llama_n_ctx(this->ctx);
-    const int          n_batch = llama_n_batch(this->ctx);
-    // Sliding the window needs seq_add (aborts on M-RoPE) and a mid-sequence
-    // seq_rm (recurrent models reject it; can_shift is a false positive there).
-    // When unsupported, skip the slide and let decode report truncation.
-    const bool can_shift = llama_memory_can_shift(mem) && !llama_model_is_recurrent(this->model);
+    auto*              mem       = llama_get_memory(this->ctx);
+    const llama_vocab* vocab     = llama_model_get_vocab(this->model);
+    const int          n_ctx     = llama_n_ctx(this->ctx);
+    const int          n_batch   = llama_n_batch(this->ctx);
+    const bool         can_shift = llama_memory_can_shift(mem) && !llama_model_is_recurrent(this->model);
 
     // Encode the full prompt (either from input_ids or prompt_utf8)
     std::vector<llama_token> prompt_ids;
@@ -249,8 +222,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         for (int32_t i = 0; i < input->input_ids_count; i++) {
             if (input->input_ids[i] < 0 || input->input_ids[i] >= vocab_size) {
                 GENIEX_LOG_ERROR("token ID out of range: {}", input->input_ids[i]);
-                return GENIEX_ERROR_COMMON_INVALID_INPUT;  // error: token ID out of
-                                                           // vocabulary range
+                return GENIEX_ERROR_COMMON_INVALID_INPUT;  // error: token ID out of vocabulary range
             }
         }
 
@@ -259,27 +231,15 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         // Use text tokenization path
         try {
             prompt_ids = common_tokenize(vocab, std::string(input->prompt_utf8), true, true);
-            {
-                // Debug: log prompt tokens
-                std::stringstream buffer;
-                buffer << "{ ";
-                for (size_t i = 0; i < prompt_ids.size(); ++i) {
-                    buffer << prompt_ids[i];
-                    if (i != prompt_ids.size() - 1) {
-                        buffer << ",";
-                    }
-                }
-                buffer << " }";
-                GENIEX_LOG_DEBUG("Prompt token IDs:\n{}", buffer.str());
-            }
         } catch (const std::exception& e) {
             return GENIEX_ERROR_LLM_TOKENIZATION_FAILED;  // error: prompt encoding failed
         }
     }
-    int32_t prompt_len = static_cast<int32_t>(prompt_ids.size());
 
     // Prefix Match
-    int match_len = 0;
+
+    int32_t prompt_len = static_cast<int32_t>(prompt_ids.size());
+    int     match_len  = 0;
     while (match_len < std::min((int)past_prompt_tokens.size(), prompt_len) &&
            past_prompt_tokens[match_len] == prompt_ids[match_len]) {
         match_len++;
@@ -307,90 +267,69 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         }
     }
 
-    // Create input embedding vector from new tokens only
-    std::vector<llama_token> embd_inp;
-    for (int i = this->n_past_global; i < prompt_len; i++) {
-        embd_inp.push_back(prompt_ids[i]);
-    }
+    std::vector<llama_token> embd_inp(prompt_ids.begin() + this->n_past_global, prompt_ids.end());
 
     // Main loop
 
-    auto process = [&](std::vector<llama_token>& embd) {
-        // Context shifting if needed
-        if (can_shift && this->n_past + (int)embd.size() >= n_ctx) {
-            const int n_past_before = this->n_past;
-            const int n_keep        = 4;
-            const int needed        = this->n_past + (int)embd.size() - n_ctx + 1;
-            int       n_discard     = std::max(this->n_past / 2 - n_keep, needed);
-            n_discard               = std::min(n_discard, this->n_past - n_keep);
+    int32_t          res = GENIEX_SUCCESS;
+    common::Profiler profiler;
+    profiler.prompt_start();
 
-            if (n_discard > 0) {
-                // Context shifting using llama.cpp memory management
-                llama_memory_seq_rm(mem, 0, n_keep, n_keep + n_discard);
-                llama_memory_seq_add(mem, 0, n_keep + n_discard, this->n_past, -n_discard);
-                this->n_past -= n_discard;
-            }
-
-            GENIEX_LOG_INFO(
-                "Context shifting - discarding {} tokens, n_keep: {}, "
-                "this->n_past before: {}, this->n_past after: "
-                "{}",
-                n_discard,
-                n_keep,
-                n_past_before,
-                this->n_past);
+    // Discard tokens past the first n_keep to fit n_fit more; returns the count discarded, 0 once down to n_keep.
+    auto slide_window = [&](int n_fit) -> int {
+        const int n_keep        = 4;
+        const int n_past_before = this->n_past;
+        const int needed        = this->n_past + n_fit - n_ctx + 1;
+        int       n_discard     = std::max(this->n_past / 2 - n_keep, needed);
+        n_discard               = std::min(n_discard, this->n_past - n_keep);
+        if (n_discard <= 0) {
+            return 0;
         }
 
-        for (int i = 0; i < (int)embd.size(); i += n_batch) {
-            int n_eval = (int)embd.size() - i;
-            if (n_eval > n_batch) {
-                n_eval = n_batch;
-            }
+        llama_memory_seq_rm(mem, 0, n_keep, n_keep + n_discard);
+        llama_memory_seq_add(mem, 0, n_keep + n_discard, this->n_past, -n_discard);
+        this->n_past -= n_discard;
 
-            llama_batch batch = llama_batch_get_one(&embd[i], n_eval);
-            // 1 means the batch does not fit the KV cache: report truncation, not a generic failure.
-            switch (llama_decode(this->ctx, batch)) {
-                case 0:
-                    break;
-                case 1:
-                    return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
-                default:
-                    return GENIEX_ERROR_LLM_GENERATION_FAILED;
-            }
+        GENIEX_LOG_INFO(
+            "Context shifting - discarding {} tokens, n_keep: {}, "
+            "this->n_past before: {}, this->n_past after: {}",
+            n_discard,
+            n_keep,
+            n_past_before,
+            this->n_past);
+        return n_discard;
+    };
 
-            n_past += n_eval;
+    // Decode one batch (caller chunks long inputs) and advance n_past.
+    auto process = [&](const llama_token* tokens, int n_tokens) -> int32_t {
+        llama_batch batch = llama_batch_get_one(const_cast<llama_token*>(tokens), n_tokens);
+        // decode returns 1 when the batch does not fit; slide on demand and retry rather than gating on
+        // n_past >= n_ctx, which never trips for SWA models (physical KV fills before n_past reaches n_ctx).
+        int rc = llama_decode(this->ctx, batch);
+        while (rc == 1 && can_shift && slide_window(n_tokens) > 0) {
+            rc = llama_decode(this->ctx, batch);
         }
-
+        switch (rc) {
+            case 0:
+                break;
+            case 1:
+                return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+            default:
+                return GENIEX_ERROR_LLM_GENERATION_FAILED;
+        }
+        n_past += n_tokens;
         return GENIEX_SUCCESS;
     };
 
     // Process input (prefilling)
 
-    common::Profiler profiler;
-    profiler.prompt_start();
+    for (llama_token id : prompt_ids) {
+        common_sampler_accept(this->sampler, id, /* accept_grammar= */ false);
+    }
 
-    bool                     first_token_generated = false;
-    int32_t                  res                   = GENIEX_SUCCESS;
-    std::vector<llama_token> generated_tokens;
-    std::stringstream        full_text;
-
-    std::vector<llama_token> embd;
-
-    for (size_t i = 0; i < embd_inp.size(); ++i) {
-        common_sampler_accept(this->sampler,
-            embd_inp[i],
-            /* accept_grammar= */ false);
-
-        embd.push_back(embd_inp[i]);
-        if ((int)embd.size() >= n_batch || i == embd_inp.size() - 1) {
-            // A prompt block that does not fit reports truncation; the unified
-            // finalize below still emits valid profiler data.
-            res = process(embd);
-            embd.clear();
-            if (res != GENIEX_SUCCESS) {
-                break;
-            }
-        }
+    for (int i = 0; i < (int)embd_inp.size() && res == GENIEX_SUCCESS; i += n_batch) {
+        int n_eval = std::min(n_batch, (int)embd_inp.size() - i);
+        res        = process(embd_inp.data() + i, n_eval);
     }
 
     profiler.prompt_end();
@@ -398,6 +337,10 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
     profiler.decode_start();
 
     // Process output
+
+    bool                     first_token_generated = false;
+    std::vector<llama_token> generated_tokens;
+    std::stringstream        full_text;
 
     while (res == GENIEX_SUCCESS && (int)generated_tokens.size() < cfg.max_tokens) {
         llama_token id = common_sampler_sample(this->sampler, this->ctx, -1);
@@ -410,6 +353,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
             GENIEX_LOG_DEBUG("First token generated, TTFT recorded");
         }
 
+        // Check EOS token
         if (llama_vocab_is_eog(vocab, id)) {
             GENIEX_LOG_DEBUG("EOS token generated, stopping generation");
             profiler.set_stop_reason(common::StopReason::GENIEX_STOP_REASON_EOS);
@@ -418,8 +362,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
 
         // Convert token to string
         char token_buf[64];
-        // Use instance-level setting for special token output
-        int n = llama_token_to_piece(vocab, id, token_buf, sizeof(token_buf) - 1, 0, this->allow_special_tokens);
+        int  n = llama_token_to_piece(vocab, id, token_buf, sizeof(token_buf) - 1, 0, this->allow_special_tokens);
         if (n < 0) {
             res = GENIEX_ERROR_LLM_GENERATION_FAILED;
             break;
@@ -427,16 +370,11 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         token_buf[n] = '\0';
 
         // Check stop sequences
-        bool stop_matched = false;
-        for (int i = 0; i < cfg.stop_count; ++i) {
-            if (cfg.stop[i] && strcmp(token_buf, cfg.stop[i]) == 0) {
-                GENIEX_LOG_DEBUG("Stop sequence matched: '{}'", cfg.stop[i]);
-                profiler.set_stop_reason(common::StopReason::GENIEX_STOP_REASON_STOP_SEQUENCE);
-                stop_matched = true;
-                break;
-            }
-        }
+        const bool stop_matched = std::any_of(
+            cfg.stop, cfg.stop + cfg.stop_count, [&](const char* s) { return s && strcmp(token_buf, s) == 0; });
         if (stop_matched) {
+            GENIEX_LOG_DEBUG("Stop sequence matched");
+            profiler.set_stop_reason(common::StopReason::GENIEX_STOP_REASON_STOP_SEQUENCE);
             break;
         }
 
@@ -451,15 +389,10 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         }
         full_text << token_buf;
 
-        std::vector<llama_token> embd(1, id);
-        // Decode slides the window first when supported, so a single token fits.
-        // It only fails to fit when sliding is disabled (M-RoPE / recurrent):
-        // that surfaces as a context-length error and keeps the text so far.
-        // No break needed — it is the last statement, the while check exits.
-        res = process(embd);
+        res = process(&id, 1);
     }
 
-    // Set stop reason if not already set
+    // update output and profiler data
     if (res == GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH) {
         GENIEX_LOG_WARN("LLM generate: context window ({}) exhausted; truncating", n_ctx);
         profiler.set_stop_reason(common::StopReason::GENIEX_STOP_REASON_LENGTH);
@@ -471,6 +404,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
     profiler.to_profile_data(output->profile_data);
     output->full_text = strdup(full_text.str().c_str());
 
+    // update past record
     this->n_past_global = prompt_len + generated_tokens.size();
     this->past_prompt_tokens.insert(this->past_prompt_tokens.end(), embd_inp.begin(), embd_inp.end());
     this->past_prompt_tokens.insert(this->past_prompt_tokens.end(), generated_tokens.begin(), generated_tokens.end());
@@ -481,8 +415,6 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
 
 // Private
 namespace geniex {
-
-void LlamaLlm::reset_sampler() { this->set_sampler(nullptr); }
 
 void LlamaLlm::set_sampler(const geniex_SamplerConfig* cfg) {
     if (this->sampler) {

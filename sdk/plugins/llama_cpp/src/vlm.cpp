@@ -95,7 +95,7 @@ int32_t LlamaVlm::create_impl(const geniex_VlmCreateInput* input) {
         }
     }
 
-    this->reset_sampler();
+    this->set_sampler(nullptr);
 
     return GENIEX_SUCCESS;
 }
@@ -443,8 +443,6 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
 }  // namespace geniex
 
 namespace geniex {
-
-void LlamaVlm::reset_sampler() { this->set_sampler(nullptr); }
 
 void LlamaVlm::set_sampler(const geniex_SamplerConfig* cfg) {
     if (this->sampler) {

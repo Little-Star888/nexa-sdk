@@ -49,7 +49,6 @@ class LlamaVlm : public IVlm {
     virtual int32_t get_capabilities(geniex_VlmCapabilities* output) override;
 
    private:
-    void reset_sampler();
     void set_sampler(const geniex_SamplerConfig* cfg);
     bool vlm_message_to_common_chat_msg(const geniex_VlmChatMessage* input, common_chat_msg* output);
 };

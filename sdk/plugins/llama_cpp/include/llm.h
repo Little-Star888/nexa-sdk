@@ -21,9 +21,7 @@ class LlamaLlm : public ILlm {
     int                      n_past        = 0;   // for context shifting
     std::vector<llama_token> past_prompt_tokens;  // for prefix match
 
-    // Instance-level storage for model loading parameters (thread-safe)
-    llama_model_tensor_buft_override tensor_overrides[2];           // MoE override + null terminator
-    bool                             allow_special_tokens = false;  // Control special token output
+    bool allow_special_tokens = false;  // Control special token output
 
     // Tracks whether this instance pinned an HTP session; releases on last handoff.
     htp::SessionGuard htp_guard_;
@@ -44,7 +42,6 @@ class LlamaLlm : public ILlm {
     virtual int32_t generate(const geniex_LlmGenerateInput*, geniex_LlmGenerateOutput*) override;
 
    private:
-    void reset_sampler();
     void set_sampler(const geniex_SamplerConfig* cfg);
 };
 
