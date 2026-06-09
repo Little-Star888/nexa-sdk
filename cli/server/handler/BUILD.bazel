@@ -27,6 +27,10 @@ go_library(
 
 go_cgo_test(
     name = "handler_test",
-    srcs = ["package_test.go"],
+    srcs = ["chat_test.go"],
     embed = [":handler"],
+    deps = [
+        "//bindings/go:geniex_sdk_go",
+        "@com_github_openai_openai_go_v3//:openai-go",
+    ],
 )

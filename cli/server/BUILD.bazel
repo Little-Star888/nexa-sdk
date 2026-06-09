@@ -22,6 +22,9 @@ go_library(
 
 go_cgo_test(
     name = "server_test",
-    srcs = ["package_test.go"],
+    srcs = ["route_test.go"],
     embed = [":server"],
+    deps = [
+        "@com_github_gin_gonic_gin//:gin",
+    ],
 )

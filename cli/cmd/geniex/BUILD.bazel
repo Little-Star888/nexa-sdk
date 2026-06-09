@@ -46,7 +46,9 @@ go_library(
 go_cgo_test(
     name = "geniex_test",
     srcs = [
+        "infer_test.go",
         "model_test.go",
+        "run_test.go",
         "update_test.go",
     ],
     embed = [":geniex_lib"],
@@ -55,6 +57,7 @@ go_cgo_test(
         "avx",
     ],
     deps = [
+        "//cli/cmd/geniex/common",
         "//cli/internal/model_hub",
         "//cli/internal/testutil",
         "//cli/internal/types",

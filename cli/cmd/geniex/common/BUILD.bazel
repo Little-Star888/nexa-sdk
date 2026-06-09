@@ -40,6 +40,14 @@ go_library(
 
 go_cgo_test(
     name = "common_test",
-    srcs = ["process_test.go"],
+    srcs = [
+        "error_test.go",
+        "process_test.go",
+    ],
     embed = [":common"],
+    deps = [
+        "//bindings/go:geniex_sdk_go",
+        "//cli/internal/model_hub",
+        "//cli/internal/testutil",
+    ],
 )
