@@ -11,21 +11,20 @@ The Linux Docker path runs through a container image built for Linux ARM64 with 
 
 - Linux ARM64 host with Docker installed.
 - Dragonwing IoT chipset — see [Supported platforms](/en/get-started/platforms).
-- GitHub Personal Access Token (PAT) with read access to GHCR.
+- Credentials with read access to the container registry.
 
 ### **Pull the image**
 
-Authenticate to GitHub Container Registry, then pull:
+Authenticate to the Qualcomm Container Registry, then pull:
 
 ```bash bash
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxx
-docker login ghcr.io -u <your-github-username> -p "$GITHUB_TOKEN"
+docker login docker-registry.qualcomm.com -u '$app' -p GB2S6KXMJXTPV8VHNFNS7Q6LVH75LOOBTLT8D723WUX6PSFZMTX95GIQG4EFWH5C021ONZ5763VI9IDHU96Q7VAZJ2830CLX3NPI6STQOJWRYXLLA2ZYTL1S
 
-docker pull ghcr.io/qcom-ai-hub/geniex-cli:latest
+docker pull docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:latest
 ```
 
 <Note>
-  If `docker login` fails or `docker pull` returns `permission denied ... /var/run/docker.sock`, see [Troubleshooting → Linux](/en/resources/troubleshooting#linux) for the PAT scope and `docker` group fixes.
+  If `docker login` fails or `docker pull` returns `permission denied ... /var/run/docker.sock`, see [Troubleshooting → Linux](/en/resources/troubleshooting#linux) for the credential and `docker` group fixes.
 </Note>
 
 ### **Run interactively**
@@ -36,7 +35,7 @@ Drop into an interactive shell inside the container:
 docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
-  ghcr.io/qcom-ai-hub/geniex-cli:latest
+  docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:latest
 ```
 
 ### **Verify**

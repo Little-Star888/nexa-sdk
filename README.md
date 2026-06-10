@@ -56,13 +56,14 @@ Pin a version: `... | sh -s -- --version v0.1.8`. Override the install location:
 Prefer Docker (versioned image, repeatable, no host-side install):
 
 ```bash
-docker pull ghcr.io/qcom-ai-hub/geniex-cli:<TAG>
+docker login docker-registry.qualcomm.com -u '$app' -p GB2S6KXMJXTPV8VHNFNS7Q6LVH75LOOBTLT8D723WUX6PSFZMTX95GIQG4EFWH5C021ONZ5763VI9IDHU96Q7VAZJ2830CLX3NPI6STQOJWRYXLLA2ZYTL1S
+docker pull docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:<TAG>
 
 # interactive mode
 docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
-  ghcr.io/qcom-ai-hub/geniex-cli:<TAG> \
+  docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:<TAG> \
   infer Qwen/Qwen3-0.6B-GGUF
 
 # server mode
@@ -70,14 +71,14 @@ docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
   --network=host \
-  ghcr.io/qcom-ai-hub/geniex-cli:<TAG> \
+  docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:<TAG> \
   serve
 # interactive shell connect to server
 docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
   --network=host \
-  ghcr.io/qcom-ai-hub/geniex-cli:<TAG> \
+  docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:<TAG> \
   run <model>
 ```
 

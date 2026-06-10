@@ -117,21 +117,20 @@ CLI 提供 Windows ARM64 原生可执行文件，以及面向 Dragonwing IoT 等
 
     - 安装了 Docker 的 Linux ARM64 主机。
     - 高通 IoT 芯片——详见[支持的平台](/cn/get-started/platforms#iot-linux-arm64)。
-    - 拥有 GHCR 读权限的 GitHub Personal Access Token (PAT)。
+    - 拥有镜像仓库读权限的凭据。
 
     ### **拉取镜像**
 
-    登录 GitHub Container Registry 后再拉取：
+    登录 Qualcomm Container Registry 后再拉取：
 
     ```bash bash
-    export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxx
-    docker login ghcr.io -u <your-github-username> -p "$GITHUB_TOKEN"
+    docker login docker-registry.qualcomm.com -u '$app' -p GB2S6KXMJXTPV8VHNFNS7Q6LVH75LOOBTLT8D723WUX6PSFZMTX95GIQG4EFWH5C021ONZ5763VI9IDHU96Q7VAZJ2830CLX3NPI6STQOJWRYXLLA2ZYTL1S
 
-    docker pull ghcr.io/qcom-ai-hub/geniex-cli:latest
+    docker pull docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:latest
     ```
 
     <Note>
-      若 `docker login` 失败或 `docker pull` 返回 `permission denied ... /var/run/docker.sock`，参见[故障排查 → Linux](/cn/resources/troubleshooting#linux) 了解 PAT 权限与 `docker` 组的修复方法。
+      若 `docker login` 失败或 `docker pull` 返回 `permission denied ... /var/run/docker.sock`，参见[故障排查 → Linux](/cn/resources/troubleshooting#linux) 了解凭据与 `docker` 组的修复方法。
     </Note>
 
     ### **交互式运行**
@@ -142,7 +141,7 @@ CLI 提供 Windows ARM64 原生可执行文件，以及面向 Dragonwing IoT 等
     docker run -it --rm --privileged \
       -v "$PWD/data:/data" \
       -v /usr/lib:/opt/qcom-lib:ro \
-      ghcr.io/qcom-ai-hub/geniex-cli:latest
+      docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:latest
     ```
 
     ### **验证**
