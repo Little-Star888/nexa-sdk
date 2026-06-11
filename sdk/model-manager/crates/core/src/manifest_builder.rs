@@ -125,23 +125,21 @@ pub fn infer_manifest_from_names(
 
     // Pick one entrypoint file per quant. Sharded GGUFs (`*-NNNNN-of-MMMMM.gguf`)
     // are split across several files that share one quant; the first shard is
-    // the manifest entrypoint, its recorded size is the sum of every shard, and
-    // the remaining shards go to `extra_files` so the executor fetches them all.
+    // the manifest entrypoint, the rest go to `extra_files` so the executor
+    // fetches them. Each bucket records its own single-file size; total_size()
+    // sums every bucket and would double-count if the entrypoint aggregated.
     let mut model_file: HashMap<String, ModelFileInfo> = HashMap::new();
     let mut shard_extras: Vec<&String> = Vec::new();
     for (quant, mut files) in ggufs {
         files.sort();
-        let total: i64 = files
-            .iter()
-            .map(|n| sizes.get(n.as_str()).copied().unwrap_or(0))
-            .sum();
         let entry = files[0];
+        let entry_size = sizes.get(entry.as_str()).copied().unwrap_or(0);
         model_file.insert(
             quant,
             ModelFileInfo {
                 name: entry.clone(),
                 downloaded: true,
-                size: total,
+                size: entry_size,
             },
         );
         shard_extras.extend_from_slice(&files[1..]);
@@ -486,8 +484,9 @@ mod tests {
 
     #[test]
     fn sharded_gguf_keeps_every_shard() {
-        // A 3-shard Q4_0 model: entrypoint goes to model_file with the summed
-        // size; the other two shards must land in extra_files so they download.
+        // A 3-shard Q4_0 model: entrypoint records its own single-shard size,
+        // the trailing shards land in extra_files so the executor still fetches
+        // them. total_size() must count each shard exactly once.
         let (names, sizes) = sizes_of(&[
             ("model-Q4_0-00001-of-00003.gguf", 100),
             ("model-Q4_0-00002-of-00003.gguf", 200),
@@ -497,10 +496,11 @@ mod tests {
             infer_manifest_from_names("Org/Repo-GGUF", &names, &sizes, Default::default()).unwrap();
         let entry = m.model_file.get("Q4_0").unwrap();
         assert_eq!(entry.name, "model-Q4_0-00001-of-00003.gguf");
-        assert_eq!(entry.size, 600, "model_file size must sum all shards");
+        assert_eq!(entry.size, 100, "entrypoint stores its own size only");
         let extra: Vec<&str> = m.extra_files.iter().map(|f| f.name.as_str()).collect();
         assert!(extra.contains(&"model-Q4_0-00002-of-00003.gguf"));
         assert!(extra.contains(&"model-Q4_0-00003-of-00003.gguf"));
+        assert_eq!(m.total_size(), 600, "every shard counted exactly once");
     }
 
     #[test]

@@ -74,10 +74,31 @@ async fn pull_from_extracted_dir_produces_qairt_manifest() {
     let entry = mf.model_file.get("N/A").expect("entrypoint");
     assert_eq!(entry.name, "shard_a.bin");
     assert!(entry.downloaded);
+    // The entrypoint records its own size only — siblings live in extra_files
+    // with their own sizes. Aggregating here would double-count once
+    // ModelManifest::total_size() sums every bucket (regression #952).
+    assert_eq!(entry.size, bin_a.len() as i64);
     let extras: Vec<&str> = mf.extra_files.iter().map(|f| f.name.as_str()).collect();
     assert!(extras.contains(&"shard_b.bin"));
     assert!(extras.contains(&"tokenizer.json"));
     assert!(extras.contains(&"metadata.json"));
+
+    let on_disk: u64 = std::fs::read_dir(&dest)
+        .unwrap()
+        .flatten()
+        .filter(|e| {
+            let is_file = e.file_type().map(|t| t.is_file()).unwrap_or(false);
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            is_file && name != "geniex.json" && name != ".lock"
+        })
+        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+        .sum();
+    assert_eq!(
+        mf.total_size() as u64,
+        on_disk,
+        "manifest total must equal on-disk byte sum"
+    );
 
     assert_eq!(std::fs::read(dest.join("shard_a.bin")).unwrap(), bin_a);
     assert_eq!(std::fs::read(dest.join("shard_b.bin")).unwrap(), bin_b);

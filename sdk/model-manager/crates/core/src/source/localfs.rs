@@ -183,14 +183,19 @@ impl LocalFsSource {
                 ))
             })?;
 
-        let total_size: u64 = entries.iter().map(|(_, s)| *s).sum();
+        // Each bucket holds a single file's own size; total_size() sums them.
+        let entrypoint_size = entries
+            .iter()
+            .find(|(n, _)| n == &entrypoint)
+            .map(|(_, s)| *s as i64)
+            .unwrap_or(0);
         let mut model_file: HashMap<String, ModelFileInfo> = HashMap::new();
         model_file.insert(
             "N/A".to_string(),
             ModelFileInfo {
                 name: entrypoint.clone(),
                 downloaded: true,
-                size: total_size as i64,
+                size: entrypoint_size,
             },
         );
         let extra_files: Vec<ModelFileInfo> = entries
@@ -276,7 +281,11 @@ impl LocalFsSource {
                 ))
             })?;
 
-        let total_uncompressed: u64 = flat.iter().map(|(_, e)| e.uncompressed_size).sum();
+        let entrypoint_size = flat
+            .iter()
+            .find(|(name, _)| name == &entrypoint)
+            .map(|(_, e)| e.uncompressed_size as i64)
+            .unwrap_or(0);
 
         let mut model_file: HashMap<String, ModelFileInfo> = HashMap::new();
         model_file.insert(
@@ -284,7 +293,7 @@ impl LocalFsSource {
             ModelFileInfo {
                 name: entrypoint.clone(),
                 downloaded: true,
-                size: total_uncompressed as i64,
+                size: entrypoint_size,
             },
         );
         let extra_files: Vec<ModelFileInfo> = flat

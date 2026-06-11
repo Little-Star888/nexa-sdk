@@ -482,7 +482,7 @@ def _cmd_ls(args: argparse.Namespace) -> int:
             ]
         )
 
-    _render_table(rows, ['NAME', 'SIZE', 'PLUGIN', 'TYPE', 'PRECISIONS'])
+    _render_table(rows, ['NAME', 'SIZE', 'PLUGIN', 'TYPE', 'PRECISION'])
     return 0
 
 

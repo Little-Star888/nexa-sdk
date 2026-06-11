@@ -234,7 +234,13 @@ impl ModelSource for AiHubSource {
             .unwrap_or(&asset.precision)
             .to_string();
 
-        let total_uncompressed: u64 = flat_entries.iter().map(|(_, e)| e.uncompressed_size).sum();
+        // Each bucket holds a single file's own size — sibling sizes live in
+        // extra_files. Aggregating here would double-count via total_size().
+        let entrypoint_size = flat_entries
+            .iter()
+            .find(|(name, _)| name == &entrypoint_name)
+            .map(|(_, e)| e.uncompressed_size as i64)
+            .unwrap_or(0);
 
         let mut model_file: HashMap<String, ModelFileInfo> = HashMap::new();
         model_file.insert(
@@ -242,7 +248,7 @@ impl ModelSource for AiHubSource {
             ModelFileInfo {
                 name: entrypoint_name.clone(),
                 downloaded: true,
-                size: total_uncompressed as i64,
+                size: entrypoint_size,
             },
         );
         let extra_files: Vec<ModelFileInfo> = flat_entries
