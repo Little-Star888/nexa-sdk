@@ -165,8 +165,6 @@
     "name": "gpt-oss-20b",
     "plugin": "llama_cpp",
     "devices": [
-      "cpu",
-      "npu",
       "hybrid"
     ],
     "url": "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q4_0.gguf"
@@ -222,86 +220,6 @@
       "npu"
     ],
     "aihub_id": "qwen3_4b_instruct_2507"
-  },
-  {
-    "name": "Qwen2.5-7B-Instruct-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "qwen2_5_7b_instruct"
-  },
-  {
-    "name": "Falcon3-7B-Instruct-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "falcon_v3_7b_instruct"
-  },
-  {
-    "name": "Llama-v3.1-8B-Instruct-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_1_8b_instruct"
-  },
-  {
-    "name": "Llama-SEA-LION-v3.5-8B-R-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_1_sea_lion_3_5_8b_r"
-  },
-  {
-    "name": "Llama-v3.2-1B-Instruct-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_2_1b_instruct"
-  },
-  {
-    "name": "Llama-v3.2-3B-Instruct-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_2_3b_instruct"
-  },
-  {
-    "name": "Llama-v3.2-3B-Instruct-SSD-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_2_3b_instruct_ssd"
-  },
-  {
-    "name": "Llama-v3-8B-Instruct-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_8b_instruct"
-  },
-  {
-    "name": "Llama-v3-ELYZA-JP-8B-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_elyza_jp_8b"
-  },
-  {
-    "name": "Llama3-TAIDE-LX-8B-Chat-Alpha1-qairt",
-    "plugin": "qairt",
-    "devices": [
-      "npu"
-    ],
-    "aihub_id": "llama_v3_taide_8b_chat"
   },
   {
     "name": "Qwen2.5-VL-7B-qairt",
