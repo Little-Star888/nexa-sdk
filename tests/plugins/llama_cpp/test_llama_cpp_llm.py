@@ -63,16 +63,23 @@ def test_generate_stream(llama_cpp_llm_paths, device_map):
 @pytest.mark.parametrize(('prompt', 'expected'), LLM_QUALITY_PROMPTS)
 def test_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected):
     # Mirrors run_scorecard_posix.py:_section_quality_checks (test-llama.cpp):
-    # same prompts, n_predict=256, seed=1, plugin-default sampler (NOT greedy
-    # — see _quality_data.py module docstring), case-insensitive substring
-    # match. A regression on either side is directly comparable.
+    # same prompts, n_predict=256, seed=1, plugin-default sampler, chat
+    # template applied. Upstream's `llama-completion` runs without `-no-cnv`,
+    # so COMMON_CONVERSATION_MODE_AUTO wraps the prompt in the model's chat
+    # template; feeding the raw string instead lets Qwen3-style models continue
+    # in completion mode and the keyword only appears by sampler luck.
     with geniex.AutoModelForCausalLM.from_pretrained(
         LLAMA_CPP_LLM_MODEL,
         quant=LLAMA_CPP_LLM_QUANT,
         device_map=device_map,
     ) as llm:
+        formatted = llm.tokenizer.apply_chat_template(
+            [{'role': 'user', 'content': prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
         out = llm.generate(
-            prompt,
+            formatted,
             max_new_tokens=LLM_QUALITY_MAX_NEW_TOKENS,
             temperature=LLM_QUALITY_TEMPERATURE,
             seed=LLM_QUALITY_SEED,

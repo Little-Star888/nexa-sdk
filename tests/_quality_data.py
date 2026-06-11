@@ -16,20 +16,22 @@
 
 Mirrors the LLM and VLM keyword checks from upstream test-llama.cpp's QDC
 scorecard (`scripts/snapdragon/qdc/tests/run_scorecard_posix.py`). Prompts,
-seed, n-predict, and substring-match logic stay aligned with upstream so a
-regression on either side is comparable across the two suites.
+seed, n-predict, sampler defaults, chat-template wrapping, and substring-match
+logic stay aligned with upstream so a regression on either side is comparable
+across the two suites.
 
-Two intentional deltas vs. upstream:
+Chat-template note: upstream invokes `llama-completion` without `-no-cnv`, so
+`COMMON_CONVERSATION_MODE_AUTO` wraps the prompt in the model's chat template
+(visible in the scorecard log as `chat template is available, enabling
+conversation mode`). The test cases call `apply_chat_template` themselves
+before `generate()` to reproduce that path — feeding the raw string lets
+Qwen3-style models drift into completion mode and the keyword only appears
+by sampler luck.
 
-- temperature is left at the SDK's `0.0 = defer-to-bundle-default` sentinel
-  (see bindings/python/geniex/generation/config.py); the llama.cpp plugin
-  resolves that to 0.8 (params.cpp). Upstream `llama-completion` similarly
-  doesn't pass `--temp`, so it lands at the same plugin default — both sides
-  sample, both rely on the matching `seed=1` for determinism. NOT greedy.
-- VLM only ships the dog photo + first keyword set. Upstream also iterates a
-  Qualcomm AIHub product image with vocabulary like person/phone/text; that
-  second image is deferred to keep the in-repo asset surface small. Tracked
-  alongside the perplexity follow-up.
+One intentional delta vs. upstream: VLM only ships the dog photo + first
+keyword set. Upstream also iterates a Qualcomm AIHub product image with
+vocabulary like person/phone/text; that second image is deferred to keep
+the in-repo asset surface small. Tracked alongside the perplexity follow-up.
 """
 
 from __future__ import annotations

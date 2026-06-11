@@ -46,15 +46,21 @@ def test_generate_blocking(qairt_llm_paths, device_map):
 @pytest.mark.parametrize('device_map', ['npu'])
 @pytest.mark.parametrize(('prompt', 'expected'), LLM_QUALITY_PROMPTS)
 def test_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
-    # Same prompts / sampler as the llama_cpp matrix so QAIRT NPU output is
-    # comparable cross-plugin. Upstream test-llama.cpp's scorecard has no
-    # QAIRT path; this is geniex's own quality regression on the NPU.
+    # Same prompts / sampler as the llama_cpp matrix, same chat-template
+    # wrapping, so QAIRT NPU output is comparable cross-plugin. Upstream
+    # test-llama.cpp's scorecard has no QAIRT path; this is geniex's own
+    # quality regression on the NPU.
     with geniex.AutoModelForCausalLM.from_pretrained(
         QAIRT_LLM_MODEL,
         device_map=device_map,
     ) as llm:
+        formatted = llm.tokenizer.apply_chat_template(
+            [{'role': 'user', 'content': prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
         out = llm.generate(
-            prompt,
+            formatted,
             max_new_tokens=LLM_QUALITY_MAX_NEW_TOKENS,
             temperature=LLM_QUALITY_TEMPERATURE,
             seed=LLM_QUALITY_SEED,
