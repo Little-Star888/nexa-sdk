@@ -32,6 +32,7 @@ import (
 
 	geniex_sdk "github.com/qcom-it-nexa-ai/geniex/bindings/go"
 	"github.com/qcom-it-nexa-ai/geniex/cli/internal/render"
+	"github.com/qcom-it-nexa-ai/geniex/cli/internal/store"
 )
 
 var (
@@ -367,6 +368,20 @@ func pullModel(ctx context.Context, name string, quant string) error {
 		Hub:         hub,
 		LocalPath:   localPath,
 		DisplayName: "",
+	}
+
+	// Resolve a chipset before the spinner (the picker can't share the terminal
+	// with one): configured value wins, then a host probe, then an interactive
+	// picker. The SDK decides whether the chipset is actually used for this pull.
+	if dev, _, _ := store.Get().ConfigGet(store.ConfigKeyDevice); dev != "" {
+		in.Chipset = dev
+	} else if detected, _ := geniex_sdk.ModelDetectChipset(); detected != "" {
+		in.Chipset = detected
+	} else {
+		fmt.Println(render.GetTheme().Info.Sprint("No device configured. Please select your device first."))
+		if in.Chipset, err = pickChipset(); err != nil {
+			return err
+		}
 	}
 
 	// Validate --model-type early so we fail before downloading anything, and
