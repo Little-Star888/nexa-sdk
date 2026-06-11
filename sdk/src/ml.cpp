@@ -30,23 +30,9 @@ void* _crypto_dummy = (void*)OpenSSL_version;
 
 using namespace geniex;
 
-namespace {
-
-bool use_color() {
-#ifdef _WIN32
-    return false;
-#else
-    const char* no_color = std::getenv("NO_COLOR");
-    return !(no_color != nullptr && no_color[0] != '\0');
-#endif
-}
-
-}  // namespace
-
 // Default log handler — always compiled. Emits to stderr with optional ANSI
 // coloring (disabled when NO_COLOR is set). Filtering is the embedder's job.
 static void default_log_handler(geniex_LogLevel level, const char* msg) {
-    const bool  color = use_color();
     const char* prefix;
     const char* colorCode;
     switch (level) {
@@ -73,11 +59,7 @@ static void default_log_handler(geniex_LogLevel level, const char* msg) {
         default:
             return;
     }
-    if (color) {
-        std::cerr << colorCode << prefix << msg << "\033[0m" << std::endl;
-    } else {
-        std::cerr << prefix << msg << std::endl;
-    }
+    std::cerr << colorCode << prefix << msg << "\033[0m" << std::endl;
 }
 
 int32_t geniex_init(void) {
