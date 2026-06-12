@@ -92,9 +92,10 @@ def test_bench():
         )
         if res.returncode != 0:
             failures.append(ctx)
-    count = run_adb_command(f"ls {RESULTS_PATH} | wc -l", check=False).stdout.strip()
+    listing = run_adb_command(f"ls {RESULTS_PATH}", check=False).stdout
+    n_json = sum(1 for ln in listing.splitlines() if ln.strip().endswith(".json"))
     assert not failures, f"geniex-bench failed for ctx={failures}"
-    assert count and int(count.split()[-1]) > 0, "no cell JSON produced on device"
+    assert n_json > 0, f"no cell JSON produced on device (ls {RESULTS_PATH}: {listing!r})"
 
 
 if __name__ == "__main__":
