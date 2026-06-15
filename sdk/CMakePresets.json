@@ -68,7 +68,7 @@
       "cacheVariables": {
         "ANDROID_ABI": "arm64-v8a",
         "ANDROID_PLATFORM": "android-31",
-        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/arm64-android-llvm.cmake",
         "PREBUILT_LIB_DIR": "android_aarch64"
       }
     },
@@ -157,4 +157,3 @@
     }
   ]
 }
-

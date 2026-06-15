@@ -39,7 +39,7 @@ int resolve_n_threads(int requested, Device device) {
     static const int cpu_matrix[3][3] = {
         {cpu_threads, 6, 6},  // Linux
         {cpu_threads, 6, 6},  // Windows
-        {cpu_threads, 6, 6}   // Android
+        {6, 6, 6}             // Android
     };
 
     if (requested > 0) return requested;
@@ -71,7 +71,7 @@ llama_context_params build_context_params(const geniex_ModelConfig& config, int3
     static const uint32_t ubatch_matrix[3][3] = {
         {2048, 512, 1024},  // Linux
         {2048, 512, 1024},  // Windows
-        {2048, 512, 1024}   // Android
+        {1024, 512, 1024}   // Android
     };
     static const bool fa_matrix[3][3] = {
         {true, false, true},  // Linux
@@ -112,12 +112,12 @@ ggml_threadpool_params build_threadpool_params(int n_threads, Device device) {
     static const bool pin_matrix[3][3] = {
         {false, true, true},    // Linux
         {false, false, false},  // Windows
-        {false, false, false}   // Android
+        {true, true, true}      // Android
     };
     static const uint32_t poll_matrix[3][3] = {
-        {0, 1000, 1000},  // Linux
-        {0, 0, 0},        // Windows
-        {0, 0, 0}         // Android
+        {0, 1000, 1000},    // Linux
+        {0, 0, 0},          // Windows
+        {1000, 1000, 1000}  // Android
     };
 
     int      reserved_cores = 2;
