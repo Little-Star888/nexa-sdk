@@ -63,10 +63,11 @@ geniex infer qualcomm/Qwen3-4B
 
 ### 自行转换的 QAIRT 模型包
 
-`qualcomm/*` 命名空间之外的 QAIRT 模型包需要先下载到本地，再用 `--model-hub localfs` 拉取。
+`qualcomm/*` 命名空间之外的 QAIRT 模型包需要先下载到本地，再用 `--local-path` 拉取。
 
-确保已安装 [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/en/guides/cli)，然后在 Windows ARM64 上：
+确保已安装 [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/en/guides/cli)：
 
+<CodeGroup>
 ```powershell windows
 # 设置模型名（必须与 HF 子目录名完全一致）
 $model = "llama_v3_2_1b_instruct"
@@ -77,12 +78,30 @@ hf download yichqian/geniex-qairt-models `
   --include "$model/**"
 
 # 使用下载好的目录拉取（绝对路径）
-geniex pull local/$model --model-hub localfs `
-  --local-path (Resolve-Path "$model\$model").Path
+geniex pull local/$model --local-path (Resolve-Path "$model\$model").Path
 
 # 运行推理
 geniex infer local/$model
 ```
+
+```bash linux
+# 设置模型名（必须与 HF 子目录名完全一致）
+model="llama_v3_2_1b_instruct"
+
+# 从 Hugging Face 下载模型
+hf download yichqian/geniex-qairt-models \
+  --local-dir "$model" \
+  --include "$model/**"
+
+# 使用下载好的目录拉取（绝对路径）
+geniex pull "local/$model" --local-path "$(realpath "$model/$model")"
+
+# 运行推理
+geniex infer "local/$model"
+```
+</CodeGroup>
+
+<Note>`geniex pull` 会将模型文件复制到本地缓存。拉取成功后，可以安全删除原始下载文件以释放磁盘空间。使用 `geniex list` 确认模型已缓存。</Note>
 
 <Note>QAIRT 仅 NPU。传入 `--device npu` 或省略该标志。</Note>
 
