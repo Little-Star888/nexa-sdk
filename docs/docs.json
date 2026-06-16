@@ -134,7 +134,7 @@
                 ]
               },
               {
-                "group": "Python",
+                "group": "Python 开发",
                 "icon": "python",
                 "pages": [
                   "cn/run/python/install",
@@ -143,14 +143,14 @@
                 ]
               },
               {
-                "group": "Linux (Docker)",
+                "group": "Linux（Docker）",
                 "icon": "docker",
                 "pages": [
                   "cn/run/linux/install"
                 ]
               },
               {
-                "group": "Android (Kotlin)",
+                "group": "Android（Kotlin）",
                 "icon": "android",
                 "pages": [
                   "cn/run/android/install",
