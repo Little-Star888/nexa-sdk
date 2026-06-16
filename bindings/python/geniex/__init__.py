@@ -16,9 +16,9 @@ from . import model_manager
 from ._ffi._api import (
     GenieXError,
     deinit,
-    get_device_list,
-    get_plugin_list,
+    get_compute_unit_list,
     get_plugin_version,
+    get_runtime_list,
     init,
     set_log_level,
     version,
@@ -43,8 +43,8 @@ __all__ = [
     'set_log_level',
     'version',
     'get_plugin_version',
-    'get_plugin_list',
-    'get_device_list',
+    'get_runtime_list',
+    'get_compute_unit_list',
     'resolve_device_map',
     'model_manager',
 ]

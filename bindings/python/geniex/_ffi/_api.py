@@ -133,8 +133,8 @@ GENIEX_ERROR_COMMON_PLUGIN_INVALID = -100302
 GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH = -200004
 
 
-def _unknown_plugin_message(plugin_id: str, available: list[str]) -> str:
-    return f"Unknown plugin: {plugin_id}. Available plugins: {', '.join(sorted(available))}."
+def _unknown_runtime_message(runtime: str, available: list[str]) -> str:
+    return f"Unknown runtime: {runtime}. Available runtimes: {', '.join(sorted(available))}."
 
 
 def _check(code: int) -> None:
@@ -355,14 +355,14 @@ def _str_list_to_c(strings: list[str]):
     return arr, count
 
 
-def get_plugin_list() -> list[str]:
-    """Return the plugin ids registered with libgeniex.
+def get_runtime_list() -> list[str]:
+    """Return the runtime ids registered with libgeniex.
 
     Raises :class:`RuntimeError` if :func:`init` has not been called — the
-    plugin registry is populated by ``geniex_init`` and would otherwise
+    runtime registry is populated by ``geniex_init`` and would otherwise
     silently return ``[]``.
     """
-    _require_init('get_plugin_list')
+    _require_init('get_runtime_list')
     _ensure_bound()
     lib = load_library()
     out = geniex_GetPluginListOutput()
@@ -373,18 +373,18 @@ def get_plugin_list() -> list[str]:
     return result
 
 
-def get_device_list(plugin_id: str) -> list[tuple[str, str]]:
-    """Return ``[(device_id, device_name), ...]`` for ``plugin_id``.
+def get_compute_unit_list(runtime: str) -> list[tuple[str, str]]:
+    """Return ``[(compute_unit, compute_unit_name), ...]`` for ``runtime``.
 
     Raises :class:`RuntimeError` if :func:`init` has not been called.
     """
-    _require_init('get_device_list')
+    _require_init('get_compute_unit_list')
     _ensure_bound()
-    available = get_plugin_list()
-    if plugin_id not in available:
-        raise GenieXError(GENIEX_ERROR_COMMON_PLUGIN_INVALID, _unknown_plugin_message(plugin_id, available))
+    available = get_runtime_list()
+    if runtime not in available:
+        raise GenieXError(GENIEX_ERROR_COMMON_PLUGIN_INVALID, _unknown_runtime_message(runtime, available))
     lib = load_library()
-    inp = geniex_GetDeviceListInput(plugin_id=plugin_id.encode())
+    inp = geniex_GetDeviceListInput(plugin_id=runtime.encode())
     out = geniex_GetDeviceListOutput()
     _check(lib.geniex_get_device_list(byref(inp), byref(out)))
     result = [(out.device_ids[i].decode(), out.device_names[i].decode()) for i in range(out.device_count)]

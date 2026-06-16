@@ -131,8 +131,8 @@ def test_reject_qairt_bundle_passes():
 
 
 # ---------------------------------------------------------------------------
-# #715: get_plugin_list / get_device_list raise before init() instead of
-# silently returning [] (which made misuse look like "no plugins available").
+# #715: get_runtime_list / get_compute_unit_list raise before init() instead of
+# silently returning [] (which made misuse look like "no runtimes available").
 # ---------------------------------------------------------------------------
 
 
@@ -141,14 +141,14 @@ def _runtime_uninitialized(monkeypatch):
     monkeypatch.setattr(_ffi_api, '_initialized', False)
 
 
-def test_get_plugin_list_raises_before_init(_runtime_uninitialized):
-    with pytest.raises(RuntimeError, match=r'get_plugin_list\(\).*geniex\.init\(\)'):
-        _ffi_api.get_plugin_list()
+def test_get_runtime_list_raises_before_init(_runtime_uninitialized):
+    with pytest.raises(RuntimeError, match=r'get_runtime_list\(\).*geniex\.init\(\)'):
+        _ffi_api.get_runtime_list()
 
 
-def test_get_device_list_raises_before_init(_runtime_uninitialized):
-    with pytest.raises(RuntimeError, match=r'get_device_list\(\).*geniex\.init\(\)'):
-        _ffi_api.get_device_list('llama_cpp')
+def test_get_compute_unit_list_raises_before_init(_runtime_uninitialized):
+    with pytest.raises(RuntimeError, match=r'get_compute_unit_list\(\).*geniex\.init\(\)'):
+        _ffi_api.get_compute_unit_list('llama_cpp')
 
 
 # ---------------------------------------------------------------------------
@@ -287,19 +287,21 @@ def test_existing_image_path_passes(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# #716: get_device_list message names the bad id + available plugins
+# #716: get_compute_unit_list message names the bad id + available runtimes
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_plugin_message_names_bad_id_and_lists_available():
-    from geniex._ffi._api import _unknown_plugin_message
+def test_unknown_runtime_message_names_bad_id_and_lists_available():
+    from geniex._ffi._api import _unknown_runtime_message
 
-    msg = _unknown_plugin_message('wenwen_plugin', ['qairt', 'llama_cpp'])
-    assert 'Unknown plugin: wenwen_plugin' in msg
+    msg = _unknown_runtime_message('wenwen_runtime', ['qairt', 'llama_cpp'])
+    assert 'Unknown runtime: wenwen_runtime' in msg
     assert 'llama_cpp' in msg and 'qairt' in msg
 
 
-def test_unknown_plugin_message_sorts_available_for_stability():
-    from geniex._ffi._api import _unknown_plugin_message
+def test_unknown_runtime_message_sorts_available_for_stability():
+    from geniex._ffi._api import _unknown_runtime_message
 
-    assert _unknown_plugin_message('x', ['qairt', 'llama_cpp']) == _unknown_plugin_message('x', ['llama_cpp', 'qairt'])
+    assert _unknown_runtime_message('x', ['qairt', 'llama_cpp']) == _unknown_runtime_message(
+        'x', ['llama_cpp', 'qairt']
+    )

@@ -29,7 +29,7 @@ from .conftest import LLAMA_CPP_MODEL, LLAMA_CPP_QUANT
 def test_get_paths_returns_existing_files(llama_cpp_paths):
     assert os.path.isfile(llama_cpp_paths.model_path), llama_cpp_paths.model_path
     assert os.path.isdir(llama_cpp_paths.model_dir), llama_cpp_paths.model_dir
-    assert llama_cpp_paths.plugin_id
+    assert llama_cpp_paths.runtime
 
 
 def test_list_contains_pulled_model(llama_cpp_paths):
@@ -45,7 +45,7 @@ def test_ensure_cached_idempotent(llama_cpp_paths):
         calls.append(len(files))
         return True
 
-    paths = _mm.ensure_cached(LLAMA_CPP_MODEL, quant=LLAMA_CPP_QUANT, hub='hf', on_progress=_on_progress)
+    paths = _mm.ensure_cached(LLAMA_CPP_MODEL, precision=LLAMA_CPP_QUANT, hub='hf', on_progress=_on_progress)
     assert paths.model_path == llama_cpp_paths.model_path
     # No in-flight progress ticks expected on a warm cache.
     assert all(n >= 0 for n in calls)

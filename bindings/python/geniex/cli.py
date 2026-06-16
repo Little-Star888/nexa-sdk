@@ -36,9 +36,9 @@ from geniex import (
     GenieXError,
     GenieXVLM,
     _progress,
-    get_device_list,
-    get_plugin_list,
+    get_compute_unit_list,
     get_plugin_version,
+    get_runtime_list,
     init,
     set_log_level,
     version,
@@ -113,7 +113,7 @@ def _ensure_downloaded(
             if hub in ('aihub', 'localfs', 'local'):
                 _mm.pull(
                     model,
-                    quant=quant,
+                    precision=quant,
                     hub=hub,
                     local_path=local_path,
                     hf_token=os.environ.get('GENIEX_HFTOKEN'),
@@ -126,7 +126,7 @@ def _ensure_downloaded(
             else:
                 result['paths'] = _mm.ensure_cached(
                     model,
-                    quant=quant,
+                    precision=quant,
                     hub=hub,
                     hf_token=os.environ.get('GENIEX_HFTOKEN'),
                     on_progress=printer,
@@ -308,12 +308,12 @@ def _cmd_version(_args: argparse.Namespace) -> int:
 
 def _cmd_devices(_args: argparse.Namespace) -> int:
     init()
-    plugins = get_plugin_list()
+    plugins = get_runtime_list()
     if not plugins:
         print('No plugins available.')
         return 0
     for plugin_id in plugins:
-        devices = get_device_list(plugin_id)
+        devices = get_compute_unit_list(plugin_id)
         print(f'{plugin_id}:')
         if not devices:
             print('  (no devices)')
@@ -339,7 +339,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     t0 = time.monotonic()
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
-        quant=args.quant,
+        precision=args.quant,
         device_map=args.device,
         n_ctx=args.n_ctx,
     )

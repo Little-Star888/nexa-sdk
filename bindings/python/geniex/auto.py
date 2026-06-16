@@ -23,7 +23,7 @@ from ctypes import byref, c_void_p
 
 from . import _progress
 from . import model_manager as _mm
-from ._ffi._api import GenieXError, _check, ensure_init, get_plugin_list, load_library, resolve_device
+from ._ffi._api import GenieXError, _check, ensure_init, get_runtime_list, load_library, resolve_device
 from ._ffi._types import geniex_LlmCreateInput, geniex_ModelConfig, geniex_VlmCreateInput
 from .model_manager import ProgressCallback
 from .modeling import GenieXLLM, GenieXVLM
@@ -66,28 +66,28 @@ def resolve_device_map(
     device_map: str,
     model_name: str | None = None,
 ) -> tuple[str | None, str | None, int | None]:
-    """Resolve a ``device_map`` string to ``(plugin_id, device_id, ngl_override)``.
+    """Resolve a ``device_map`` string to ``(runtime, compute_unit, ngl_override)``.
 
-    Accepted forms: ``"auto"`` / ``""`` (first plugin + SDK default),
-    ``"cpu" | "gpu" | "npu" | "hybrid"`` (alias against the plugin that owns
-    it — cpu/gpu/hybrid → llama_cpp, npu → qairt), ``"<plugin_id>"``, or
-    ``"<plugin_id>:<device_id>"``.
+    Accepted forms: ``"auto"`` / ``""`` (first runtime + SDK default),
+    ``"cpu" | "gpu" | "npu" | "hybrid"`` (alias against the runtime that owns
+    it — cpu/gpu/hybrid → llama_cpp, npu → qairt), ``"<runtime>"``, or
+    ``"<runtime>:<compute-unit>"``.
 
     ``ngl_override`` is ``None`` unless the alias forces a specific
     ``n_gpu_layers`` (``cpu`` → 0, ``hybrid`` → 999).
     """
     if not device_map or device_map == 'auto':
-        plugins = get_plugin_list()
-        if not plugins:
+        runtimes = get_runtime_list()
+        if not runtimes:
             return None, None, None
-        return _call_sdk(plugins[0], model_name, None)
+        return _call_sdk(runtimes[0], model_name, None)
 
     key = device_map.lower()
 
     if key in _KNOWN_ALIASES:
-        plugins = get_plugin_list()
+        runtimes = get_runtime_list()
         owner = _ALIAS_OWNERS[key]
-        plugin_id = owner if owner in plugins else (plugins[0] if plugins else PLUGIN_LLAMA_CPP)
+        plugin_id = owner if owner in runtimes else (runtimes[0] if runtimes else PLUGIN_LLAMA_CPP)
         return _call_sdk(plugin_id, model_name, key)
 
     if ':' in device_map:
@@ -96,7 +96,7 @@ def resolve_device_map(
             return _call_sdk(plugin_id, model_name, device_id.lower())
         if plugin_id == PLUGIN_QAIRT and device_id.upper() != 'NPU':
             _logger.warning(
-                'qairt plugin only supports NPU inference; ignoring device_map=%r and running on NPU',
+                'qairt runtime only supports NPU inference; ignoring device_map=%r and running on NPU',
                 device_map,
             )
             return plugin_id, 'NPU', None
@@ -225,10 +225,10 @@ _QAIRT_SILENT_NCTX = 0
 def _build_model_config(plugin_id: str | None, n_ctx: int, n_gpu_layers: int, **kwargs) -> geniex_ModelConfig:
     if plugin_id == PLUGIN_QAIRT:
         if n_gpu_layers not in (0, _QAIRT_SILENT_NGL):
-            _logger.warning('qairt plugin does not consume n_gpu_layers=%d; forcing 0', n_gpu_layers)
+            _logger.warning('qairt runtime does not consume n_gpu_layers=%d; forcing 0', n_gpu_layers)
         n_gpu_layers = 0
         if n_ctx != _QAIRT_SILENT_NCTX:
-            _logger.warning('qairt plugin does not consume n_ctx=%d; forcing 0', n_ctx)
+            _logger.warning('qairt runtime does not consume n_ctx=%d; forcing 0', n_ctx)
             n_ctx = 0
     cfg = geniex_ModelConfig(n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
     _int_fields = {'n_threads', 'n_threads_batch', 'n_batch', 'n_ubatch', 'n_seq_max', 'max_tokens'}
@@ -360,7 +360,7 @@ class AutoModelForCausalLM:
         model_name_or_path: str,
         *,
         model_name: str | None = None,
-        quant: str | None = None,
+        precision: str | None = None,
         device_map: str = 'auto',
         n_ctx: int = 0,
         n_gpu_layers: int = 999,
@@ -387,13 +387,13 @@ class AutoModelForCausalLM:
         ensure_init()
         model_path, _mmproj, _tok, paths = _resolve_model_sources(
             model_name_or_path,
-            quant,
+            precision,
             hf_token,
             progress,
             model_name,
         )
         resolved_name = model_name or (paths.model_name if paths and paths.model_name else model_name_or_path)
-        effective_device_map = _apply_plugin_hint(device_map, paths.plugin_id if paths else None)
+        effective_device_map = _apply_plugin_hint(device_map, paths.runtime if paths else None)
         plugin_id, device_id, ngl_override = resolve_device_map(effective_device_map, resolved_name)
         _reject_gguf_on_qairt(model_path, plugin_id, device_map)
         if ngl_override is not None:
@@ -403,7 +403,7 @@ class AutoModelForCausalLM:
         meta = {
             'backend': plugin_id,
             'device': device_id,
-            'quant': quant,
+            'quant': precision,
             'model_path': model_path,
             'supports_thinking': _detect_supports_thinking(model_path, resolved_tok_path),
         }
@@ -454,7 +454,7 @@ class AutoModelForVision2Seq:
         model_name_or_path: str,
         *,
         model_name: str | None = None,
-        quant: str | None = None,
+        precision: str | None = None,
         device_map: str = 'auto',
         n_ctx: int = 0,
         n_gpu_layers: int = 999,
@@ -476,13 +476,13 @@ class AutoModelForVision2Seq:
         ensure_init()
         model_path, _mmproj, _tok, paths = _resolve_model_sources(
             model_name_or_path,
-            quant,
+            precision,
             hf_token,
             progress,
             model_name,
         )
         resolved_name = model_name or (paths.model_name if paths and paths.model_name else model_name_or_path)
-        effective_device_map = _apply_plugin_hint(device_map, paths.plugin_id if paths else None)
+        effective_device_map = _apply_plugin_hint(device_map, paths.runtime if paths else None)
         plugin_id, device_id, ngl_override = resolve_device_map(effective_device_map, resolved_name)
         _reject_gguf_on_qairt(model_path, plugin_id, device_map)
         if ngl_override is not None:
@@ -492,7 +492,7 @@ class AutoModelForVision2Seq:
         meta = {
             'backend': plugin_id,
             'device': device_id,
-            'quant': quant,
+            'quant': precision,
             'model_path': model_path,
             'supports_thinking': _detect_supports_thinking(model_path, resolved_tok_path),
         }

@@ -123,7 +123,7 @@ def test_pull_from_extracted_dir_produces_qairt_paths(tmp_path, cleanup_model):
     cleanup_model.append(name)
 
     paths = _mm.get_paths(name)
-    assert paths.plugin_id == 'qairt'
+    assert paths.runtime == 'qairt'
     # Lex-first .bin is the entrypoint.
     assert os.path.basename(paths.model_path) == 'shard_a.bin'
     assert os.path.isfile(paths.model_path)
@@ -166,7 +166,7 @@ def test_pull_from_local_zip_handles_stored_and_deflate(tmp_path, cleanup_model)
     cleanup_model.append(name)
 
     paths = _mm.get_paths(name)
-    assert paths.plugin_id == 'qairt'
+    assert paths.runtime == 'qairt'
     # Lex-first .bin between {shard_a.bin, weights.bin} is shard_a.bin.
     assert os.path.basename(paths.model_path) == 'shard_a.bin'
 
