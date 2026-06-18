@@ -144,6 +144,90 @@ For `llama_cpp` only — set `compute_unit` on `LlmCreateInput`:
 
 Qualcomm AI Engine Direct ignores this — `cpu`/`gpu` are coerced to NPU with a warning.
 
+## **Using a local model**
+
+If the weights are already on the device — side-loaded via `adb push`, bundled in your app's files dir, or produced by another tool — point the model manager at that directory instead of a hub. Set `hub = HubSource.LOCALFS` and `local_path` to the on-disk location. `pullFlow` imports it into the SDK cache (no network), after which `getPaths` / `LlmWrapper` work exactly as they do for a downloaded model.
+
+The `model_name` here is just the cache key — any `org/repo`-style string works; a `local/...` prefix is a common convention. The **runtime is decided by the imported layout, not by you**: a GGUF directory imports as `llama_cpp`, an AI Hub directory/zip imports as `qairt`. Prefer `paths.runtime_id` (authoritative) over hard-coding `runtime_id` when you import models of mixed types.
+
+### Local GGUF model (llama.cpp)
+
+`local_path` is a directory containing the `.gguf` file(s). A `geniex.json` manifest is used if present; otherwise the layout is inferred from the file names. For a VLM, drop the `mmproj-*.gguf` into the same directory.
+
+```kotlin
+ModelManagerWrapper.pullFlow(
+    ModelPullInput(
+        model_name = "local/qwen3-0.6b",
+        hub        = HubSource.LOCALFS,
+        local_path = "/data/local/tmp/qwen3-0.6b",   // dir containing *.gguf
+    )
+).collect { event ->
+    when (event) {
+        is ModelManagerWrapper.PullEvent.Progress  -> /* update UI */
+        ModelManagerWrapper.PullEvent.Completed    -> /* imported */
+        is ModelManagerWrapper.PullEvent.Error     -> /* show error */
+    }
+}
+```
+
+Then load with `runtime_id = "llama_cpp"` — identical to the downloaded-model flow:
+
+```kotlin
+val paths = ModelManagerWrapper.getPaths("local/qwen3-0.6b")
+    ?: error("Model not imported")
+
+val llm = LlmWrapper.builder()
+    .llmCreateInput(
+        LlmCreateInput(
+            model_name = paths.model_name,
+            model_path = paths.model_path,
+            config     = ModelConfig(nCtx = 4096),
+            runtime_id  = "llama_cpp",
+            compute_unit  = null,   // null → NPU on Snapdragon (recommended)
+        )
+    )
+    .build()
+    .getOrThrow()
+```
+
+### Local Qualcomm AI Hub model (qairt)
+
+`local_path` points to either an extracted AI Hub directory (a `metadata.json` plus one or more `.bin` shards) or the AI Hub `.zip` as downloaded from Qualcomm AI Hub. The plugin is forced to `qairt` and the modality (LLM vs VLM) is read from `metadata.json`. No `chipset` is required — the bundle is already compiled for a specific one.
+
+```kotlin
+ModelManagerWrapper.pullFlow(
+    ModelPullInput(
+        model_name = "local/qwen3-4b-2507",
+        hub        = HubSource.LOCALFS,
+        local_path = "/data/local/tmp/Qwen3-4B-Instruct-2507",  // extracted dir or .zip
+    )
+).collect { /* Progress / Completed / Error */ }
+```
+
+Then load with `runtime_id = "qairt"`:
+
+```kotlin
+val paths = ModelManagerWrapper.getPaths("local/qwen3-4b-2507")
+    ?: error("Model not imported")
+
+val llm = LlmWrapper.builder()
+    .llmCreateInput(
+        LlmCreateInput(
+            model_name = paths.model_name,
+            model_path = paths.model_path,
+            config     = ModelConfig(max_tokens = 2048, enable_thinking = false),
+            runtime_id  = "qairt",
+            compute_unit  = null,   // qairt is NPU-only
+        )
+    )
+    .build()
+    .getOrThrow()
+```
+
+<Note>
+You don't author a `geniex.json` for a local import — the model manager generates one in its cache during the import. What it reads from `local_path` depends on the layout: a GGUF folder needs a `*.gguf` (an existing `geniex.json` is honored if present, otherwise the manifest is inferred from the filenames); a QAIRT folder is recognized by `metadata.json` + `.bin` shards (or a `.zip`). For QAIRT, import the extracted bundle or `.zip` exactly as it ships from Qualcomm AI Hub — a directory of loose `.bin` files with no `metadata.json` won't be detected.
+</Note>
+
 ## **Using the sample app**
 
 The [sample app](https://github.com/qcom-ai-hub/geniex/tree/main/examples/android) at `examples/android/` is a fully wired chat client built on top of the snippets above. A few patterns worth borrowing when you build your own UI:
