@@ -58,6 +58,17 @@ import Feedback from "/snippets/page-feedback.mdx";
     Qualcomm AI Engine Direct requires a pre-compiled Qualcomm AI Hub Model — adding a new one means registering it on the C++ side first.
   </Accordion>
 
+  <Accordion title="How do I set a Hugging Face token for gated models?">
+    Some Hugging Face models require you to accept a license and authenticate. Set the `HF_TOKEN` environment variable:
+
+    - **Windows:** `$env:HF_TOKEN = "hf_..."`
+    - **Linux:** `export HF_TOKEN="hf_..."`
+
+    Or run `huggingface-cli login` to persist the token to `~/.cache/huggingface/token`.
+
+    Get your token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens). For full setup steps, see [Set up a Hugging Face token](/en/models/supported#set-up-a-hugging-face-token).
+  </Accordion>
+
   <Accordion title="Where's the supported models list?">
     [Models](/en/models/supported) — split by runtime (Qualcomm AI Engine Direct, llama.cpp).
   </Accordion>

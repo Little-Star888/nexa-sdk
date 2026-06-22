@@ -58,6 +58,17 @@ import Feedback from "/snippets/page-feedback.mdx";
     Qualcomm AI Engine Direct 需要预编译的 Qualcomm AI Hub 模型——新增模型需先在 C++ 侧注册。
   </Accordion>
 
+  <Accordion title="如何为受限模型设置 Hugging Face 令牌？">
+    部分 Hugging Face 模型需要你接受许可协议并进行身份验证。设置 `HF_TOKEN` 环境变量：
+
+    - **Windows：** `$env:HF_TOKEN = "hf_..."`
+    - **Linux：** `export HF_TOKEN="hf_..."`
+
+    也可运行 `huggingface-cli login` 将令牌持久化到 `~/.cache/huggingface/token`。
+
+    在 [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) 获取令牌。完整设置步骤见[设置 Hugging Face 令牌](/cn/models/supported#设置-hugging-face-令牌)。
+  </Accordion>
+
   <Accordion title="受支持模型列表在哪里？">
     [模型](/cn/models/supported) —— 按运行环境拆分（Qualcomm AI Engine Direct、llama.cpp）。
   </Accordion>
