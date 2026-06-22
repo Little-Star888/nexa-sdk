@@ -3,9 +3,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // ---------------------------------------------------------------------
 package com.geniex.demo.utils;
-/**
- * Created by fuli.niu on 2016/8/19.
- */
 
 import android.util.Log;
 
@@ -15,9 +12,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 
-/**
- * Created by fuli.niu 2016/8/19
- */
 public class ExecShell {
     private static String LOG_TAG = ExecShell.class.getName();
 

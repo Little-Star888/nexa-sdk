@@ -45,7 +45,6 @@ import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.RecyclerView
 import com.gyf.immersionbar.ktx.immersionBar
-import com.hjq.toast.Toaster
 import com.geniex.demo.bean.ModelData
 import com.geniex.demo.bean.getSupportPluginIds
 import com.geniex.demo.bean.isNpuModel
@@ -447,7 +446,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             return
         }
         if (downloadJob?.isActive == true) {
-            Toaster.show("${downloadingModelData?.displayName ?: "a model"} is already downloading")
+            Toast.makeText(this@MainActivity, "${downloadingModelData?.displayName ?: "a model"} is already downloading", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -469,7 +468,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             (hub == HubSource.AUTO && isAiHubName)
         if (willUseAiHub && selectModelData.chipset.isNullOrBlank()) {
             llDownloading.visibility = View.GONE
-            Toaster.show("AI Hub models require a chipset. Update model_list.json.")
+            Toast.makeText(this@MainActivity, "AI Hub models require a chipset. Update model_list.json.", Toast.LENGTH_SHORT).show()
             return
         }
         val input = ModelPullInput(
@@ -502,7 +501,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
                     is ModelManagerWrapper.PullEvent.Completed -> {
                         runOnUiThread {
                             llDownloading.visibility = View.GONE
-                            Toaster.show("${selectModelData.displayName} downloaded")
+                            Toast.makeText(this@MainActivity, "${selectModelData.displayName} downloaded", Toast.LENGTH_SHORT).show()
                         }
                     }
                     is ModelManagerWrapper.PullEvent.Error -> {
@@ -555,7 +554,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
                 if (downloadingModelData?.id == selectModelId) {
                     binding.llDownloading.visibility = View.VISIBLE
                 } else {
-                    Toaster.show("${downloadingModelData?.displayName} is currently downloading.")
+                    Toast.makeText(this@MainActivity, "${downloadingModelData?.displayName} is currently downloading.", Toast.LENGTH_SHORT).show()
                 }
                 return@setOnClickListener
             }
@@ -582,7 +581,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             modelScope.launch {
                 if (!isModelDownloaded(selectModelData)) {
                     runOnUiThread {
-                        Toaster.showLong("Model not downloaded — tap Download first.")
+                        Toast.makeText(this@MainActivity, "Model not downloaded — tap Download first.", Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }

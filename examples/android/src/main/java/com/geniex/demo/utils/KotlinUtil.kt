@@ -31,7 +31,7 @@ inline fun <reified VB : ViewBinding> Activity.inflate() =
 inline fun <T : ViewBinding> Activity.viewBinding(crossinline bindingInflater: (LayoutInflater) -> T) =
     lazy(LazyThreadSafetyMode.NONE) {
         val invoke = bindingInflater.invoke(layoutInflater)
-        setContentView(invoke.root) //可选
+        setContentView(invoke.root) // optional
         invoke
     }
 
@@ -75,4 +75,3 @@ class FragmentBindingDelegate<VB : ViewBinding>(private val clazz: Class<VB>) :
         return binding
     }
 }
-

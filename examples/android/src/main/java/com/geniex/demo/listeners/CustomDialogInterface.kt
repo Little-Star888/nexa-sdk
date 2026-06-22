@@ -68,4 +68,3 @@ abstract class CustomDialogInterface : DialogInterface {
     override fun dismiss() {
     }
 }
-

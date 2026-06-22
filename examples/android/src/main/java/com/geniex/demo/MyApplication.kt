@@ -6,14 +6,12 @@ package com.geniex.demo
 
 import android.app.Application
 import android.util.Log
-import com.hjq.toast.Toaster
 import java.io.File
 
 class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Toaster.init(this)
         clearLegacyModelsDir()
     }
 
