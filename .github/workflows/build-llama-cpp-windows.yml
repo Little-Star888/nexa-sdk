@@ -159,6 +159,10 @@ jobs:
           cmake --install $BuildDir --prefix "$env:LLAMA_DIR/dist"
           if ($LASTEXITCODE -ne 0) { throw "cmake --install failed: $LASTEXITCODE" }
 
+          # libggml-htp.inf has no install() rule upstream; copy it from the
+          # build tree so the artifact contains the full signing bundle.
+          Copy-Item "$BuildDir/ggml/src/ggml-hexagon/libggml-htp.inf" "$env:LLAMA_DIR/dist/bin/"
+
       - name: ccache stats
         shell: powershell
         run: ccache --show-stats --verbose; $true
