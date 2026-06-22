@@ -113,9 +113,12 @@ impl ReqwestTransport {
 
 /// rustls config whose cert verifier defers to the OS trust store, so
 /// enterprise/MITM-proxy CAs installed in the system store are trusted.
+///
+/// Android exception: `rustls-platform-verifier` needs JNI-side init that
+/// the Android binding does not perform, so it would panic on first TLS
+/// handshake (#1065). Fall back to the bundled Mozilla `webpki-roots`
+/// there — we lose system-store CAs (corporate MITM) on Android only.
 fn build_tls_config() -> Result<rustls::ClientConfig> {
-    use rustls_platform_verifier::BuilderVerifierExt;
-
     // The ring crypto provider must be installed once per process before
     // any rustls config is built; a second install is a harmless no-op.
     static PROVIDER_INIT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
@@ -126,11 +129,21 @@ fn build_tls_config() -> Result<rustls::ClientConfig> {
         .ok_or_else(|| Error::Http("rustls crypto provider not installed".into()))?
         .clone();
 
-    let config = rustls::ClientConfig::builder_with_provider(provider)
+    let builder = rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
-        .map_err(|e| Error::Http(format!("rustls protocol versions: {e}")))?
-        .with_platform_verifier()
-        .with_no_client_auth();
+        .map_err(|e| Error::Http(format!("rustls protocol versions: {e}")))?;
+
+    #[cfg(not(target_os = "android"))]
+    let config = {
+        use rustls_platform_verifier::BuilderVerifierExt;
+        builder.with_platform_verifier().with_no_client_auth()
+    };
+    #[cfg(target_os = "android")]
+    let config = {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        builder.with_root_certificates(roots).with_no_client_auth()
+    };
     Ok(config)
 }
 

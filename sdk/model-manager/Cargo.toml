@@ -31,6 +31,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rustls-platform-verifier = "0.5"
+webpki-roots = "0.26"
 async-trait = "0.1"
 url = "2"
 fs2 = "0.4"
