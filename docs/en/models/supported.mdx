@@ -20,7 +20,26 @@ geniex infer ai-hub-models/Qwen3-4B
 
 <Note>Qualcomm AI Engine Direct is NPU-only. Pass `--compute npu` or omit the flag.</Note>
 
-## **Set up a Hugging Face token**
+## **Run a GGUF model from Hugging Face**
+
+Any compatible GGUF repo on Hugging Face works. Copy the repo path and pass it to `geniex infer`:
+
+```powershell windows
+geniex infer <org>/<repo>-GGUF
+```
+
+For example:
+
+```powershell windows
+geniex infer unsloth/Phi-4-mini-instruct-GGUF
+```
+
+When prompted:
+
+- **Model type** — `vlm` for vision-language models (Qwen3-VL family), `llm` otherwise.
+- **Precision (Quantization)** — `Q4_0` for best Hexagon NPU support. See [Precisions (Quantizations) Supported](#precisions-quantizations-supported).
+
+### Set up a Hugging Face token
 
 Some models on Hugging Face are **gated** — you must accept the model's license on the Hugging Face website and provide an access token before GenieX can download them.
 
@@ -70,25 +89,6 @@ Some models on Hugging Face are **gated** — you must accept the model's licens
 </Steps>
 
 <Tip>`GENIEX_HFTOKEN` takes highest priority, then `HF_TOKEN`, then the cached token file. Use `GENIEX_HFTOKEN` if you need a separate token for GenieX without affecting other Hugging Face tools.</Tip>
-
-## **Run a GGUF model from Hugging Face**
-
-Any compatible GGUF repo on Hugging Face works. Copy the repo path and pass it to `geniex infer`:
-
-```powershell windows
-geniex infer <org>/<repo>-GGUF
-```
-
-For example:
-
-```powershell windows
-geniex infer unsloth/Phi-4-mini-instruct-GGUF
-```
-
-When prompted:
-
-- **Model type** — `vlm` for vision-language models (Qwen3-VL family), `llm` otherwise.
-- **Precision (Quantization)** — `Q4_0` for best Hexagon NPU support. See [Precisions (Quantizations) Supported](#precisions-quantizations-supported).
 
 ## **Run a local Qualcomm AI Engine Direct bundle**
 

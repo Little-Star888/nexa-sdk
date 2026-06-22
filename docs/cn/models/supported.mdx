@@ -105,7 +105,26 @@ geniex infer "local/$model"
 
 <Note>Qualcomm AI Engine Direct 仅支持 NPU。传入 `--compute npu` 或省略该标志。</Note>
 
-## **设置 Hugging Face 令牌**
+## **运行 Hugging Face 上的 GGUF 模型**
+
+Hugging Face 上任意兼容的 GGUF 仓库都可以使用。复制仓库路径并传给 `geniex infer`：
+
+```powershell windows
+geniex infer <org>/<repo>-GGUF
+```
+
+例如：
+
+```powershell windows
+geniex infer unsloth/Phi-4-mini-instruct-GGUF
+```
+
+提示时选择：
+
+- **模型类型** —— 视觉-语言模型（Qwen3-VL 系列）选 `vlm`，其他选 `llm`。
+- **精度（量化）** —— `Q4_0` 在 Hexagon NPU 上支持最佳。详见[精度（量化）与设备落点](#精度量化与设备落点)。
+
+### 设置 Hugging Face 令牌
 
 Hugging Face 上的部分模型是**受限模型（gated）**——你需要在 Hugging Face 网站上接受模型许可协议，并提供访问令牌，GenieX 才能下载它们。
 
@@ -155,25 +174,6 @@ Hugging Face 上的部分模型是**受限模型（gated）**——你需要在 
 </Steps>
 
 <Tip>`GENIEX_HFTOKEN` 优先级最高，其次是 `HF_TOKEN`，最后是缓存的令牌文件。如需为 GenieX 使用独立令牌而不影响其他 Hugging Face 工具，请使用 `GENIEX_HFTOKEN`。</Tip>
-
-## **运行 Hugging Face 上的 GGUF 模型**
-
-Hugging Face 上任意兼容的 GGUF 仓库都可以使用。复制仓库路径并传给 `geniex infer`：
-
-```powershell windows
-geniex infer <org>/<repo>-GGUF
-```
-
-例如：
-
-```powershell windows
-geniex infer unsloth/Phi-4-mini-instruct-GGUF
-```
-
-提示时选择：
-
-- **模型类型** —— 视觉-语言模型（Qwen3-VL 系列）选 `vlm`，其他选 `llm`。
-- **精度（量化）** —— `Q4_0` 在 Hexagon NPU 上支持最佳。详见[精度（量化）与设备落点](#精度量化与设备落点)。
 
 ## **精度（量化）与设备落点**
 
