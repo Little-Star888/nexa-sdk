@@ -518,6 +518,17 @@ def ensure_cached(
     except GenieXError:
         full_name = name_part
 
+    # No precision + remote source: resolve the hub default before pulling so
+    # only one variant is downloaded instead of all of them.
+    if precision is None and local_path is None:
+        try:
+            result = query(full_name, hub=hub, hf_token=hf_token)
+            default = next((c.precision for c in result.candidates if c.is_default), None)
+            if default:
+                precision = default
+        except GenieXError:
+            pass  # offline or unsupported hub; let pull decide
+
     pull(
         full_name,
         precision=precision,
