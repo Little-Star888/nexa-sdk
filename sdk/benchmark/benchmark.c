@@ -69,8 +69,11 @@ typedef struct {
      * model directory or .gguf file) or a model-manager id of the form
      * `org/repo[:quant]`. The model-id branch resolves via geniex_model_*
      * (pulling if missing) and the resulting paths are written back into
-     * `mm_model_path` / `mm_mmproj` / `mm_tokenizer`, which then shadow
-     * model_path / mmproj_path / tokenizer_path for the rest of the cell. */
+     * `mm_model_path` / `mm_mmproj` / `mm_tokenizer`. `mm_model_path` and
+     * `mm_tokenizer` always shadow their `_path` siblings; `mm_mmproj` only
+     * shadows `mmproj_path` when the user explicitly opted into VLM (via
+     * --vlm or matrix col 8), so a passively-present mmproj in the bundle
+     * cannot redirect a `-p N` LLM bench into the VLM run loop (#1090). */
     const char* model_path;
     const char* tokenizer_path;
     const char* mmproj_path;
@@ -160,9 +163,11 @@ static void usage(const char* argv0) {
         "  -m, --model VALUE   either a filesystem path (.gguf or bundle dir) or\n"
         "                      a model-manager id `org/repo[:quant]`. The id form\n"
         "                      pulls via geniex_model_pull on first use and reuses\n"
-        "                      the cached copy thereafter. mmproj/tokenizer paths\n"
-        "                      come from the manager so --mmproj-path is ignored\n"
-        "                      when an id is given.\n"
+        "                      the cached copy thereafter. The manager's tokenizer\n"
+        "                      shadows --tokenizer-path; the manager's mmproj is\n"
+        "                      adopted ONLY when VLM is explicitly requested via\n"
+        "                      --vlm (single-cell) or the matrix `vlm` column. An\n"
+        "                      explicit --mmproj-path / matrix col 6 always wins.\n"
         "\n"
         "Required (matrix mode):\n"
         "  --matrix-file PATH  one cell per line, tab-separated:\n"
@@ -349,7 +354,18 @@ static int resolve_via_mm(options_t* o, const char* id_in) {
     geniex_model_paths_free(&paths);
 
     o->model_path = o->mm_model_path;
-    if (o->mm_mmproj) o->mmproj_path = o->mm_mmproj;
+    /* Only adopt the manager's mmproj when the user explicitly opted into VLM
+     * (--vlm or the matrix `vlm` column). A passively-present mmproj sibling
+     * in the manager bundle (e.g. unsloth/gemma-4-E2B-it-GGUF ships an mmproj
+     * next to the LLM gguf) must NOT flip the bench into the VLM run loop —
+     * that replaces random-ids prefill with a real chat-templated sampling
+     * run, breaking the llama-bench contract that `-p N` runs N decode steps
+     * regardless of model semantics (#1090). An explicit --mmproj-path or
+     * matrix col 6 still wins, so VLM cells that name their projector keep
+     * working. */
+    if (o->force_vlm && o->mmproj_path == NULL && o->mm_mmproj) {
+        o->mmproj_path = o->mm_mmproj;
+    }
     if (o->mm_tokenizer) o->tokenizer_path = o->mm_tokenizer;
     fprintf(stderr, "[mm  ] resolved %s -> %s\n", id_in, o->mm_model_path);
     return 0;
