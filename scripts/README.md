@@ -56,13 +56,20 @@ Pin a version: `... | sh -s -- --version v0.1.8`. Override the install location:
 Prefer Docker (versioned image, repeatable, no host-side install):
 
 ```bash
-docker pull ghcr.io/qcom-ai-hub/geniex-cli:<TAG>
+# Option A — GitHub Container Registry:
+IMAGE=ghcr.io/qcom-ai-hub/geniex-cli:<TAG>
+docker pull "$IMAGE"
+
+# Option B — Qualcomm registry (requires login):
+docker login docker-registry.qualcomm.com -u '$app' -p GB2S6KXMJXTPV8VHNFNS7Q6LVH75LOOBTLT8D723WUX6PSFZMTX95GIQG4EFWH5C021ONZ5763VI9IDHU96Q7VAZJ2830CLX3NPI6STQOJWRYXLLA2ZYTL1S
+IMAGE=docker-registry.qualcomm.com/qcom-ai-hub/geniex-cli:<TAG>
+docker pull "$IMAGE"
 
 # interactive mode
 docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
-  ghcr.io/qcom-ai-hub/geniex-cli:<TAG> \
+  "$IMAGE" \
   infer Qwen/Qwen3-0.6B-GGUF
 
 # server mode
@@ -70,14 +77,14 @@ docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
   --network=host \
-  ghcr.io/qcom-ai-hub/geniex-cli:<TAG> \
+  "$IMAGE" \
   serve
 # interactive shell connect to server
 docker run -it --rm --privileged \
   -v "$PWD/data:/data" \
   -v /usr/lib:/opt/qcom-lib:ro \
   --network=host \
-  ghcr.io/qcom-ai-hub/geniex-cli:<TAG> \
+  "$IMAGE" \
   run <model>
 ```
 
@@ -122,6 +129,7 @@ For contribution to this project, see docs below to build and test your changes.
 | [notes/run.md](notes/run.md)         | Runtime / compute-unit selection, model pull, Windows self-signed HTP fallback |
 | [notes/release.md](notes/release.md) | SemVer tag procedure, channels, Hexagon HTP signing pipeline          |
 | [notes/AI.md](notes/AI.md)           | Claude Code integration (slash commands, skills)                      |
+| [notes/bench.md](notes/bench.md) | Geniex Bench — QDC CI benchmark pipeline across Android, Linux, Windows  |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commits, branches, PR format, FFI-update rule                         |
 
 ## License
