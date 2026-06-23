@@ -51,14 +51,20 @@ func RootCmd() *cobra.Command {
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			cmd.SilenceErrors = true
 
-			// Initialize the SDK model manager against the same data dir the
-			// store uses so both layers agree on the cache location.
-			s := store.Get()
-			if err := geniex_sdk.ModelInit(s.DataPath()); err != nil {
-				slog.Error("failed to initialize model manager", "err", err)
+			subCmd := cmd.CalledAs()
+
+			// Skip ModelInit for commands that don't touch the model manager
+			if !slices.Contains([]string{
+				"geniex",
+				"version", "update",
+				"help", "completion",
+			}, subCmd) {
+				s := store.Get()
+				if err := geniex_sdk.ModelInit(s.DataPath()); err != nil {
+					slog.Error("failed to initialize model manager", "err", err)
+				}
 			}
 
-			subCmd := cmd.CalledAs()
 			if !skipUpdate {
 				notifyUpdate()
 				// skip network probe for quick commands

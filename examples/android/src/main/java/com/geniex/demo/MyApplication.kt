@@ -6,14 +6,12 @@ package com.geniex.demo
 
 import android.app.Application
 import android.util.Log
-import com.hjq.toast.Toaster
 import java.io.File
 
 class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Toaster.init(this)
         clearLegacyModelsDir()
     }
 
@@ -28,6 +26,10 @@ class MyApplication : Application() {
         val legacy = File(filesDir, "models")
         if (!legacy.exists()) return
         val ok = runCatching { legacy.deleteRecursively() }.getOrElse { false }
-        Log.i("MyApplication", "legacy models dir cleanup: ok=$ok path=${legacy.absolutePath}")
+        Log.i(TAG, "legacy models dir cleanup: ok=$ok path=${legacy.absolutePath}")
+    }
+
+    companion object {
+        private const val TAG = "GenieXDemo"
     }
 }

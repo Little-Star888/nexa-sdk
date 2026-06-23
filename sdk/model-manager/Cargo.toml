@@ -23,10 +23,15 @@ tokio = { version = "1", features = [
     "fs",
     "time",
 ] }
+# Manual roots (no built-in webpki bundle) so our own platform verifier
+# can delegate to the OS trust store — required for corporate MITM proxies.
 reqwest = { version = "0.12", default-features = false, features = [
-    "rustls-tls",
+    "rustls-tls-manual-roots",
     "http2",
 ] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rustls-platform-verifier = "0.5"
+webpki-roots = "0.26"
 async-trait = "0.1"
 url = "2"
 fs2 = "0.4"

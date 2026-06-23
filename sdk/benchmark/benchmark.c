@@ -11,10 +11,13 @@
  * read the same vocabulary.
  *
  * Defaults:
- *   - fixed default prompt, n_gen=128, temperature=0.0, seed=42
+ *   - n_prompt=512 random tokens (matches llama-bench `pp512`), n_gen=128,
+ *     temperature=0.0, seed=42
  *   - 1 warmup + 5 measured runs (configurable)
- *   - llama_cpp prompts get a [warmup=i] / [run=i] suffix to bust KV cache
- *     between runs
+ *   - LLM prefill skips the tokenizer entirely: each cell rolls
+ *     `rand() % vocab_size` for n_prompt positions (BOS at pos 0 when the
+ *     model wants one) and feeds the array via input_ids — `pp` is
+ *     therefore exactly N for every model
  *   - per-cell aggregation: median / min / max / mean / stdev for ttft_ms,
  *     prefill_tps, decode_tps; median-only for token counts
  *
@@ -51,11 +54,10 @@
 #include <dirent.h>
 #endif
 
-/* Fixed default prompt for reproducible measured runs. */
-static const char* const DEFAULT_PROMPT =
-    "Explain in three short sentences why the speed of light is the same "
-    "in every inertial reference frame, and what that implies for time "
-    "dilation. Keep it accessible to a curious teenager.";
+/* Fixed VLM prompt. Multimodal cells still go through the bundle's chat
+ * template (which needs real text), so the LLM/VLM paths are intentionally
+ * asymmetric: LLM prefills random ids; VLM keeps a one-line text payload. */
+static const char* const VLM_DEFAULT_PROMPT = "Describe the image.";
 
 #define MAX_PATHS 16
 
@@ -83,18 +85,17 @@ typedef struct {
     const char* audio_paths[MAX_PATHS];
     int32_t     audio_count;
 
-    int32_t     max_new_tokens;
-    float       temperature;
-    int32_t     seed;
-    int32_t     warmup;
-    int32_t     repeat;
-    const char* prompt;
-    char*       prompt_buf;         /* allocated when --prompt-file is used */
-    bool        prompt_as_is;       /* true => pass prompt verbatim, no cache-busting suffix */
-    bool        reset_between_runs; /* true => geniex_llm_reset() before each run, freeing KV */
-    int32_t     n_ctx;
-    int32_t     n_threads;
-    int32_t     ngl_override; /* -1 = use resolved alias default; >=0 overrides */
+    int32_t n_prompt;   /* LLM random-ids prefill length (llama-bench -p), used when prompt_buf is NULL */
+    char*   prompt_buf; /* heap-owned text prompt loaded via --prompt-file; NULL = use random-ids */
+    int32_t max_new_tokens;
+    float   temperature;
+    int32_t seed;
+    int32_t warmup;
+    int32_t repeat;
+    bool    reset_between_runs; /* true => geniex_llm_reset() before each run, freeing KV */
+    int32_t n_ctx;
+    int32_t n_threads;
+    int32_t ngl_override; /* -1 = use resolved alias default; >=0 overrides */
 
     const char* output_json;
     const char* output_md;
@@ -177,6 +178,14 @@ static void usage(const char* argv0) {
         "\n"
         "Optional (llama-bench-style names):\n"
         "  -r, --repetitions N    default 5 (measured runs)\n"
+        "  -p, --n-prompt N       LLM prefill length (random token ids); default 512.\n"
+        "                         Mirrors `llama-bench -p N`: the bench tool fills N\n"
+        "                         positions with `rand() %% vocab_size` (BOS at pos 0\n"
+        "                         when the model wants one) and feeds them via\n"
+        "                         input_ids, so `pp` is exactly N for every model.\n"
+        "                         The qairt plugin currently rejects input_ids; the\n"
+        "                         tool fails with a clear error pointing to the\n"
+        "                         tracking issue.\n"
         "  -n, --n-gen N          tokens to generate per run; default 128\n"
         "  -c, --ctx-size N       model n_ctx (0 = from model, default 0)\n"
         "  -t, --threads N        generation threads (0 = SDK default)\n"
@@ -185,19 +194,17 @@ static void usage(const char* argv0) {
         "  --warmup N             default 1\n"
         "  --no-warmup            equivalent to --warmup 0\n"
         "  --temperature F        default 0.0\n"
-        "  --seed N               default 42\n"
-        "  --prompt TEXT          inline prompt; default mirrors Python BENCH_PROMPT\n"
-        "  --prompt-file PATH     read prompt from file\n"
-        "  --prompt-as-is         pass the prompt verbatim; do NOT append the\n"
-        "                         `[run=i]` / `[warmup=i]` cache-busting suffix.\n"
-        "                         Use this when the prompt is already-templated\n"
-        "                         chat content (e.g. a bundle's sample_prompt.txt\n"
-        "                         ending in `<|im_start|>assistant\\n`) where a\n"
-        "                         trailing suffix would corrupt the template.\n"
-        "  --reset-between-runs   call geniex_llm_reset() before every measured\n"
-        "                         and warmup run so the KV cache starts empty;\n"
-        "                         needed when prompt_tokens approaches n_ctx and\n"
-        "                         consecutive runs would otherwise overflow it.\n"
+        "  --seed N               default 42; also seeds rand() for prompt ids\n"
+        "  --prompt-file PATH     opt out of random-ids prefill: read a UTF-8 prompt\n"
+        "                         from PATH and feed it via prompt_utf8 instead. The\n"
+        "                         only way to bench plugins that don't support\n"
+        "                         input_ids (today: qairt). With this flag, reported\n"
+        "                         `pp` is the tokenizer's count, NOT --n-prompt.\n"
+        "  --no-reset-between-runs\n"
+        "                         keep KV cache across measured runs (default is\n"
+        "                         to call geniex_llm_reset() before every run so\n"
+        "                         each repetition does the full prefill, matching\n"
+        "                         llama-bench semantics)\n"
         "\n"
         "Optional (multimodal):\n"
         "  --tokenizer-path PATH  explicit tokenizer file\n"
@@ -437,7 +444,8 @@ static char* resolve_local_anchor(const char* path) {
     return best;
 }
 
-/* Load whole file into a heap buffer (caller frees). */
+/* Load whole file into a heap buffer (caller frees). Used by --prompt-file
+ * for plugins that don't support input_ids (qairt). */
 static char* slurp(const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) {
@@ -491,15 +499,14 @@ static void parse_args(int argc, char** argv, options_t* o) {
     o->force_vlm          = false;
     o->image_count        = 0;
     o->audio_count        = 0;
+    o->n_prompt           = 512;
+    o->prompt_buf         = NULL;
     o->max_new_tokens     = 128;
     o->temperature        = 0.0f;
     o->seed               = 42;
     o->warmup             = 1;
     o->repeat             = 5;
-    o->prompt             = DEFAULT_PROMPT;
-    o->prompt_buf         = NULL;
-    o->prompt_as_is       = false;
-    o->reset_between_runs = false;
+    o->reset_between_runs = true;
     o->n_ctx              = 0;
     o->n_threads          = 0;
     o->ngl_override       = -1;
@@ -543,6 +550,10 @@ static void parse_args(int argc, char** argv, options_t* o) {
                 exit(2);
             }
             o->audio_paths[o->audio_count++] = arg_value(argc, argv, &i, a);
+        } else if (strcmp(a, "-p") == 0 || strcmp(a, "--n-prompt") == 0) {
+            o->n_prompt = atoi(arg_value(argc, argv, &i, a));
+        } else if (strcmp(a, "--prompt-file") == 0) {
+            o->prompt_buf = slurp(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-n") == 0 || strcmp(a, "--n-gen") == 0) {
             o->max_new_tokens = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "--temperature") == 0) {
@@ -555,15 +566,8 @@ static void parse_args(int argc, char** argv, options_t* o) {
             o->warmup = 0;
         } else if (strcmp(a, "-r") == 0 || strcmp(a, "--repetitions") == 0) {
             o->repeat = atoi(arg_value(argc, argv, &i, a));
-        } else if (strcmp(a, "--prompt") == 0) {
-            o->prompt = arg_value(argc, argv, &i, a);
-        } else if (strcmp(a, "--prompt-file") == 0) {
-            o->prompt_buf = slurp(arg_value(argc, argv, &i, a));
-            o->prompt     = o->prompt_buf;
-        } else if (strcmp(a, "--prompt-as-is") == 0) {
-            o->prompt_as_is = true;
-        } else if (strcmp(a, "--reset-between-runs") == 0) {
-            o->reset_between_runs = true;
+        } else if (strcmp(a, "--no-reset-between-runs") == 0) {
+            o->reset_between_runs = false;
         } else if (strcmp(a, "-c") == 0 || strcmp(a, "--ctx-size") == 0) {
             o->n_ctx = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-t") == 0 || strcmp(a, "--threads") == 0) {
@@ -602,6 +606,10 @@ static void parse_args(int argc, char** argv, options_t* o) {
             fprintf(stderr, "ERROR: --repetitions must be >=1\n");
             exit(2);
         }
+        if (o->n_prompt < 1) {
+            fprintf(stderr, "ERROR: --n-prompt must be >=1\n");
+            exit(2);
+        }
         return;
     }
 
@@ -615,6 +623,10 @@ static void parse_args(int argc, char** argv, options_t* o) {
     }
     if (o->repeat < 1) {
         fprintf(stderr, "ERROR: --repetitions must be >=1\n");
+        exit(2);
+    }
+    if (o->n_prompt < 1) {
+        fprintf(stderr, "ERROR: --n-prompt must be >=1\n");
         exit(2);
     }
 }
@@ -740,35 +752,6 @@ static int64_t compute_model_size(const char* path) {
     return total;
 }
 
-/* Build the per-run prompt the same way Python does (busts KV cache).
- * When `as_is` is true (set via --prompt-as-is), return the base prompt
- * unchanged so the caller gets exactly the bytes they passed in -- needed
- * when the prompt is a pre-templated chat-template payload (e.g. a bundle's
- * sample_prompt.txt ending in `<|im_start|>assistant\n`), where a trailing
- * suffix would land after the assistant marker and corrupt the template.
- * Otherwise the suffix is appended; that is only useful when multiple
- * generate() calls share a process and KV cache, to bust prefix-cache hits
- * on identical inputs (which would zero out prompt_time / +inf prefill_tps). */
-static char* build_run_prompt(const char* base_prompt, int idx, bool warmup, bool as_is) {
-    if (as_is) {
-        char* out = (char*)malloc(strlen(base_prompt) + 1);
-        if (!out) {
-            fprintf(stderr, "ERROR: oom\n");
-            exit(1);
-        }
-        strcpy(out, base_prompt);
-        return out;
-    }
-    size_t cap = strlen(base_prompt) + 32;
-    char*  out = (char*)malloc(cap);
-    if (!out) {
-        fprintf(stderr, "ERROR: oom\n");
-        exit(1);
-    }
-    snprintf(out, cap, "%s\n[%s=%d]", base_prompt, warmup ? "warmup" : "run", idx);
-    return out;
-}
-
 /* Build a VLM prompt by running the bundle's chat template over a single user
  * message holding the text plus one image/audio content part per media file.
  * Both plugins need this: QAIRT's genie pipeline relies on the template's
@@ -863,17 +846,56 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
     geniex_LLM* llm = NULL;
     check(geniex_llm_create(&cin, &llm), "geniex_llm_create");
 
+    /* Two prefill modes, picked by whether --prompt-file was passed:
+     *   - prompt_buf != NULL: feed prompt_utf8 verbatim (the plugin tokenizes).
+     *     `pp` is the tokenizer's count, NOT n_prompt. Required for plugins
+     *     that don't accept input_ids (today: qairt).
+     *   - prompt_buf == NULL: random-ids mode (mirrors llama-bench
+     *     test_prompt) — query vocab + BOS via geniex_llm_get_model_info,
+     *     fill n_prompt positions with rand() % vocab_size, overwrite pos 0
+     *     with BOS when add_bos. `pp` is exactly n_prompt. */
+    int32_t* tokens = NULL;
+    if (!o->prompt_buf) {
+        geniex_LlmModelInfo info;
+        int32_t             rc_info = geniex_llm_get_model_info(llm, &info);
+        if (rc_info != GENIEX_SUCCESS || info.vocab_size <= 0) {
+            const char* msg = geniex_get_error_message((geniex_ErrorCode)rc_info);
+            fprintf(stderr,
+                "ERROR: %s plugin does not support random-ids prefill "
+                "(geniex_llm_get_model_info: %s, code=%d). "
+                "Pass --prompt-file PATH to use text-prompt mode instead, "
+                "or see https://github.com/qualcomm/nexa-sdk/issues/1008.\n",
+                o->plugin,
+                msg ? msg : "?",
+                rc_info);
+            geniex_llm_destroy(llm);
+            exit(1);
+        }
+
+        tokens = (int32_t*)malloc((size_t)o->n_prompt * sizeof(int32_t));
+        if (!tokens) {
+            fprintf(stderr, "ERROR: oom allocating %d prompt tokens\n", o->n_prompt);
+            geniex_llm_destroy(llm);
+            exit(1);
+        }
+        srand((unsigned)o->seed);
+        for (int32_t k = 0; k < o->n_prompt; ++k) {
+            tokens[k] = (int32_t)(rand() % info.vocab_size);
+        }
+        if (info.add_bos && info.bos_token >= 0 && o->n_prompt > 0) {
+            tokens[0] = info.bos_token;
+        }
+    }
+
     geniex_SamplerConfig    sampler;
     geniex_GenerationConfig gconfig;
     fill_sampler(&sampler, o);
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/false);
 
     int32_t total = o->warmup + o->repeat;
-    bool    as_is = o->prompt_as_is;
     for (int32_t i = 0; i < total; ++i) {
         bool    is_warmup = (i < o->warmup);
         int32_t run_idx   = is_warmup ? i : (i - o->warmup);
-        char*   prompt    = build_run_prompt(o->prompt, run_idx, is_warmup, as_is);
 
         if (o->reset_between_runs) {
             check(geniex_llm_reset(llm), "geniex_llm_reset");
@@ -883,15 +905,20 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
         geniex_LlmGenerateOutput gout;
         memset(&gin, 0, sizeof(gin));
         memset(&gout, 0, sizeof(gout));
-        gin.prompt_utf8 = prompt;
-        gin.config      = &gconfig;
-        gin.on_token    = on_token;
+        if (o->prompt_buf) {
+            gin.prompt_utf8 = o->prompt_buf;
+        } else {
+            gin.input_ids       = tokens;
+            gin.input_ids_count = o->n_prompt;
+        }
+        gin.config   = &gconfig;
+        gin.on_token = on_token;
 
         int32_t rc = geniex_llm_generate(llm, &gin, &gout);
         if (rc != GENIEX_SUCCESS) {
             const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
             fprintf(stderr, "ERROR: geniex_llm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
-            free(prompt);
+            free(tokens);
             geniex_llm_destroy(llm);
             exit(1);
         }
@@ -914,15 +941,9 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
         if (gout.full_text) {
             geniex_free(gout.full_text);
         }
-        free(prompt);
-        /* Intentionally NOT calling geniex_llm_reset() between runs — the KV
-         * cache is left intact.
-         * The `[warmup=i]` / `[run=i]` suffix on the prompt is what differs
-         * between runs and forces llama.cpp to actually run prefill instead
-         * of short-circuiting on identical input (which would make
-         * prompt_time = 0 and prefill_speed = +inf). */
     }
 
+    free(tokens);
     check(geniex_llm_destroy(llm), "geniex_llm_destroy");
 }
 
@@ -948,15 +969,15 @@ static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/true);
 
     int32_t total = o->warmup + o->repeat;
-    bool    as_is = o->prompt_as_is;
     for (int32_t i = 0; i < total; ++i) {
         bool    is_warmup = (i < o->warmup);
         int32_t run_idx   = is_warmup ? i : (i - o->warmup);
-        char*   base      = build_run_prompt(o->prompt, run_idx, is_warmup, as_is);
-        /* VLM generate() takes a fully-templated prompt; run base text + media
-         * through the bundle's chat template so the image tokens land right. */
-        char* prompt = build_vlm_prompt(vlm, o, base);
-        free(base);
+        /* VLM generate() takes a fully-templated prompt; run a fixed base
+         * text + media through the bundle's chat template so the image
+         * tokens land right. The LLM path uses random-ids and skips the
+         * tokenizer; the VLM path can't because the chat template needs
+         * real text plus typed content parts. */
+        char* prompt = build_vlm_prompt(vlm, o, VLM_DEFAULT_PROMPT);
         if (!prompt) {
             geniex_vlm_destroy(vlm);
             exit(1);
@@ -1121,7 +1142,7 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         exit(1);
     }
     fprintf(f, "{\n");
-    json_field_str(f, "schema_version", "2", false);
+    json_field_str(f, "schema_version", "3", false);
     json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
     json_field_str(f, "plugin", o->plugin, false);
     json_field_str(f, "device", o->device, false);
@@ -1132,10 +1153,11 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
     json_field_str(f, "llama_cpp_version", geniex_get_plugin_version("llama_cpp"), false);
     fprintf(f, "    \"params\": {\n");
     fprintf(f,
-        "      \"warmup\": %d, \"repetitions\": %d, \"n_gen\": %d,\n"
+        "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
         "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d\n",
         o->warmup,
         o->repeat,
+        o->n_prompt,
         o->max_new_tokens,
         (double)o->temperature,
         o->seed,

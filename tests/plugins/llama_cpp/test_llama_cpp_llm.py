@@ -19,7 +19,7 @@ from __future__ import annotations
 import geniex
 import pytest
 
-from _models import LLAMA_CPP_LLM_MODEL, LLAMA_CPP_LLM_QUANT
+from _models import LLAMA_CPP_LLM_MODEL, LLAMA_CPP_LLM_PRECISION
 from _quality_data import (
     LLM_QUALITY_MAX_NEW_TOKENS,
     LLM_QUALITY_PROMPTS,
@@ -34,7 +34,7 @@ pytestmark = pytest.mark.llm
 def test_generate_blocking(llama_cpp_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
         LLAMA_CPP_LLM_MODEL,
-        quant=LLAMA_CPP_LLM_QUANT,
+        precision=LLAMA_CPP_LLM_PRECISION,
         device_map=device_map,
     ) as llm:
         assert isinstance(llm, geniex.GenieXLLM)
@@ -48,7 +48,7 @@ def test_generate_blocking(llama_cpp_llm_paths, device_map):
 def test_generate_stream(llama_cpp_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
         LLAMA_CPP_LLM_MODEL,
-        quant=LLAMA_CPP_LLM_QUANT,
+        precision=LLAMA_CPP_LLM_PRECISION,
         device_map=device_map,
     ) as llm:
         streamer = llm.generate('Say hi.', max_new_tokens=8, temperature=0.0, seed=42, stream=True)
@@ -70,7 +70,7 @@ def test_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected):
     # in completion mode and the keyword only appears by sampler luck.
     with geniex.AutoModelForCausalLM.from_pretrained(
         LLAMA_CPP_LLM_MODEL,
-        quant=LLAMA_CPP_LLM_QUANT,
+        precision=LLAMA_CPP_LLM_PRECISION,
         device_map=device_map,
     ) as llm:
         formatted = llm.tokenizer.apply_chat_template(

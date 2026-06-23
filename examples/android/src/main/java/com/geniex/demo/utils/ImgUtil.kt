@@ -2,21 +2,16 @@
 // Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause
 // ---------------------------------------------------------------------
-package com.geniex.demo.utils;
+package com.geniex.demo.utils
 
-import android.content.ContentValues
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.media.ExifInterface
-import android.os.Build
-import android.provider.MediaStore
 import androidx.core.graphics.createBitmap
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 
 class ImgUtil {
     companion object {
@@ -81,7 +76,7 @@ class ImgUtil {
                 Bitmap.createScaledBitmap(bmp, targetW, targetH, true) else bmp
             if (resized !== bmp) bmp.recycle()
 
-            // 6) Re-compress and save to outFile (this step actually reduces file size)
+            // Re-compress and save to outFile (this step actually reduces file size)
             FileOutputStream(outFile).use { fos ->
                 resized.compress(format, quality, fos)
             }
@@ -112,38 +107,6 @@ class ImgUtil {
             }
             if (!cropped.isRecycled) cropped.recycle()
             return outFile
-        }
-
-        fun saveImageToGallery(context: Context, imgPath: String) {
-            saveImageToGallery(context, BitmapFactory.decodeFile(imgPath))
-        }
-
-        fun saveImageToGallery(context: Context, file: File) {
-            saveImageToGallery(context, BitmapFactory.decodeFile(file.absolutePath))
-        }
-
-        fun saveImageToGallery(context: Context, bitmap: Bitmap) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val resolver = context.contentResolver
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, "Image_${System.currentTimeMillis()}.jpg")
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/Saved Images")
-                }
-
-                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-                uri?.let {
-                    resolver.openOutputStream(it).use { outputStream ->
-                        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream!!)) {
-                            // throw IOException("Unable to save image")
-                        }
-                        outputStream.close()
-                    }
-                }
-            } else {
-                // Old Android save method
-                // Please implement according to your needs
-            }
         }
     }
 }

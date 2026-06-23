@@ -3,9 +3,6 @@
 //! Used when the source (LocalFS or a HuggingFace repo) does not ship a
 //! `geniex.json` — we synthesize a minimal manifest so the rest of the
 //! pipeline can operate uniformly.
-//!
-//! Rules mirror the Go CLI's `cli/cmd/geniex/model.go:chooseFiles` so that
-//! a model pulled either way is interchangeable.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -86,7 +83,7 @@ pub fn infer_manifest_from_names(
     for n in file_names {
         let lname = n.to_lowercase();
         if lname.ends_with(".gguf") {
-            if lname.starts_with("mmproj") {
+            if is_mmproj_filename(&lname) {
                 mmprojs.push(n);
             } else {
                 let quant = extract_quant(n).unwrap_or_else(|| "default".to_string());
@@ -371,7 +368,7 @@ fn classify_from_config(bytes: &[u8]) -> Option<ModelType> {
 fn classify_from_filenames(file_names: &[String]) -> Option<ModelType> {
     if file_names
         .iter()
-        .any(|n| n.to_lowercase().starts_with("mmproj"))
+        .any(|n| is_mmproj_filename(&n.to_lowercase()))
     {
         Some(ModelType::Vlm)
     } else {
@@ -379,67 +376,106 @@ fn classify_from_filenames(file_names: &[String]) -> Option<ModelType> {
     }
 }
 
-/// Extract a quant tag like `Q4_K_M` or `Q8_0` from a filename.
-/// Returns the highest-priority match if multiple are present, else the
-/// first match, else None.
+/// Returns true when a `.gguf` filename refers to a multi-modal projector.
+/// Matches `mmproj`, `mmproj-*`, `mmproj.*`, `mmproj_*` (the llama.cpp
+/// default and underscore variants community repos sometimes use),
+/// `*-mmproj` / `*_mmproj` (qualcomm-ai-hub-community-style suffix), and
+/// `*-mmproj-*` / `*_mmproj_*` (infix). The check is case-insensitive —
+/// callers must pass a lowercased name.
+fn is_mmproj_filename(lname: &str) -> bool {
+    debug_assert_eq!(
+        lname,
+        lname.to_ascii_lowercase(),
+        "is_mmproj_filename expects lowercased input"
+    );
+    let stem = lname.strip_suffix(".gguf").unwrap_or(lname);
+    stem == "mmproj"
+        || stem.starts_with("mmproj-")
+        || stem.starts_with("mmproj.")
+        || stem.starts_with("mmproj_")
+        || stem.ends_with("-mmproj")
+        || stem.ends_with("_mmproj")
+        || stem.contains("-mmproj-")
+        || stem.contains("_mmproj_")
+}
+
+/// Extract a quant tag like `Q4_K_M`, `Q8_0`, `IQ4_XS`, or `TQ1_0` from a
+/// filename. The match is case-insensitive (HF repos publish both `q4_0`
+/// and `Q4_0`); the returned tag is upper-cased so it lines up with
+/// [`QUANT_PRIORITY`]. Returns the highest-priority match if multiple are
+/// present, else the first match, else None.
 fn extract_quant(name: &str) -> Option<String> {
-    // Scan for tokens matching `Q<digit>[_A-Z0-9]*`.
-    let mut matches: Vec<String> = Vec::new();
-    for part in name.split(|c: char| c == '-' || c == '.' || c == '_') {
-        if part.starts_with('Q')
-            && part.len() >= 2
-            && part[1..2]
-                .chars()
-                .next()
-                .map(|c| c.is_ascii_digit())
-                .unwrap_or(false)
-        {
-            matches.push(part.to_string());
-        }
-    }
-    // Rejoin composite quants like "Q4_K_M" which get split by '_'.
-    // Simpler: regex-lite — walk the name, match ASCII pattern.
-    // We'll use a lightweight hand-rolled scan for `Q[0-9]+(_[A-Z0-9]+)*`.
+    // Walk the (uppercased, ASCII-only) name token by token. A quant tag
+    // must sit on a token boundary so that `IQ4_XS` doesn't get scanned as
+    // `Q4_XS` from index 1 — we anchor each candidate Q at a separator.
+    let upper = name.to_ascii_uppercase();
+    let bytes = upper.as_bytes();
     let mut composite: Vec<String> = Vec::new();
-    let bytes = name.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'Q' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
-            let start = i;
-            i += 2;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
-            }
-            // optional `_XXX` segments (letters and/or digits), e.g. "Q8_0", "Q4_K_M"
-            while i + 1 < bytes.len()
-                && bytes[i] == b'_'
-                && (bytes[i + 1].is_ascii_uppercase() || bytes[i + 1].is_ascii_digit())
-            {
-                i += 1;
-                while i < bytes.len()
-                    && (bytes[i].is_ascii_uppercase() || bytes[i].is_ascii_digit())
-                {
-                    i += 1;
-                }
-            }
-            if let Ok(s) = std::str::from_utf8(&bytes[start..i]) {
-                composite.push(s.to_string());
-            }
-        } else {
+        if !is_token_start(bytes, i) {
+            i += 1;
+            continue;
+        }
+        // Optional 1-byte prefix used by i-quants (`IQ*`) and ternary
+        // quants (`TQ*`). Anything else means this token isn't a quant.
+        let mut j = i;
+        if (bytes[j] == b'I' || bytes[j] == b'T') && j + 1 < bytes.len() && bytes[j + 1] == b'Q' {
+            j += 1;
+        }
+        if !(j < bytes.len()
+            && bytes[j] == b'Q'
+            && j + 1 < bytes.len()
+            && bytes[j + 1].is_ascii_digit())
+        {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        i = j + 2;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
             i += 1;
         }
+        // Trailing `_XXX` segments. Each segment must be 1..=3 ASCII
+        // upper/digit chars — long alphabetic words like `_FINETUNE`
+        // are NOT part of the quant tag.
+        while i + 1 < bytes.len() && bytes[i] == b'_' {
+            let seg_start = i + 1;
+            let mut seg_end = seg_start;
+            while seg_end < bytes.len()
+                && (bytes[seg_end].is_ascii_uppercase() || bytes[seg_end].is_ascii_digit())
+            {
+                seg_end += 1;
+            }
+            let seg_len = seg_end - seg_start;
+            if seg_len == 0 || seg_len > 3 {
+                break;
+            }
+            i = seg_end;
+        }
+        if let Ok(s) = std::str::from_utf8(&bytes[start..i]) {
+            composite.push(s.to_string());
+        }
     }
-    let _ = matches; // above naive split is unused in favor of composite scanner
     if composite.is_empty() {
         return None;
     }
-    // Prefer highest-priority quant among the matches.
     for pref in QUANT_PRIORITY {
         if composite.iter().any(|c| c == *pref) {
             return Some((*pref).to_string());
         }
     }
     Some(composite.remove(0))
+}
+
+/// True when index `i` of `bytes` sits at the start of a filename token —
+/// either the beginning of the string, or right after one of the common
+/// separators (`-`, `_`, `.`, path separators).
+fn is_token_start(bytes: &[u8], i: usize) -> bool {
+    if i == 0 {
+        return true;
+    }
+    matches!(bytes[i - 1], b'-' | b'_' | b'.' | b'/' | b'\\')
 }
 
 #[cfg(test)]
@@ -464,6 +500,96 @@ mod tests {
         );
         assert_eq!(extract_quant("model-Q8_0.gguf"), Some("Q8_0".to_string()));
         assert_eq!(extract_quant("model.gguf"), None);
+    }
+
+    #[test]
+    fn extract_quant_is_case_insensitive() {
+        // qualcomm-ai-hub-community/gemma-4-E2B-it-qat-GGUF ships a lowercase
+        // `q4_0` filename; without folding it landed in the "default" bucket
+        // alongside the projector and got swapped at sort time.
+        assert_eq!(
+            extract_quant("gemma-4-E2B-q4_0-override.gguf"),
+            Some("Q4_0".to_string())
+        );
+        assert_eq!(
+            extract_quant("model-q4_k_m.gguf"),
+            Some("Q4_K_M".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_quant_recognises_i_and_ternary_prefixes() {
+        // i-quants and ternary quants are real upstream tags — they must
+        // be returned as-is, not silently truncated to a Q* tag.
+        assert_eq!(
+            extract_quant("model-IQ4_XS.gguf"),
+            Some("IQ4_XS".to_string())
+        );
+        assert_eq!(extract_quant("model-iq1_s.gguf"), Some("IQ1_S".to_string()));
+        assert_eq!(extract_quant("model-TQ1_0.gguf"), Some("TQ1_0".to_string()));
+    }
+
+    #[test]
+    fn extract_quant_anchors_on_token_boundary() {
+        // Mid-token Q (no separator before it) is not a quant.
+        assert_eq!(extract_quant("aQ4_0.gguf"), None);
+        assert_eq!(extract_quant("noQuant.gguf"), None);
+        // Path separators count as token boundaries.
+        assert_eq!(extract_quant("dir/Q4_0.gguf"), Some("Q4_0".to_string()));
+        assert_eq!(extract_quant("dir\\Q4_0.gguf"), Some("Q4_0".to_string()));
+    }
+
+    #[test]
+    fn extract_quant_does_not_glue_long_alphabetic_segments() {
+        // A trailing `_FINETUNE` is not part of the quant tag — the inner
+        // segment loop must cap segment length so the tag stays Q4_K_M.
+        assert_eq!(
+            extract_quant("model-Q4_K_M_finetune.gguf"),
+            Some("Q4_K_M".to_string())
+        );
+    }
+
+    #[test]
+    fn is_mmproj_filename_matches_known_layouts() {
+        // Standard llama.cpp prefix layout.
+        assert!(is_mmproj_filename("mmproj-f16.gguf"));
+        // Bare projector with no variant tag.
+        assert!(is_mmproj_filename("mmproj.gguf"));
+        // Underscore-separated variants seen in some community uploads.
+        assert!(is_mmproj_filename("mmproj_f16.gguf"));
+        assert!(is_mmproj_filename("model_mmproj.gguf"));
+        // Suffix layout shipped by qualcomm-ai-hub-community/gemma-4-*-qat-GGUF.
+        assert!(is_mmproj_filename("gemma-4-e2b-it-mmproj.gguf"));
+        // Infix layout.
+        assert!(is_mmproj_filename("model-mmproj-f16.gguf"));
+        // Negative: a regular weight whose name happens to contain "proj".
+        assert!(!is_mmproj_filename("model-q4_0-override.gguf"));
+        assert!(!is_mmproj_filename("projector-only-no-mm.gguf"));
+    }
+
+    #[test]
+    fn gemma4_qat_layout_picks_correct_entrypoint() {
+        // End-to-end regression for #1013: the projector uses an `-mmproj`
+        // suffix and the weight uses a lowercase `q4_0` tag. The real weight
+        // must become the Q4_0 entrypoint and the projector must populate
+        // mmproj_file.
+        let (names, sizes) = sizes_of(&[
+            ("gemma-4-E2B-it-mmproj.gguf", 500_000),
+            ("gemma-4-E2B-q4_0-override.gguf", 2_000_000),
+        ]);
+        let m = infer_manifest_from_names(
+            "qualcomm-ai-hub-community/gemma-4-E2B-it-qat-GGUF",
+            &names,
+            &sizes,
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(m.model_type, ModelType::Vlm);
+        assert_eq!(
+            m.model_file.get("Q4_0").map(|f| f.name.as_str()),
+            Some("gemma-4-E2B-q4_0-override.gguf")
+        );
+        assert_eq!(m.mmproj_file.name, "gemma-4-E2B-it-mmproj.gguf");
     }
 
     #[test]

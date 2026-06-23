@@ -15,9 +15,17 @@ GenieX is an on-device Gen AI inference runtime built for Qualcomm platforms. It
   style={{ borderRadius: '0.5rem' }}
 />
 
-GenieX exposes five entry points — CLI, Python, Java/Kotlin, Docker, and an OpenAI-compatible server — over a single SDK that dispatches to either the **llama.cpp runtime** (GGML kernels for CPU / GPU / Hexagon HTP) or the **[Qualcomm® AI Engine Direct](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) runtime** (NPU-only). The same SDK runs on Windows ARM64, Android, and Linux ARM64.
+GenieX exposes **five entry points**, all over a single SDK:
 
-<Note>**Qualcomm AI Engine Direct** is the official name of what is also known as the *Qualcomm AI Engine Direct SDK*, *Qualcomm AI Runtime*, and historically *QAIRT*. Throughout these docs we use the official name.</Note>
+- **CLI** — run and serve models straight from the terminal.
+- **Python** — embed inference in your apps with the Python SDK.
+- **Java/Kotlin** — the Android SDK for on-device mobile apps.
+- **Docker** — a containerized image for reproducible deployments.
+- **OpenAI-compatible server** — a drop-in local server for existing OpenAI clients.
+
+Under the hood, that SDK dispatches to either the **llama.cpp runtime** (GGML kernels for CPU / GPU / Hexagon HTP) or the **[Qualcomm® AI Engine Direct](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) runtime** (NPU-only). The same SDK runs on Windows ARM64, Android, and Linux ARM64.
+
+<Note>**Qualcomm AI Engine Direct** is the official name of what is also known as the *Qualcomm AI Engine Direct SDK*, *Qualcomm AI Runtime*, and *QAIRT*. Throughout these docs we use the official name.</Note>
 
 ## **Why two runtimes?**
 

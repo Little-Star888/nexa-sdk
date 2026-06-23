@@ -19,7 +19,6 @@ import kotlinx.coroutines.withContext
  */
 class VlmWrapper
 private constructor(
-        private val vlmCreateInput: VlmCreateInput,
         private val dispatcher: CoroutineDispatcher
 ) : Closeable {
 
@@ -27,6 +26,8 @@ private constructor(
     private var handle: Long = 0
 
     companion object {
+        private const val TAG = "GenieXSdk"
+
         fun builder() = Builder()
     }
 
@@ -66,7 +67,7 @@ private constructor(
                         val input =
                                 vlmCreateInput
                                         ?: throw IllegalArgumentException("modelPath required")
-                        val wrapper = VlmWrapper(input, dispatcher)
+                        val wrapper = VlmWrapper(dispatcher)
                         wrapper.handle = wrapper.vlm.create(input)
                         Result.success(wrapper)
                     } catch (e: Exception) {
@@ -125,12 +126,12 @@ private constructor(
 
                     try {
                         val result = vlm.generate(handle, prompt, config, callback)
-                        // FIXME: 当有 callback 时这里返回 result = null
-                        Log.d("nfl", "vlm result:$result")
+                        // FIXME: result is null here when a callback is supplied.
+                        Log.d(TAG, "vlm result:$result")
                     } catch (e: Exception) {
                         // generate() failed
-                        // TODO: 这里应该处理返回的 code
-                        Log.d("nfl", "vlm generate failed code:${e.message}")
+                        // TODO: handle the returned error code.
+                        Log.d(TAG, "vlm generate failed code:${e.message}")
                         trySend(LlmStreamResult.Error(e))
                         close()
                     }

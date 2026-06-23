@@ -4,9 +4,7 @@
 // ---------------------------------------------------------------------
 package com.geniex.demo
 
-import android.content.Intent
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import android.view.View
@@ -36,7 +34,6 @@ enum class MessageType(val value: Int) {
     ASSISTANT(1),
     PROFILE(2),
     IMAGES(3),
-    ASSISTANT_IMAGES(4),
     LOADING(5);
 
     companion object {
@@ -60,13 +57,6 @@ class ChatAdapter(private val messages: List<Message>) :
             MessageType.USER -> UserViewHolder(inflater.inflate(R.layout.item_user_message, parent, false))
             MessageType.ASSISTANT -> AiViewHolder(inflater.inflate(R.layout.item_ai_message, parent, false))
             MessageType.IMAGES -> ImagesViewHolder(inflater.inflate(R.layout.item_image_message, parent, false))
-            MessageType.ASSISTANT_IMAGES -> ImagesViewHolder(
-                inflater.inflate(
-                    R.layout.item_assistant_image_message,
-                    parent,
-                    false
-                )
-            )
             MessageType.LOADING -> LoadingViewHolder(
                 inflater.inflate(R.layout.item_loading_message, parent, false)
             )
@@ -116,10 +106,6 @@ class ChatAdapter(private val messages: List<Message>) :
 
         fun bind(message: Message) {
             tvMessage.text = message.content
-        }
-
-        private fun dpToPx(dp: Int, context: android.content.Context): Int {
-            return (dp * context.resources.displayMetrics.density).toInt()
         }
     }
 

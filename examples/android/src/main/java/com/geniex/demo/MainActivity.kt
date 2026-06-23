@@ -4,21 +4,15 @@
 // ---------------------------------------------------------------------
 package com.geniex.demo
 
-import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.view.LayoutInflater
@@ -32,27 +26,21 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupWindow
 import android.widget.ProgressBar
 import android.widget.SimpleAdapter
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.RecyclerView
 import com.gyf.immersionbar.ktx.immersionBar
-import com.hjq.toast.Toaster
 import com.geniex.demo.bean.ModelData
 import com.geniex.demo.bean.getSupportPluginIds
 import com.geniex.demo.bean.isNpuModel
 import com.geniex.demo.databinding.ActivityMainBinding
 import com.geniex.demo.databinding.DialogSelectPluginIdBinding
 import com.geniex.demo.listeners.CustomDialogInterface
-import com.geniex.demo.utils.ExecShell
 import com.geniex.demo.utils.ImgUtil
 import com.geniex.demo.utils.inflate
 import com.geniex.sdk.LlmWrapper
@@ -77,6 +65,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.util.Locale
 
 class MainActivity : FragmentActivity() {
 
@@ -109,9 +98,7 @@ class MainActivity : FragmentActivity() {
     private val modelScope = CoroutineScope(Dispatchers.IO)
 
     private val chatList = arrayListOf<ChatMessage>()
-    private lateinit var llmSystemPrompt: ChatMessage
     private val vlmChatList = arrayListOf<VlmChatMessage>()
-    private lateinit var vlmSystemPrompty: VlmChatMessage
     private lateinit var modelList: List<ModelData>
     private var selectModelId = ""
 
@@ -188,27 +175,6 @@ class MainActivity : FragmentActivity() {
         llLoading = findViewById(R.id.ll_loading)
         vTip = findViewById<View>(R.id.v_tip)
 
-        findViewById<Button>(R.id.btn_test).setOnClickListener {
-            Thread {
-                val exeFile = File(filesDir, "geniex_test_llm")
-                val chmodProcess = Runtime.getRuntime().exec("chmod 755 " + exeFile.absolutePath);
-                chmodProcess.waitFor()
-                Log.d("nfl", "exeFile exe? ${exeFile.canExecute()}")
-                Log.d("nfl", "Exe Thread:${Thread.currentThread().name}")
-                ExecShell().executeCommand(
-                    arrayOf(
-                        //                        exeFile.absolutePath,
-//                        "--test-suite=\"npu\"", "--success "
-                        "cat",
-                        "/sys/devices/soc0/sku"
-//                        "/data/local/tmp/test_cat.txt"
-                    )
-                ).forEach {
-                    Log.d("nfl", "cmd:$it")
-                }
-            }.start()
-        }
-
         findViewById<View>(R.id.v_tip).setOnClickListener {
             Toast.makeText(this, "please unload model first", Toast.LENGTH_SHORT).show()
         }
@@ -220,7 +186,7 @@ class MainActivity : FragmentActivity() {
             val json = Json { ignoreUnknownKeys = true }
             modelList = json.decodeFromString<List<ModelData>>(baseJson)
         } catch (e: Exception) {
-            Log.e("nfl", "parseModelList: $e")
+            Log.e(TAG, "parseModelList: $e")
         }
     }
 
@@ -230,37 +196,7 @@ class MainActivity : FragmentActivity() {
      */
     private fun initData() {
         parseModelList()
-        //
         initGenieXSdk()
-        //
-        val sysPrompt = """\
-You are Nays Campaign Manager, an AI assistant responsible for managing customer campaigns and investigating campaign-related issues.
-
-When a customer inquiry comes in, you need to:
-1. Analyze the customer's request to understand their campaign needs
-2. Check if it's related to campaign limits or issues
-3. Use the campaign_investigation function when needed to check campaign status
-4. Provide appropriate responses based on the investigation results
-
-Your responsibilities include:
-- Investigating campaign performance and limits
-- Determining if customers have reached their campaign limits
-- Providing helpful messages when limits are reached
-- Directing customers to support when limits haven't been reached
-- Ensuring smooth campaign operations for all customers
-
-When you receive a query about campaigns, you should:
-1. First understand what the customer is asking about
-2. If it's campaign-related, use the campaign_investigation tool to check the status
-3. Based on the tool's response, provide appropriate guidance
-
-Always be professional, helpful, and focused on resolving campaign-related issues efficiently.
-
-Note: You must use the campaign_investigation function whenever a customer asks about campaign limits, issues, or status.
-"""
-        // It works better with Chinese prompt words.
-        val sysPrompt2 = "Must reply in markdown format"
-//        addSystemPrompt(sysPrompt2)
     }
 
     /**
@@ -277,21 +213,6 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             }
         })
     }
-
-    /**
-     * Step 2. add system prompt, such as : output markdown style, contains emoji etc.(Options)
-     */
-    private fun addSystemPrompt(sysPrompt: String) {
-        llmSystemPrompt = ChatMessage("system", sysPrompt)
-        chatList.add(llmSystemPrompt)
-        vlmSystemPrompty =
-            VlmChatMessage(
-                "system",
-                listOf(VlmContent("text", sysPrompt))
-            )
-        vlmChatList.add(vlmSystemPrompty)
-    }
-
 
     private fun onLoadModelSuccess(tip: String) {
         runOnUiThread {
@@ -447,7 +368,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             return
         }
         if (downloadJob?.isActive == true) {
-            Toaster.show("${downloadingModelData?.displayName ?: "a model"} is already downloading")
+            Toast.makeText(this@MainActivity, "${downloadingModelData?.displayName ?: "a model"} is already downloading", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -469,7 +390,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             (hub == HubSource.AUTO && isAiHubName)
         if (willUseAiHub && selectModelData.chipset.isNullOrBlank()) {
             llDownloading.visibility = View.GONE
-            Toaster.show("AI Hub models require a chipset. Update model_list.json.")
+            Toast.makeText(this@MainActivity, "AI Hub models require a chipset. Update model_list.json.", Toast.LENGTH_SHORT).show()
             return
         }
         val input = ModelPullInput(
@@ -502,7 +423,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
                     is ModelManagerWrapper.PullEvent.Completed -> {
                         runOnUiThread {
                             llDownloading.visibility = View.GONE
-                            Toaster.show("${selectModelData.displayName} downloaded")
+                            Toast.makeText(this@MainActivity, "${selectModelData.displayName} downloaded", Toast.LENGTH_SHORT).show()
                         }
                     }
                     is ModelManagerWrapper.PullEvent.Error -> {
@@ -555,7 +476,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
                 if (downloadingModelData?.id == selectModelId) {
                     binding.llDownloading.visibility = View.VISIBLE
                 } else {
-                    Toaster.show("${downloadingModelData?.displayName} is currently downloading.")
+                    Toast.makeText(this@MainActivity, "${downloadingModelData?.displayName} is currently downloading.", Toast.LENGTH_SHORT).show()
                 }
                 return@setOnClickListener
             }
@@ -567,10 +488,6 @@ Note: You must use the campaign_investigation function whenever a customer asks 
          */
         btnLoadModel.setOnClickListener {
             val selectModelData = modelList.first { it.id == selectModelId }
-            if (selectModelData == null) {
-                Toast.makeText(this@MainActivity, "model not selected", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
             Log.d(TAG, "current select model data:$selectModelData")
             if (hasLoadedModel()) {
                 Toast.makeText(this@MainActivity, "please unload first", Toast.LENGTH_SHORT).show()
@@ -582,7 +499,7 @@ Note: You must use the campaign_investigation function whenever a customer asks 
             modelScope.launch {
                 if (!isModelDownloaded(selectModelData)) {
                     runOnUiThread {
-                        Toaster.showLong("Model not downloaded — tap Download first.")
+                        Toast.makeText(this@MainActivity, "Model not downloaded — tap Download first.", Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }
@@ -626,20 +543,10 @@ Note: You must use the campaign_investigation function whenever a customer asks 
 
             val supportFunctionCall = false
             var tools: String? = null
-            var grammarString: String? = null
             if (supportFunctionCall) {
                 // if this model support 'function call'
                 tools =
                     "[{\"type\":\"function\",\"function\":{\"name\": \"campaign_investigation\",\"description\": \"Check campaign limits and determine appropriate action. If customer has reached limit, return a message (hardcoded or generated by model). If limit not reached, contact support.\",\"parameters\": {\"type\": \"object\", \"properties\":{\"campaign_name\":{\"type\": \"string\",\"description\": \"The name of the campaign to investigate\"}}, \"required\":[\"campaign_name\"]}}}]"
-                grammarString = """
-root ::= "<tool_call>" space object "</tool_call>" space
-object ::= "{" space campaign-name-kv "}" space
-campaign-name-kv ::= "\"campaign_name\"" space ":" space string
-string ::= "\"" char* "\"" space
-char ::= [^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" hex hex hex hex)
-hex ::= [0-9a-fA-F]
-space ::= | " " | "\n" | "\r" | "\t"
-"""
             }
 
             if (!hasLoadedModel()) {
@@ -663,13 +570,6 @@ space ::= | " " | "\n" | "\r" | "\t"
                     contents.add(VlmContent("text", inputString))
                     clearImages()
                     val sendMsg = VlmChatMessage(role = "user", contents = contents)
-                    // VlmContentTransfer(
-                    //     this@MainActivity, VlmContent(
-                    //         "image", inputString
-                    //     )
-                    // ).forUrl()
-
-                    // vlmChatList.clear()
                     vlmChatList.add(sendMsg)
 
                     Log.d(TAG, "before apply chat template:$vlmChatList")
@@ -677,7 +577,7 @@ space ::= | " " | "\n" | "\r" | "\t"
                         .onSuccess { result ->
                             Log.d(TAG, "vlm chat template:${result.formattedText}")
                             val baseConfig =
-                                GenerationConfigSample().toGenerationConfig(grammarString)
+                                GenerationConfigSample().toGenerationConfig()
                             // Only inject the current turn's media: SDK tokenizes
                             // incrementally, so re-passing history bitmaps breaks
                             // mtmd_tokenize (markers/bitmaps mismatch).
@@ -710,7 +610,7 @@ space ::= | " " | "\n" | "\r" | "\t"
                         Log.d(TAG, "chat template:${templateOutput.formattedText}")
                         llmWrapper.generateStreamFlow(
                             templateOutput.formattedText,
-                            GenerationConfigSample().toGenerationConfig(grammarString)
+                            GenerationConfigSample().toGenerationConfig()
                         ).collect { streamResult ->
                             handleResult(sb, streamResult)
                         }
@@ -769,13 +669,11 @@ space ::= | " " | "\n" | "\r" | "\t"
                     vlmWrapper.stopStream()
                     vlmWrapper.destroy()
                     vlmChatList.clear()
-                    // TODO:
                     handleUnloadResult(0)
                 } else if (isLoadLlmModel) {
                     llmWrapper.stopStream()
                     llmWrapper.destroy()
                     chatList.clear()
-                    // TODO:
                     handleUnloadResult(0)
                 } else {
                     handleUnloadResult(0)
@@ -921,18 +819,18 @@ space ::= | " " | "\n" | "\r" | "\t"
                 }
 
                 runOnUiThread {
-                    var content = sb.toString()
+                    val content = sb.toString()
                     val size = messages.size
                     messages[size - 1] = Message(content, MessageType.ASSISTANT)
 
-                    val ttft = String.format(null, "%.2f", streamResult.profile.ttftMs)
+                    val ttft = String.format(Locale.US, "%.2f", streamResult.profile.ttftMs)
                     val promptTokens = streamResult.profile.promptTokens
                     val prefillSpeed =
-                        String.format(null, "%.2f", streamResult.profile.prefillSpeed)
+                        String.format(Locale.US, "%.2f", streamResult.profile.prefillSpeed)
 
                     val generatedTokens = streamResult.profile.generatedTokens
                     val decodingSpeed =
-                        String.format(null, "%.2f", streamResult.profile.decodingSpeed)
+                        String.format(Locale.US, "%.2f", streamResult.profile.decodingSpeed)
 
                     val profileData =
                         "TTFT: $ttft ms; Prompt Tokens: $promptTokens; \nPrefilling Speed: $prefillSpeed tok/s\nGenerated Tokens: $generatedTokens; Decoding Speed: $decodingSpeed tok/s"
@@ -965,28 +863,6 @@ space ::= | " " | "\n" | "\r" | "\t"
         startActivityForResult(intent, 1)
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == 0) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                openGallery()
-            } else {
-                Toast.makeText(this, "Not allow", Toast.LENGTH_SHORT).show()
-            }
-        } else if (requestCode == 2001) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                openCamera()
-            } else {
-                Toast.makeText(this, "Camera not allow", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -996,10 +872,6 @@ space ::= | " " | "\n" | "\r" | "\t"
                 val inputStream = contentResolver.openInputStream(data.data!!)
                 bitmap = BitmapFactory.decodeStream(inputStream)
             }
-        } else if (requestCode == 1001 && resultCode == Activity.RESULT_OK) {
-            photoFile?.let {
-                bitmap = BitmapFactory.decodeFile(it.absolutePath)
-            }
         }
 
         bitmap?.let {
@@ -1007,14 +879,14 @@ space ::= | " " | "\n" | "\r" | "\t"
                 val file = File(filesDir, "chat_${System.currentTimeMillis()}.jpg")
                 val success = saveBitmapToFile(it, file)
                 if (success) {
-                    Log.d(TAG, "Save success：${file.absolutePath}")
+                    Log.d(TAG, "Save success: ${file.absolutePath}")
                     savedImageFiles.add(file)
                     refreshTopScrollContainer()
                 } else {
                     Toast.makeText(this, "Save Image failed", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: FileNotFoundException) {
-                e.printStackTrace()
+                Log.e(TAG, "save image failed", e)
             }
         }
     }
@@ -1046,7 +918,7 @@ space ::= | " " | "\n" | "\r" | "\t"
             )
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "saveBitmapToFile failed", e)
             false
         }
     }
@@ -1067,79 +939,6 @@ space ::= | " " | "\n" | "\r" | "\t"
         messages.clear()
         clearImages()
         reloadRecycleView()
-    }
-
-    private var popupWindow: PopupWindow? = null
-    private fun showPopupMenu(anchorView: View) {
-        if (popupWindow?.isShowing == true) {
-            popupWindow?.dismiss()
-            return
-        }
-
-        val popupView = LayoutInflater.from(this).inflate(R.layout.menu_layout, null)
-
-        popupWindow = PopupWindow(
-            popupView,
-            anchorView.width * 2,
-            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-            true
-        )
-
-        popupWindow?.isOutsideTouchable = true
-        popupWindow?.elevation = 10f
-
-        val btnCamera = popupView.findViewById<Button>(R.id.btn_camera)
-        val btnPhoto = popupView.findViewById<Button>(R.id.btn_photo)
-
-        btnCamera.setOnClickListener {
-            popupWindow?.dismiss()
-            checkAndOpenCamera()
-        }
-        btnPhoto.setOnClickListener {
-            popupWindow?.dismiss()
-            openGallery()
-        }
-
-        popupView.measure(
-            View.MeasureSpec.UNSPECIFIED,
-            View.MeasureSpec.UNSPECIFIED
-        )
-        val popupHeight = popupView.measuredHeight
-        popupWindow?.showAsDropDown(anchorView, 0, -anchorView.height - popupHeight)
-    }
-
-    private var photoUri: Uri? = null
-    private var photoFile: File? = null
-
-    private fun checkAndOpenCamera() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                2001
-            )
-        } else {
-            openCamera()
-        }
-    }
-
-    private fun openCamera() {
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        photoFile = File(
-            getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-            "photo_${System.currentTimeMillis()}.jpg"
-        )
-        photoUri = FileProvider.getUriForFile(
-            this,
-            "${applicationContext.packageName}.fileprovider",
-            photoFile!!
-        )
-
-        intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        startActivityForResult(intent, 1001)
     }
 
     private fun clearImages() {
@@ -1205,6 +1004,6 @@ space ::= | " " | "\n" | "\r" | "\t"
     }
 
     companion object {
-        private const val TAG = "MainActivity"
+        private const val TAG = "GenieXDemo"
     }
 }

@@ -14,8 +14,6 @@ geniex_SamplerConfig extract_sampler_config(JNIEnv* env, jobject configObj);
 
 geniex_ModelConfig extract_model_config(JNIEnv* env, jobject configObj);
 
-//    std::vector<geniex_ChatMessage> extract_chat_messages(JNIEnv* env, jobjectArray jmessages,
-//    std::vector<std::string>& str_buf);
 void getStringArrayField(JNIEnv* env, jobject obj, jclass cls, const char* fieldName, std::vector<std::string>& storage,
     std::vector<const char*>& ptrs);
 

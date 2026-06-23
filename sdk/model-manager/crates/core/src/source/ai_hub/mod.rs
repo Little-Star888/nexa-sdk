@@ -110,6 +110,23 @@ pub async fn list_supported_chipsets(cfg: &AiHubConfig) -> Result<Vec<ChipsetInf
     Ok(chipsets)
 }
 
+/// Detect the host chipset and resolve it to the reference device name AI
+/// Hub displays (e.g. `"Snapdragon X Elite CRD"`), the same name surfaced by
+/// [`list_supported_chipsets`]. Best-effort: returns `None` when the host
+/// cannot be probed, and falls back to the raw detected id when the chipset
+/// catalogue is unavailable or has no entry for it.
+pub async fn detect_host_chipset_reference(cfg: &AiHubConfig) -> Option<String> {
+    let raw = detect::detect_host_chipset()?;
+    let transport: Arc<dyn HttpTransport> = match ReqwestTransport::new() {
+        Ok(t) => Arc::new(t),
+        Err(_) => return Some(raw),
+    };
+    match fetch_platform_info(cfg, &transport).await {
+        Ok(plat) => Some(selector::resolve_chipset_display(&plat, &raw).unwrap_or(raw)),
+        Err(_) => Some(raw),
+    }
+}
+
 pub struct AiHubSource {
     display_name: String,
     model_name: String,
@@ -183,7 +200,10 @@ impl ModelSource for AiHubSource {
         let release_assets_url = &entry.manifest_urls.release_assets;
         if release_assets_url.is_empty() {
             return Err(Error::Hub(format!(
-                "AI Hub model {:?} has no release_assets URL",
+                "No pre-compiled assets available for {:?} due to licensing \
+                 restrictions. Please use the qai-hub-models Python package to \
+                 manually export the model. See export instructions here: \
+                 https://github.com/qualcomm/ai-hub-apps/blob/main/tutorials/llm_on_genie/export.md",
                 self.display_name
             )));
         }

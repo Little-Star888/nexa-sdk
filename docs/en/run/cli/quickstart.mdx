@@ -51,53 +51,10 @@ When prompted:
 
 ## **Run a local model**
 
-Already have a model on disk? Use `geniex pull` with `--local-path` to register it, then run it like any other model.
+Already have a model on disk, or want to self-convert a bundle from Hugging Face? Use `geniex pull` with `--local-path` to register it, then run it like any other model. See:
 
-### **Local GGUF file**
-
-Point `--local-path` at the directory containing your `.gguf` file:
-
-<CodeGroup>
-```powershell windows
-geniex pull local/my-model --local-path C:\models\my-model
-geniex infer local/my-model
-```
-
-```bash linux
-geniex pull local/my-model --local-path /home/user/models/my-model
-geniex infer local/my-model
-```
-</CodeGroup>
-
-### **Local Qualcomm AI Engine Direct bundle**
-
-Point `--local-path` at the extracted bundle directory (containing `.bin` shards and `metadata.json`):
-
-<CodeGroup>
-```powershell windows
-geniex pull local/my-bundle --local-path C:\models\my-bundle
-geniex infer local/my-bundle
-```
-
-```bash linux
-geniex pull local/my-bundle --local-path /home/user/models/my-bundle
-geniex infer local/my-bundle
-```
-</CodeGroup>
-
-You can also pull directly from an AI Hub `.zip` archive without extracting first:
-
-<CodeGroup>
-```powershell windows
-geniex pull local/my-bundle --local-path C:\downloads\model.zip
-```
-
-```bash linux
-geniex pull local/my-bundle --local-path /home/user/downloads/model.zip
-```
-</CodeGroup>
-
-<Note>`geniex pull` copies model files into its local cache. After a successful pull, you can safely delete the original to avoid keeping two copies. Use `geniex list` to confirm the model is cached.</Note>
+- [Run a local Qualcomm AI Engine Direct bundle](/en/models/supported#run-a-local-qualcomm-ai-engine-direct-bundle) — self-converted from Hugging Face, an extracted bundle directory, or an AI Hub `.zip`.
+- [Run a local GGUF model](/en/models/supported#run-a-local-gguf-model) — a directory containing your `.gguf` file.
 
 ## **Next steps**
 

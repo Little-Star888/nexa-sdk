@@ -9,7 +9,10 @@
 //! / `NO_PROXY` env vars out of the box (reqwest default), which is
 //! the whole point of moving off hf-hub's ureq backend. rustls keeps
 //! us off any system OpenSSL dependency so the static
-//! `libgeniex_model.a` stays portable.
+//! `libgeniex_model.a` stays portable. TLS chain validation is
+//! delegated to the OS trust store via `rustls-platform-verifier` so
+//! corporate MITM proxies (whose private CA lives in the OS store, not
+//! in the Mozilla `webpki-roots` bundle) are trusted like Schannel does.
 
 use std::time::Duration;
 
@@ -86,7 +89,8 @@ impl ReqwestTransport {
             .user_agent(USER_AGENT)
             .connect_timeout(connect)
             .read_timeout(read)
-            .redirect(reqwest::redirect::Policy::limited(10));
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .use_preconfigured_tls(build_tls_config()?);
         if let Some(p) = cfg.proxy_override {
             let proxy =
                 reqwest::Proxy::all(&p).map_err(|e| Error::Http(format!("proxy {p}: {e}")))?;
@@ -105,6 +109,42 @@ impl ReqwestTransport {
     fn is_transient(status: StatusCode) -> bool {
         status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
     }
+}
+
+/// rustls config whose cert verifier defers to the OS trust store, so
+/// enterprise/MITM-proxy CAs installed in the system store are trusted.
+///
+/// Android exception: `rustls-platform-verifier` needs JNI-side init that
+/// the Android binding does not perform, so it would panic on first TLS
+/// handshake (#1065). Fall back to the bundled Mozilla `webpki-roots`
+/// there — we lose system-store CAs (corporate MITM) on Android only.
+fn build_tls_config() -> Result<rustls::ClientConfig> {
+    // The ring crypto provider must be installed once per process before
+    // any rustls config is built; a second install is a harmless no-op.
+    static PROVIDER_INIT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    PROVIDER_INIT.get_or_init(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+    let provider = rustls::crypto::CryptoProvider::get_default()
+        .ok_or_else(|| Error::Http("rustls crypto provider not installed".into()))?
+        .clone();
+
+    let builder = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| Error::Http(format!("rustls protocol versions: {e}")))?;
+
+    #[cfg(not(target_os = "android"))]
+    let config = {
+        use rustls_platform_verifier::BuilderVerifierExt;
+        builder.with_platform_verifier().with_no_client_auth()
+    };
+    #[cfg(target_os = "android")]
+    let config = {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        builder.with_root_certificates(roots).with_no_client_auth()
+    };
+    Ok(config)
 }
 
 #[async_trait]

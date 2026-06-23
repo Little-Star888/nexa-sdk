@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-#define TAG "jni"
+#define TAG "GenieXSdk"
 #define LOGi(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGe(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
@@ -201,44 +201,10 @@ geniex_SamplerConfig extract_sampler_config(JNIEnv* env, jobject configObj) {
         }
     }
 
-    // 可選：釋放 cls 的 local ref（非必須，但更乾淨）
+    // Optional: release the local ref to cls (not required, but cleaner).
     env->DeleteLocalRef(cls);
     return cfg;
 }
-
-//    std::vector <geniex_ChatMessage>
-//    extract_chat_messages(JNIEnv *env, jobjectArray jmessages, std::vector <std::string> &str_buf) {
-//        jsize count = env->GetArrayLength(jmessages);
-//        std::vector <geniex_ChatMessage> msgs(count);
-//
-//        str_buf.clear();
-//        str_buf.reserve(count * 2); // for role and content
-//
-//        for (jsize i = 0; i < count; ++i) {
-//            jobject jmsg = env->GetObjectArrayElement(jmessages, i);
-//            jclass msgCls = env->GetObjectClass(jmsg);
-//
-//            jfieldID roleField = env->GetFieldID(msgCls, "role", "Ljava/lang/String;");
-//            jfieldID contentField = env->GetFieldID(msgCls, "content", "Ljava/lang/String;");
-//
-//            jstring jrole = (jstring) env->GetObjectField(jmsg, roleField);
-//            jstring jcontent = (jstring) env->GetObjectField(jmsg, contentField);
-//
-//            std::string crole = jstring2str(env, jrole);
-//            std::string ccontent = jstring2str(env, jcontent);
-//
-//            str_buf.push_back(crole);
-//            str_buf.push_back(ccontent);
-//
-//            msgs[i].role = str_buf[str_buf.size() - 2].c_str();
-//            msgs[i].content = str_buf[str_buf.size() - 1].c_str();
-//
-//            env->DeleteLocalRef(jrole);
-//            env->DeleteLocalRef(jcontent);
-//            env->DeleteLocalRef(jmsg);
-//        }
-//        return msgs;
-//    }
 
 geniex_ModelConfig extract_model_config(JNIEnv* env, jobject configObj) {
     geniex_ModelConfig config = {};
@@ -469,7 +435,7 @@ geniex_LlmCreateInput extract_llm_create_input(JNIEnv* env, jobject inputObj) {
 }
 
 geniex_VlmCreateInput extract_vlm_create_input(JNIEnv* env, jobject inputObj) {
-    geniex_VlmCreateInput out{};  // 全部設為 0 / nullptr
+    geniex_VlmCreateInput out{};  // zero-initialize all fields to 0 / nullptr
     if (!inputObj) return out;
 
     jclass cls = env->GetObjectClass(inputObj);
@@ -510,7 +476,7 @@ geniex_VlmCreateInput extract_vlm_create_input(JNIEnv* env, jobject inputObj) {
     fid = env->GetFieldID(cls, "config", "Lcom/geniex/sdk/bean/ModelConfig;");
     if (fid) {
         jobject configObj = env->GetObjectField(inputObj, fid);
-        out.config        = extract_model_config(env, configObj);  // 你原本的工具函式
+        out.config        = extract_model_config(env, configObj);  // existing helper
         if (configObj) env->DeleteLocalRef(configObj);
     }
 
@@ -601,7 +567,7 @@ static geniex_VlmContent extract_vlm_content(JNIEnv* env, jobject jcontent) {
     jmethodID midGetType = env->GetMethodID(cls, "getType", "()Ljava/lang/String;");
     if (!midGetType) {
         env->ExceptionClear();
-    }  // 以防沒有 getter（被混淆或命名不同）
+    }  // in case there is no getter (obfuscated or named differently)
     if (midGetType) {
         jstring jtype = (jstring)env->CallObjectMethod(jcontent, midGetType);
         if (jtype) {
@@ -609,7 +575,7 @@ static geniex_VlmContent extract_vlm_content(JNIEnv* env, jobject jcontent) {
             env->DeleteLocalRef(jtype);
         }
     } else {
-        // 後備：直接用欄位（如果你不是 data class 或有 public field）
+        // Fallback: read the field directly (for non-data-class or public fields).
         jfieldID typeFid = env->GetFieldID(cls, "type", "Ljava/lang/String;");
         if (typeFid) {
             jstring jtype = (jstring)env->GetObjectField(jcontent, typeFid);
@@ -649,7 +615,7 @@ static geniex_VlmContent extract_vlm_content(JNIEnv* env, jobject jcontent) {
     return out;
 }
 
-// 前提：你已經有
+// Prerequisites (already declared above):
 // static thread_local std::vector<std::unique_ptr<char[]>> jni_cstr_pool;
 // static const char* hold_c_str(const std::string& s);
 // static inline void clear_jni_cstr_pool();
@@ -662,7 +628,7 @@ std::vector<geniex_VlmChatMessage> extract_vlm_chat_messages(JNIEnv* env, jobjec
     const jsize len = env->GetArrayLength(jmessages);
     if (len <= 0) return msgs;
 
-    // java.util.List 反射
+    // java.util.List reflection
     jclass    listCls     = env->FindClass("java/util/List");
     jmethodID midListSize = nullptr;
     jmethodID midListGet  = nullptr;
@@ -708,7 +674,7 @@ std::vector<geniex_VlmChatMessage> extract_vlm_chat_messages(JNIEnv* env, jobjec
                     for (jint ci = 0; ci < cLen; ++ci) {
                         jobject jc = env->CallObjectMethod(jList, midListGet, ci);
                         if (jc) {
-                            contents_arr[ci] = extract_vlm_content(env, jc);  // 你已改成用 hold_c_str 的版本
+                            contents_arr[ci] = extract_vlm_content(env, jc);  // uses the hold_c_str-backed variant
                             env->DeleteLocalRef(jc);
                         } else {
                             contents_arr[ci] = geniex_VlmContent{};
@@ -736,7 +702,7 @@ std::vector<geniex_VlmChatMessage> extract_vlm_chat_messages(JNIEnv* env, jobjec
 
 void free_vlm_chat_messages(std::vector<geniex_VlmChatMessage>& msgs) {
     for (auto& m : msgs) {
-        delete[] m.contents;  // delete nullptr 安全
+        delete[] m.contents;  // deleting nullptr is safe
         m.contents      = nullptr;
         m.content_count = 0;
     }

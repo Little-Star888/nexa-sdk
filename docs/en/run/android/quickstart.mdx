@@ -144,6 +144,15 @@ For `llama_cpp` only — set `compute_unit` on `LlmCreateInput`:
 
 Qualcomm AI Engine Direct ignores this — `cpu`/`gpu` are coerced to NPU with a warning.
 
+## **Using a local model**
+
+If the weights are already on the device — side-loaded via `adb push`, bundled in your app's files dir, or produced by another tool — point the model manager at that directory instead of a hub: set `hub = HubSource.LOCALFS` and `local_path` to the on-disk location. `pullFlow` imports it into the SDK cache (no network), after which `getPaths` / `LlmWrapper` work exactly as they do for a downloaded model.
+
+The full Android snippets for importing a local GGUF model and a local Qualcomm AI Engine Direct bundle live on the Models page:
+
+- [Run a local Qualcomm AI Engine Direct bundle → Android](/en/models/supported#run-a-local-qualcomm-ai-engine-direct-bundle)
+- [Run a local GGUF model → Android](/en/models/supported#run-a-local-gguf-model)
+
 ## **Using the sample app**
 
 The [sample app](https://github.com/qcom-ai-hub/geniex/tree/main/examples/android) at `examples/android/` is a fully wired chat client built on top of the snippets above. A few patterns worth borrowing when you build your own UI:

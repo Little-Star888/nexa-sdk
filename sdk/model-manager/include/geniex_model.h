@@ -400,16 +400,17 @@ GENIEX_API int32_t geniex_model_list_chipsets(geniex_ChipsetList* out);
 GENIEX_API void geniex_model_list_chipsets_free(geniex_ChipsetList* out);
 
 /**
- * @brief Detect the chipset of the current host via a local probe.
+ * @brief Detect the chipset of the current host.
  *
- * Pure local detection — no network. Coverage: Windows-on-Snapdragon
- * (X Elite / X Plus / X2 Elite), Linux on Qualcomm Dragonwing boards
- * (QCS6490 / QCS9075), and Android on Snapdragon (`ro.soc.model`).
+ * Probes the host (Windows-on-Snapdragon X Elite / X Plus / X2 Elite, Linux
+ * on Qualcomm Dragonwing boards QCS6490 / QCS9075, Android on Snapdragon via
+ * `ro.soc.model`), then resolves the raw id to the AI Hub reference device
+ * name (e.g. "Snapdragon X Elite CRD") — the same name geniex_model_list_chipsets
+ * surfaces and the picker stores. Resolution reads platform.json (24h on-disk
+ * cache), so the first call may hit the network; it falls back to the raw
+ * detected id when the catalogue is unavailable or has no entry for it.
  *
- * The returned string is not normalised across platforms: Windows/Linux
- * yield an AI Hub canonical chipset id (e.g. "qualcomm-snapdragon-x-elite"),
- * while Android yields the raw SoC model (e.g. "SM8750"). Both are accepted
- * by geniex_model_pull's `chipset` field.
+ * The returned value is accepted by geniex_model_pull's `chipset` field.
  *
  * @param out_chipset  Set to a heap-allocated string on success, or NULL when
  *                     the host cannot be probed on this platform. Free a

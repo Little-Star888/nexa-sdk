@@ -79,7 +79,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux"
        AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64"
        AND NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "aarch64")
-    set(RUST_CARGO_ENV CARGO_TARGET_DIR=${RUST_TARGET_ROOT})
+    # Pin the linker to the aarch64 cross-gcc; rustc otherwise links via
+    # rust-lld pointed at the host (x86_64) gcc-ld, which breaks once a
+    # dependency is emitted as a shared object.
+    # gcc-13 matches the on-device libstdc++ ABI (#458); the *-unknown-* names
+    # are symlinks from the toolchain image.
+    set(RUST_CARGO_ENV
+        CARGO_TARGET_DIR=${RUST_TARGET_ROOT}
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc-13
+        CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc-13
+        AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar)
     set(RUST_CARGO_TARGET_FLAGS --target aarch64-unknown-linux-gnu)
     set(RUST_TARGET_DIR "${RUST_TARGET_ROOT}/aarch64-unknown-linux-gnu/${RUST_PROFILE}")
 else()

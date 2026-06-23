@@ -1,8 +1,9 @@
 use std::os::raw::c_char;
 
 use model_manager_core::config::StoreConfig;
-use model_manager_core::source::ai_hub::detect::detect_host_chipset;
-use model_manager_core::source::ai_hub::{list_supported_chipsets, AiHubConfig};
+use model_manager_core::source::ai_hub::{
+    detect_host_chipset_reference, list_supported_chipsets, AiHubConfig,
+};
 
 use crate::init::{get_store, runtime_handle};
 use crate::types::*;
@@ -137,7 +138,18 @@ pub extern "C" fn geniex_model_detect_chipset(out_chipset: *mut *mut c_char) -> 
         if out_chipset.is_null() {
             return GENIEX_ERROR_COMMON_INVALID_INPUT;
         }
-        let ptr = match detect_host_chipset() {
+        let store = match get_store() {
+            Ok(s) => s,
+            Err(c) => return c,
+        };
+        let cfg = AiHubConfig::new(
+            StoreConfig::ai_hub_base_url(),
+            StoreConfig::ai_hub_version(),
+            String::new(),
+            store.config().ai_hub_cache_dir(),
+            false,
+        );
+        let ptr = match runtime_handle().block_on(detect_host_chipset_reference(&cfg)) {
             Some(s) => str_to_cptr(&s),
             None => std::ptr::null_mut(),
         };

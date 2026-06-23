@@ -9,6 +9,8 @@
 # install.sh::resolve_host_lib does the equivalent on bare metal.
 set -e
 
+warn() { printf 'warning: %s\n' "$*" >&2; }
+
 LIB_DIR=/opt/geniex
 MISSING_LIBS=""
 
@@ -48,12 +50,12 @@ for lib in \
 done
 
 if [ -n "$MISSING_LIBS" ]; then
-    echo "warning: the following libraries were not found under /opt/qcom-lib; NPU/GPU may fail:" >&2
+    warn "the following libraries were not found under /opt/qcom-lib; NPU/GPU may fail:"
     for lib in $MISSING_LIBS; do
-        echo "  - $lib" >&2
+        warn "  - $lib"
     done
-    echo "  install the Qualcomm driver packages on the host (qcom-adreno1, qcom-fastrpc1)." >&2
-    echo "  See the GenieX FAQ \"Linux ARM64 setup\" section." >&2
+    warn "install Qualcomm driver packages on the host (qcom-adreno1, qcom-fastrpc1)."
+    warn "See the GenieX docs: Troubleshooting -> Linux."
 fi
 
 # Default to an interactive bash shell when invoked with no arguments.

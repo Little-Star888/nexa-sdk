@@ -1,4 +1,4 @@
-package com.geniex.sdk.bean;
+package com.geniex.sdk.bean
 
 interface LLMTokenCallback {
     fun onToken(token: String): Boolean

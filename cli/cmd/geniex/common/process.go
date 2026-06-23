@@ -210,6 +210,9 @@ const (
 	STATE_ANALYSIS
 	STATE_FINAL
 	STATE_END
+
+	STATE_GEMMA_CHANNEL
+	STATE_GEMMA_CHANNEL_THOUGHT
 )
 
 func (p *Processor) fsmInit() {
@@ -248,6 +251,12 @@ func (p *Processor) fsmInit() {
 		{STATE_NORMAL, "<|end|>"}:        {STATE_END, nil},
 		{STATE_END, "<|start|>"}:         {STATE_START, nil},
 		{STATE_START, "assistant"}:       {STATE_ASSISTANT, nil},
+
+		// gemma4
+		{STATE_ASSISTANT, "<|channel>"}:    {STATE_GEMMA_CHANNEL, nil},
+		{STATE_GEMMA_CHANNEL, "thought"}:   {STATE_GEMMA_CHANNEL_THOUGHT, nil},
+		{STATE_GEMMA_CHANNEL_THOUGHT, "\n"}: {STATE_THINK, thinkStart(true)},
+		{STATE_THINK, "<channel|>"}:        {STATE_NORMAL, thinkEnd(true)},
 	}
 	p.fsmState = STATE_ASSISTANT
 }

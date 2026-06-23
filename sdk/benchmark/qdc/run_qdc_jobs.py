@@ -398,9 +398,7 @@ def render_aggregate(cells_dir: Path, device: str, models_file: Path) -> int:
     )
     label = detect_geniex_label(_short_sha())
     if not cells:
-        write_summary(
-            f"## QDC Bench — {device} — {label}\n\nNo results recovered.\n"
-        )
+        write_summary(f"## QDC Bench — {device} — {label}\n\nNo results recovered.\n")
         return 0
     models = json.loads(models_file.read_text()) if models_file.exists() else None
     write_summary(render(cells, device, label, models))

@@ -19,7 +19,6 @@ import java.io.Closeable
 
 // LlmWrapper - provides high-level API for LLM operations with coroutine support
 class LlmWrapper private constructor(
-    private val llmCreateInput: LlmCreateInput,
     private val dispatcher: CoroutineDispatcher
 ) : Closeable {
 
@@ -28,6 +27,8 @@ class LlmWrapper private constructor(
     private var handle: Long = 0
 
     companion object {
+        private const val TAG = "GenieXSdk"
+
         @JvmStatic
         fun builder() = Builder()
     }
@@ -45,7 +46,7 @@ class LlmWrapper private constructor(
         suspend fun build(): Result<LlmWrapper> = withContext(dispatcher) {
             try {
                 val input = llmCreateInput ?: throw IllegalArgumentException("modelPath required")
-                val wrapper = LlmWrapper(input, dispatcher)
+                val wrapper = LlmWrapper(dispatcher)
                 wrapper.handle = wrapper.llm.create(input)
                 Result.success(wrapper)
             } catch (e: Exception) {
@@ -93,12 +94,12 @@ class LlmWrapper private constructor(
             }
             try {
                 val result = llm.generate(handle, prompt, config, callback)
-                // FIXME: 当有 callback 时这里返回 result = null
-                Log.d("nfl", "llm result:$result")
+                // FIXME: result is null here when a callback is supplied.
+                Log.d(TAG, "llm result:$result")
             } catch (e: Exception) {
                 // generate() failed
-                // TODO: 这里应该处理返回的 code
-                Log.d("nfl", "llm generate failed code:${e.message}")
+                // TODO: handle the returned error code.
+                Log.d(TAG, "llm generate failed code:${e.message}")
                 trySend(LlmStreamResult.Error(e))
                 close()
             }

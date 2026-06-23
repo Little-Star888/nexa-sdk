@@ -29,7 +29,7 @@ import Feedback from "/snippets/page-feedback.mdx";
   </Accordion>
 
   <Accordion title="`--compute cpu` 或 `--compute gpu` 在 Qualcomm AI Hub 模型上报错">
-    Qualcomm AI Engine Direct 仅支持 NPU。请使用 `--compute npu`（或省略该标志——`npu` 是 `qairt` 的默认值）。如需在 CPU/GPU 上运行，改用 [llama.cpp 运行时](/cn/get-started/platforms#llamacpp)的 GGUF 模型。
+    Qualcomm AI Engine Direct 仅支持 NPU。请使用 `--compute npu`（或省略该标志——`npu` 是 `qairt` 的默认值）。如需在 CPU/GPU 上运行，改用 [llama.cpp 运行环境](/cn/get-started/platforms#llamacpp)的 GGUF 模型。
   </Accordion>
 </AccordionGroup>
 
@@ -81,7 +81,7 @@ import Feedback from "/snippets/page-feedback.mdx";
   </Accordion>
 
   <Accordion title="`geniex` install.sh 报缺少共享库">
-    在全新的 Ubuntu 24.04 ARM64 主机（例如 IQ9075 EVK）上，`install.sh` 会检查 `libCB.so.1`、`libOpenCL_adreno.so.1`、`libcdsprpc.so.1.0.0`、`libgsl.so.1`、`libllvm-*.so.1`、`libpropertyvault.so.0.0.0`、`libdmabufheap.so.0.0.0`，以及 Debian 的 `libatomic1` / `libglib2.0-0` 等库。分两步安装。
+    在全新的 Ubuntu 24.04 ARM64 主机（例如 IQ9075 EVK）上，`install.sh`——以及 Docker 场景下的预检脚本 `check.sh` / 容器入口脚本 `entrypoint.sh`——会检查 `libCB.so.1`、`libOpenCL_adreno.so.1`、`libcdsprpc.so.1.0.0`、`libgsl.so.1`、`libllvm-*.so.1`、`libpropertyvault.so.0.0.0`、`libdmabufheap.so.0.0.0`，以及 Debian 的 `libatomic1` / `libglib2.0-0` 等库。请在**宿主机**上分两步安装——如果当前在 geniex 容器内，请先 `exit`。
 
     **1. 标准 APT 包**
 
@@ -114,11 +114,11 @@ import Feedback from "/snippets/page-feedback.mdx";
 
     PPA（`ppa:ubuntu-qcom-iot/qcom-ppa`）在 IQ9075 EVK Ubuntu 镜像中已预配置。`qcom-adreno1` 会自动拉入 `qcom-libdmabufheap` 与 `qcom-property-vault`。
 
-    完成后重新运行 `install.sh`，"Linking host NPU libraries" 步骤即可成功。
+    完成后在裸机上重新运行 `install.sh`，或重启容器来验证；"Linking host NPU libraries" 步骤即可成功。若裸机上 `libcdsprpc.so` / `libadsprpc.so` 软链接仍缺失，请重新运行 `install.sh` 重建。
   </Accordion>
 
   <Accordion title="容器内可加载模型但推理报 `Failed to create device: 14001`">
-    容器无法访问 NPU。确认 `docker run` 带 `--privileged` 与 `/usr/lib` 挂载，并且宿主已安装高通驱动包（`qcom-adreno1`、`qcom-fastrpc1`）——参见上面的缺少共享库条目。
+    容器无法访问 NPU。确认 `docker run` 带 `--privileged` 与 `/usr/lib` 挂载，并且主机已安装高通驱动包（`qcom-adreno1`、`qcom-fastrpc1`）——参见上面的缺少共享库条目。
   </Accordion>
 </AccordionGroup>
 
@@ -134,7 +134,7 @@ import Feedback from "/snippets/page-feedback.mdx";
   </Accordion>
 
   <Accordion title="Qualcomm AI Engine Direct 加载报 'unknown model name'">
-    Qualcomm AI Hub 返回的 model id 必须匹配 Qualcomm AI Engine Direct 运行时注册表中的条目（`qwen3_4b_instruct_2507`、`qwen2_5_vl_7b_instruct` 等）。新增 Qualcomm AI Hub 模型需先在 C++ 侧注册——见 `third-party/geniex-qairt/models/{llm,vlm}_model_registry.h`。
+    Qualcomm AI Hub 返回的 model id 必须匹配 Qualcomm AI Engine Direct 运行环境注册表中的条目（`qwen3_4b_instruct_2507`、`qwen2_5_vl_7b_instruct` 等）。新增 Qualcomm AI Hub 模型需先在 C++ 侧注册——见 `third-party/geniex-qairt/models/{llm,vlm}_model_registry.h`。
   </Accordion>
 
   <Accordion title="Qualcomm AI Engine Direct 拒绝 `nGpuLayers` 或 `nCtx`">

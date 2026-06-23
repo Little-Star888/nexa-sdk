@@ -53,6 +53,30 @@ pub fn resolve_chipset(plat: &PlatformInfo, chipset: &str) -> Result<String> {
     )))
 }
 
+/// Resolve a chipset alias (case-insensitive, trimmed) to the reference
+/// device name AI Hub displays for it, e.g. `"qualcomm-snapdragon-x-elite"`
+/// or `"sm8650"` → `"Snapdragon X Elite CRD"`. Falls back to the canonical
+/// id when the bucket omits a reference device. Returns `None` when the
+/// chipset is not in `platform.json`.
+pub fn resolve_chipset_display(plat: &PlatformInfo, chipset: &str) -> Option<String> {
+    let target = chipset.trim().to_ascii_lowercase();
+    if target.is_empty() {
+        return None;
+    }
+    for cs in &plat.chipsets {
+        let hit = cs.name.to_ascii_lowercase() == target
+            || cs.reference_device.to_ascii_lowercase() == target
+            || cs.aliases.iter().any(|a| a.to_ascii_lowercase() == target);
+        if hit {
+            if cs.reference_device.is_empty() {
+                return Some(cs.name.clone());
+            }
+            return Some(cs.reference_device.clone());
+        }
+    }
+    None
+}
+
 /// Pick one asset matching `(chipset, RUNTIME_GENIE)`. Returns the list of
 /// supported chipsets (for actionable error messages) when nothing matches.
 pub fn match_asset<'a>(
@@ -173,6 +197,40 @@ mod tests {
             download_url: format!("https://example.invalid/{chipset}-{precision}.zip"),
             uncompressed_size: Some(1),
         }
+    }
+
+    #[test]
+    fn display_resolves_to_reference_device() {
+        let plat = PlatformInfo {
+            chipsets: vec![ChipsetInfo {
+                name: "qualcomm-snapdragon-x-elite".to_string(),
+                reference_device: "Snapdragon X Elite CRD".to_string(),
+                aliases: vec!["x1e80100".to_string()],
+            }],
+        };
+        // canonical id, alias, and reference name all map to the reference name.
+        for input in [
+            "qualcomm-snapdragon-x-elite",
+            "X1E80100",
+            "snapdragon x elite crd",
+        ] {
+            assert_eq!(
+                resolve_chipset_display(&plat, input).as_deref(),
+                Some("Snapdragon X Elite CRD"),
+                "input {input:?}"
+            );
+        }
+        assert_eq!(resolve_chipset_display(&plat, "unknown"), None);
+        assert_eq!(resolve_chipset_display(&plat, ""), None);
+    }
+
+    #[test]
+    fn display_falls_back_to_canonical_when_no_reference_device() {
+        let plat = platform(&[("qualcomm-qcs9075", &["sa8775p"])]);
+        assert_eq!(
+            resolve_chipset_display(&plat, "sa8775p").as_deref(),
+            Some("qualcomm-qcs9075")
+        );
     }
 
     #[test]

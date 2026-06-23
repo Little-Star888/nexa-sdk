@@ -53,20 +53,27 @@ def test_bench():
 
     chipset = Path(HOST_CHIPSET).read_text().strip()
     rows = [r for r in Path(HOST_ROWS).read_text().splitlines() if r.strip()]
-    tsv_by_ctx: dict[int, list[str]] = {ctx: [] for ctx in CTXS}
+    # Bucket cells by plugin: llama_cpp uses random-ids prefill (`-p N`),
+    # qairt uses prompt_utf8 from a per-ctx text file (it doesn't accept
+    # input_ids — see issue #1008).
+    tsv_by_plugin_ctx: dict[tuple[str, int], list[str]] = {
+        (plugin, ctx): [] for plugin in ("llama_cpp", "qairt") for ctx in CTXS
+    }
     for row in rows:
         name, plugin, devs, model_id, vlm, image = row.split("|")
+        if plugin not in ("llama_cpp", "qairt"):
+            continue
         imgpath = IMAGE_PATH if image == "1" else ""
         for d in devs.split(","):
             for ctx in CTXS:
                 # Columns 5/6 (tokenizer/mmproj) intentionally blank: the
                 # model manager fills both from the resolved manifest.
-                tsv_by_ctx[ctx].append(
+                tsv_by_plugin_ctx[(plugin, ctx)].append(
                     f"{name}-{plugin}-{d}-c{ctx}\t{plugin}\t{d}\t{model_id}"
                     f"\t\t\t{imgpath}\t{vlm}"
                 )
 
-    assert any(tsv_by_ctx.values()), "no model rows produced"
+    assert any(tsv_by_plugin_ctx.values()), "no model rows produced"
 
     lib = f"{BUNDLE_PATH}/lib"
     env = (
@@ -74,28 +81,37 @@ def test_bench():
         f"ADSP_LIBRARY_PATH={lib} "
         f"GENIEX_PLUGIN_PATH={lib}"
     )
-    failures = []
-    for ctx in CTXS:
-        tsv_path = f"/data/local/tmp/matrix-{ctx}.tsv"
-        prompt = f"{PROMPTS_PATH}/sample_prompt_{ctx}.txt"
+    failures: list[tuple[str, int]] = []
+    for (plugin, ctx), rows_for_cell in tsv_by_plugin_ctx.items():
+        if not rows_for_cell:
+            continue
+        bucket = "llama" if plugin == "llama_cpp" else "qairt"
+        tsv_path = f"/data/local/tmp/matrix-{bucket}-{ctx}.tsv"
+        prompt_arg = (
+            f"-p {ctx}"
+            if plugin == "llama_cpp"
+            else f"--prompt-file {PROMPTS_PATH}/sample_prompt_{ctx}.txt"
+        )
         run_adb_command(
             "printf '%s\\n' "
-            + " ".join(f"'{ln}'" for ln in tsv_by_ctx[ctx])
+            + " ".join(f"'{ln}'" for ln in rows_for_cell)
             + f" > {tsv_path}"
         )
         res = run_adb_command(
             f"cd {BUNDLE_PATH} && {env} ./bin/geniex-bench "
             f"--matrix-file {tsv_path} --output-json-dir {RESULTS_PATH} -r 3 "
-            f"-c {ctx} --prompt-file {prompt} --reset-between-runs "
+            f"-c {ctx} {prompt_arg} "
             f"--mm-data-dir {MM_CACHE_PATH} --chipset '{chipset}'",
             check=False,
         )
         if res.returncode != 0:
-            failures.append(ctx)
+            failures.append((plugin, ctx))
     listing = run_adb_command(f"ls {RESULTS_PATH}", check=False).stdout
     n_json = sum(1 for ln in listing.splitlines() if ln.strip().endswith(".json"))
-    assert not failures, f"geniex-bench failed for ctx={failures}"
-    assert n_json > 0, f"no cell JSON produced on device (ls {RESULTS_PATH}: {listing!r})"
+    assert not failures, f"geniex-bench failed for {failures}"
+    assert (
+        n_json > 0
+    ), f"no cell JSON produced on device (ls {RESULTS_PATH}: {listing!r})"
 
 
 if __name__ == "__main__":

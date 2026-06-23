@@ -7,7 +7,7 @@ struct JavaCallbackCtx {
     JavaVM*            vm             = nullptr;  // for cross-thread JNIEnv*
     jobject            cb_global      = nullptr;  // GlobalRef to callback object
     jmethodID          onToken_mid    = nullptr;  // (Ljava/lang/String;)Z
-    jmethodID          onComplete_mid = nullptr;  // (Lcom/.../LlmGenerateResult;)V (可選)
+    jmethodID          onComplete_mid = nullptr;  // (Lcom/.../LlmGenerateResult;)V (optional)
     std::atomic<bool>* stop_flag      = nullptr;  // optional external stop flag
 };
 

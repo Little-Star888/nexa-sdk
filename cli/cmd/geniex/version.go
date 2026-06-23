@@ -113,9 +113,9 @@ func resolvePluginVersions() map[string]string {
 func runVersion() {
 	versions := resolvePluginVersions()
 
-	fmt.Println("GenieX CLI Version:      " + Version)
-	fmt.Println("QAIRT Runtime Version:    " + versions["qairt"])
-	fmt.Println("LlamaCPP Runtime Hash:    " + versions["llama_cpp"])
+	fmt.Printf("%-23s %s\n", "GenieX CLI Version:", Version)
+	fmt.Printf("%-23s %s\n", "QAIRT Runtime Version:", versions["qairt"])
+	fmt.Printf("%-23s %s\n", "LlamaCPP Runtime Hash:", versions["llama_cpp"])
 }
 
 func version() *cobra.Command {

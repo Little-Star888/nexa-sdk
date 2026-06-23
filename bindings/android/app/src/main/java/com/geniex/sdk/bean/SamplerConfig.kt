@@ -1,4 +1,4 @@
-package com.geniex.sdk.bean;
+package com.geniex.sdk.bean
 
 /**
  * Configuration for sampling strategy when generating responses.

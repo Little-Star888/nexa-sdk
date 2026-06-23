@@ -144,6 +144,8 @@ func remove() *cobra.Command {
 
 // clean creates a command to remove all cached models.
 func clean() *cobra.Command {
+	var assumeYes bool
+
 	cleanCmd := &cobra.Command{
 		GroupID: "model",
 		Use:     "clean",
@@ -151,7 +153,20 @@ func clean() *cobra.Command {
 		Long:    "Remove all cached models and free up storage. This will delete all model files from the local cache.",
 	}
 
+	cleanCmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "Skip the confirmation prompt")
+
 	cleanCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if !assumeYes {
+			var ok bool
+			if err := huh.NewConfirm().Title("Are you sure you want to delete all cached models?").Value(&ok).Run(); err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Println(render.GetTheme().Info.Sprint("Aborted"))
+				return nil
+			}
+		}
+
 		c, err := geniex_sdk.ModelClean()
 		if err != nil {
 			return err

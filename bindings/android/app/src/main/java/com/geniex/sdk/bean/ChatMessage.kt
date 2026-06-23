@@ -1,4 +1,4 @@
-package com.geniex.sdk.bean;
+package com.geniex.sdk.bean
 
 data class ChatMessage(
     var role: String,

@@ -38,7 +38,7 @@ from __future__ import annotations
 import os
 
 LLAMA_CPP_LLM_MODEL = 'unsloth/Qwen3-4B-GGUF'
-LLAMA_CPP_LLM_QUANT = 'Q4_0'
+LLAMA_CPP_LLM_PRECISION = 'Q4_0'
 LLAMA_CPP_VLM_MODEL = 'unsloth/Qwen2.5-VL-7B-Instruct-GGUF'
 
 QAIRT_LLM_MODEL = os.environ.get('GENIEX_QAIRT_MODEL', 'qualcomm/Qwen3-4B')

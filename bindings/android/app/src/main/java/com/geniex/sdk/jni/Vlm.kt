@@ -39,11 +39,4 @@ internal class Vlm {
     external fun extractMediaPaths(
             messages: Array<VlmChatMessage>
     ): Pair<Array<String>, Array<String>>
-
-    //    external fun embed(handle: Long, texts: Array<String>): FloatArray?
-    //    external fun setSampler(handle: Long, cfg: SamplerConfig)
-    //    external fun resetSampler(handle: Long)
-    //    external fun encode(handle: Long, text: String, outTokens: IntArray): Int
-    //    external fun decode(handle: Long, tokens: IntArray, length: Int): String?
-
 }
