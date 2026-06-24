@@ -45,20 +45,7 @@ GenieX Python SDK 以 ARM64 wheel 形式发布，覆盖 Windows ARM64 与 Linux 
     这将从 [test PyPI](https://test.pypi.org/project/geniex/) 拉取 Python 包，并自动获取 Linux ARM64 SDK 库。
 
     <Note>
-    **从源码构建 Python（非 QDC 设备）**
-
-    如果你不在 QDC，而是使用自己的高通 IoT 芯片且未预装 Python，可下载源码自行构建：
-
-    ```bash
-    apt update && apt install -y build-essential libffi-dev libssl-dev zlib1g-dev
-    wget https://www.python.org/ftp/python/3.13.3/Python-3.13.3.tar.xz
-    tar -xf Python-3.13.3.tar.xz
-    cd Python-3.13.3
-    ./configure --enable-optimizations
-    make -j$(nproc)
-    make altinstall
-    python3.13 --version
-    ```
+    如果设备未预装 Python，请通过 Miniconda 或 `apt`（Ubuntu）安装。详见常见问题中的[如何在 Linux ARM64 设备上安装 Python？](/cn/resources/faq#如何在-linux-arm64-设备上安装-python)。
     </Note>
   </Tab>
 </Tabs>

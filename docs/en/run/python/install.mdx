@@ -45,20 +45,7 @@ The GenieX Python SDK ships as an ARM64 wheel for Windows ARM64 and Linux ARM64.
     This pulls the package from [test PyPI](https://test.pypi.org/project/geniex/) and auto-fetches the Linux ARM64 SDK libraries.
 
     <Note>
-    **Building Python from source (non-QDC devices)**
-
-    If you are not using QDC but your own Dragonwing IoT chipset and Python is not pre-installed, you can download and build from source:
-
-    ```bash
-    apt update && apt install -y build-essential libffi-dev libssl-dev zlib1g-dev
-    wget https://www.python.org/ftp/python/3.13.3/Python-3.13.3.tar.xz
-    tar -xf Python-3.13.3.tar.xz
-    cd Python-3.13.3
-    ./configure --enable-optimizations
-    make -j$(nproc)
-    make altinstall
-    python3.13 --version
-    ```
+    If Python is not pre-installed on your device, install it via Miniconda or `apt` (Ubuntu). See [How do I install Python on a Linux ARM64 device?](/en/resources/faq#how-do-i-install-python-on-a-linux-arm64-device) in the FAQ.
     </Note>
   </Tab>
 </Tabs>
