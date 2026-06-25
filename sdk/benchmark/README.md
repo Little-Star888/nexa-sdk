@@ -115,6 +115,13 @@ geniex-bench \
   -n 128 --temperature 0.0 --seed 42 \
   --output-json results/qwen3-1.7b-hybrid.json \
   --cell-id Qwen3-1.7B-llama_cpp-hybrid
+
+# Accuracy mode: single run, print the generated text (eyeball output quality,
+# not speed). Pair with --prompt-file so the model sees a real prompt.
+geniex-bench \
+  --plugin llama_cpp --device hybrid \
+  -m .../Qwen3-1.7B-Q4_0.gguf \
+  --accuracy --prompt-file prompt.txt -n 128
 ```
 
 On Windows the same invocations work with `.exe` and backslash paths, e.g.:
@@ -131,6 +138,10 @@ Run `geniex-bench --help` for the full flag list.
 - `n_gen=128`, `temperature=0.0`, `seed=42`
 - `--warmup 1`, `-r 5` (5 measured runs after 1 warmup; pass `--no-warmup`
   to skip warmup)
+- `--accuracy` pins a single run (`--warmup 0 -r 1`) and prints the generated
+  text to stdout (`[gen ] ...`); use it to sanity-check output quality rather
+  than timing. Pair with `--prompt-file`, since the default random-ids prefill
+  yields meaningless text.
 - llama_cpp gets a `[warmup=i]` / `[run=i]` suffix appended to the prompt
   so the KV cache is busted between runs
 

@@ -96,6 +96,7 @@ typedef struct {
     int32_t warmup;
     int32_t repeat;
     bool    reset_between_runs; /* true => geniex_llm_reset() before each run, freeing KV */
+    bool    accuracy;          /* true => single run (warmup=0, repeat=1), print generated text */
     int32_t n_ctx;
     int32_t n_threads;
     int32_t ngl_override; /* -1 = use resolved alias default; >=0 overrides */
@@ -210,6 +211,12 @@ static void usage(const char* argv0) {
         "                         to call geniex_llm_reset() before every run so\n"
         "                         each repetition does the full prefill, matching\n"
         "                         llama-bench semantics)\n"
+        "  --accuracy             accuracy mode: force a single run (--warmup 0\n"
+        "                         --repetitions 1) and print the generated text to\n"
+        "                         stdout, for eyeballing output quality rather than\n"
+        "                         speed. Overrides --warmup / --repetitions. Pair\n"
+        "                         with --prompt-file for a real prompt; the default\n"
+        "                         random-ids prefill produces meaningless text.\n"
         "\n"
         "Optional (multimodal):\n"
         "  --tokenizer-path PATH  explicit tokenizer file\n"
@@ -523,6 +530,7 @@ static void parse_args(int argc, char** argv, options_t* o) {
     o->warmup             = 1;
     o->repeat             = 5;
     o->reset_between_runs = true;
+    o->accuracy           = false;
     o->n_ctx              = 0;
     o->n_threads          = 0;
     o->ngl_override       = -1;
@@ -584,6 +592,8 @@ static void parse_args(int argc, char** argv, options_t* o) {
             o->repeat = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "--no-reset-between-runs") == 0) {
             o->reset_between_runs = false;
+        } else if (strcmp(a, "--accuracy") == 0) {
+            o->accuracy = true;
         } else if (strcmp(a, "-c") == 0 || strcmp(a, "--ctx-size") == 0) {
             o->n_ctx = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-t") == 0 || strcmp(a, "--threads") == 0) {
@@ -613,6 +623,13 @@ static void parse_args(int argc, char** argv, options_t* o) {
             usage(argv[0]);
             exit(2);
         }
+    }
+
+    /* Accuracy mode is about eyeballing the generated text, not timing: pin a
+     * single measured run with no warmup regardless of --warmup / -r. */
+    if (o->accuracy) {
+        o->warmup = 0;
+        o->repeat = 1;
     }
 
     if (o->matrix_file) {
@@ -815,6 +832,19 @@ static char* build_vlm_prompt(geniex_VLM* vlm, const options_t* o, const char* b
     return tout.formatted_text;
 }
 
+/* Print generated text with a `[gen ]` prefix on every line, so multi-line
+ * output stays greppable and visually attributed (used by --accuracy). */
+static void print_gen_text(const char* text) {
+    const char* line = text;
+    while (*line) {
+        const char* nl = strchr(line, '\n');
+        size_t      len = nl ? (size_t)(nl - line) : strlen(line);
+        fprintf(stdout, "[gen ] %.*s\n", (int)len, line);
+        if (!nl) break;
+        line = nl + 1;
+    }
+}
+
 /* ----------------------------- LLM run loop ----------------------------- */
 
 static void fill_sampler(geniex_SamplerConfig* s, const options_t* o) {
@@ -954,6 +984,9 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
             r->status         = 0;
         }
 
+        if (!is_warmup && o->accuracy && gout.full_text) {
+            print_gen_text(gout.full_text);
+        }
         if (gout.full_text) {
             geniex_free(gout.full_text);
         }
@@ -1035,6 +1068,9 @@ static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_
             r->status         = 0;
         }
 
+        if (!is_warmup && o->accuracy && gout.full_text) {
+            print_gen_text(gout.full_text);
+        }
         if (gout.full_text) {
             geniex_free(gout.full_text);
         }
