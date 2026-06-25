@@ -19,8 +19,8 @@ the same binary feeds Geniex Bench.
 ## Build
 
 Gated on the `GENIEX_BENCHMARK` cmake option, which the snapdragon presets in
-[`sdk/CMakePresets.json`](../../CMakePresets.json) enable for both `debug` and
-`release`. The recipes below match [`notes/build.md`](../../../notes/build.md).
+[`sdk/CMakePresets.json`](../CMakePresets.json) enable for both `debug` and
+`release`. The recipes below match [`notes/build.md`](../../notes/build.md).
 
 ### Windows ARM64 (Snapdragon)
 
@@ -40,7 +40,7 @@ cmake --install build --prefix pkg-geniex   # optional → pkg-geniex\bin\geniex
 ### Linux (cross-compile from x86_64)
 
 Build inside the Snapdragon Linux toolchain container per
-[`notes/build.md`](../../../notes/build.md):
+[`notes/build.md`](../../notes/build.md):
 
 ```bash
 docker run --rm -u $(id -u):$(id -g) \
@@ -72,7 +72,7 @@ The binary loads `geniex.dll` / `libgeniex.so` and the per-plugin backends the
 same way the Python binding does — from the installed `pkg-geniex/lib` (and
 `lib/llama_cpp`) layout. On Windows run it from the build/install tree so the
 DLLs resolve; on Android/Linux export `LD_LIBRARY_PATH=./lib:./lib/llama_cpp`
-and `GENIEX_PLUGIN_PATH=./lib` (see [`notes/run.md`](../../../notes/run.md)).
+and `GENIEX_PLUGIN_PATH=./lib` (see [`notes/run.md`](../../notes/run.md)).
 
 ```bash
 # LLM, llama_cpp — point -m at a .gguf file

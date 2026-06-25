@@ -28,7 +28,7 @@ The GenieX AI Android SDK enables on-device AI inference for Android application
 
 ## Build and Run
 
-1. Clone the sdk project root repository
+1. Clone the repository
 
 ```bash
 git clone --recursive git@github.com:qcom-ai-hub/geniex.git

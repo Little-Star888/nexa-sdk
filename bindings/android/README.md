@@ -2,7 +2,7 @@
 
 ## Overview
 
-Android bindings provide a Kotlin API for GenieX-Bridge using a JNI bridge pattern with 4 layers:
+Android bindings provide a Kotlin API for GenieX using a JNI bridge pattern with 4 layers:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -25,7 +25,7 @@ Android bindings provide a Kotlin API for GenieX-Bridge using a JNI bridge patte
                  │ calls C API
 ┌────────────────▼────────────────────────────────────────┐
 │ Layer 1: Core Library (C)                             │
-│ libgeniex_bridge.so - Provides ml_* API from ml.h       │
+│ libgeniex.so - Provides ml_* API from ml.h       │
 │ (ml_llm_create, ml_llm_generate, etc.)               │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -67,9 +67,9 @@ Each AI capability (LLM, VLM) follows this pattern:
   - `Java_com_geniex_sdk_jni_Llm_stopStream` → manages stop flags
   - `Java_com_geniex_sdk_jni_Llm_applyChatTemplate` → calls `ml_llm_apply_chat_template()`
 
-#### Layer 1: **libgeniex_bridge.so** (Core Library)
+#### Layer 1: **libgeniex.so** (Core Library)
 
-- **Path:** `../../../build-android/out/libgeniex_bridge.so`
+- **Path:** `../../../build-android/out/libgeniex.so`
 - **API Header:** `../../../include/ml.h`
 - **Purpose:** C API providing ml*llm*\* functions
 - **Built from:** `../../../src/*.cpp` (llm.cpp, vlm.cpp, etc.)
@@ -88,7 +88,7 @@ Each AI capability (LLM, VLM) follows this pattern:
 - **CMake Entry:** `app/src/main/cpp/CMakeLists.txt`
 - **Output:**
   - `libnpu_jni.so` (JNI bridge wrapper loaded by GenieXSdk.kt)
-  - `libgeniex_bridge.so` (core ML library linked by JNI wrapper)
+  - `libgeniex.so` (core ML library linked by JNI wrapper)
   - Plugin libraries: `libgeniex_plugin.so` (NPU backend for NPU acceleration)
 
 ### Library Loading
@@ -134,7 +134,7 @@ bindings/android/
 ../../include/ml.h                    # Layer 1: Core C API header
 ../../src/*.cpp                       # Layer 1: Core implementation
 ../../build-android/out/
-├── libgeniex_bridge.so                 # Layer 1: Core library
+├── libgeniex.so                 # Layer 1: Core library
 └── npu/                              # NPU plugin libraries (QNN-based)
     └── libgeniex_plugin.so
 ```
@@ -154,11 +154,11 @@ Under `GenieX-bridge/bindings/android`:
 
 ### Publishing to Maven Central
 
-TODO: update the Maven Central publishing procedure for GenieX-Bridge.
+TODO: document the Maven Central publishing procedure.
 
 ### Publishing to GitHub
 
-TODO: update the GitHub-based Android artifact publishing instructions for GenieX-Bridge.
+TODO: document the GitHub-based Android artifact publishing instructions.
 
 ## Logging
 

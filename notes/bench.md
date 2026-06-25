@@ -27,7 +27,7 @@ Each platform gets a zip artifact assembled by `build_*_artifact()` in
   matrix rows + prompts.
 
 The model matrix is defined in `sdk/benchmark/qdc/bench-models.json`
-(currently 19 models across `llama_cpp` and `qairt` plugins).
+(models across `llama_cpp` and `qairt` plugins).
 
 ## 2. QDC job execution
 
