@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-This document provides information about third-party libraries used in the GenieX-CLI project and their respective licenses. All libraries listed below are licensed under permissive open-source licenses (MIT, Apache 2.0, BSD, or equivalent) that are compatible with GenieX-CLI's Apache 2.0 license.
+This document provides information about third-party libraries used in the GenieX-CLI project and their respective licenses. All libraries listed below are licensed under permissive open-source licenses (MIT, Apache 2.0, BSD, or equivalent) that are compatible with GenieX-CLI's BSD 3-Clause license.
 
 ---
 
@@ -270,7 +270,7 @@ This document provides information about third-party libraries used in the Genie
 
 ## Summary
 
-All third-party libraries used in GenieX-CLI are licensed under permissive open-source licenses that allow for commercial and non-commercial use, modification, and distribution. The primary licenses used are:
+All third-party libraries used in GenieX-CLI are licensed under permissive open-source licenses that allow for commercial and non-commercial use, modification, and distribution, and are compatible with GenieX-CLI's BSD 3-Clause license. The primary licenses used are:
 
 - **MIT License**: Highly permissive, allows almost unrestricted use
 - **Apache License 2.0**: Permissive license with patent grant and attribution requirements
