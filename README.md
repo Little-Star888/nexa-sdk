@@ -205,7 +205,7 @@ NexaSDK uses a dual licensing model:
 
 ### CPU/GPU Components
 
-Licensed under [Apache License 2.0](LICENSE).
+Licensed under [BSD 3-Clause License](LICENSE).
 
 ### NPU Components
 

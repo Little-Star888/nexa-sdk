@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Single source of truth for the user-facing device alias table
 // (cpu / gpu / npu / hybrid → concrete device_id + n_gpu_layers).
 // Language bindings (Go CLI, Python, Android/JNI) call through to this.
