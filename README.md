@@ -8,6 +8,7 @@
 
 ### The easiest way to run frontier LLMs & VLMs locally on Qualcomm devices
 
+[![Status: Developer Preview](https://img.shields.io/badge/status-developer%20preview-FF6C2C?style=flat-square)](#)
 [![Docs](https://img.shields.io/badge/docs-geniex.aihub.qualcomm.com-2A2AEA?style=flat-square&logo=readthedocs&logoColor=white)](https://geniex.aihub.qualcomm.com)
 [![Release](https://img.shields.io/github/v/release/qualcomm/GenieX?style=flat-square&color=2A2AEA&label=release)](https://github.com/qualcomm/GenieX/releases)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
