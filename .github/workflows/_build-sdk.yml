@@ -40,16 +40,11 @@ jobs:
           - platform: linux-arm64
             runner: ubuntu-latest
             preset: arm64-linux-snapdragon-release
-            # v0.1.0 rebuilds the derived image from toolchain-linux.Dockerfile
-            # with UPSTREAM_TAG=v0.7 (Hexagon SDK 6.6.0.0). The prior v0.0.1 was
-            # built on Hexagon SDK 6.4.0.2, which miscompiled libggml-htp-v75.so
-            # and produced gibberish GGUF output on QCS8275 NPUs. Rebuild and
-            # publish geniex-toolchain-linux:v0.1.0 before this pin takes effect.
             container_image: docker.io/qualcomm/geniex-toolchain-linux:v0.1.0
           - platform: android-arm64
             runner: ubuntu-latest
             preset: arm64-android-snapdragon-release
-            container_image: docker.io/qualcomm/geniex-toolchain-android:v0.0.1
+            container_image: docker.io/qualcomm/geniex-toolchain-android:v0.1.0
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
 
