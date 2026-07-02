@@ -115,9 +115,9 @@ func ChatCompletions(c *gin.Context) {
 
 	switch modelType {
 	case geniex_sdk.ModelTypeLLM:
-		chatCompletionsLLM(c, param, paths.RuntimeID)
+		chatCompletionsLLM(c, param)
 	case geniex_sdk.ModelTypeVLM:
-		chatCompletionsVLM(c, param, paths.RuntimeID)
+		chatCompletionsVLM(c, param)
 	default:
 		slog.Error("Model type not support", "model_type", modelType)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": "model type not support"})
@@ -125,7 +125,7 @@ func ChatCompletions(c *gin.Context) {
 	}
 }
 
-func chatCompletionsLLM(c *gin.Context, param ChatCompletionRequest, pluginId string) {
+func chatCompletionsLLM(c *gin.Context, param ChatCompletionRequest) {
 	messages := make([]geniex_sdk.LlmChatMessage, 0, len(param.Messages))
 	for _, msg := range param.Messages {
 		if toolCalls := msg.GetToolCalls(); len(toolCalls) > 0 {
@@ -212,7 +212,7 @@ func chatCompletionsLLM(c *gin.Context, param ChatCompletionRequest, pluginId st
 		types.ModelParam{NCtx: param.NCtx, NGpuLayers: param.Ngl},
 		c.GetHeader("GenieX-KeepCache") != "true",
 	)
-	if writeKeepAliveError(c, err, pluginId) {
+	if writeKeepAliveError(c, err) {
 		return
 	}
 	if isWarmupRequest(param) {
@@ -294,7 +294,7 @@ func chatCompletionsLLM(c *gin.Context, param ChatCompletionRequest, pluginId st
 	}
 }
 
-func chatCompletionsVLM(c *gin.Context, param ChatCompletionRequest, pluginId string) {
+func chatCompletionsVLM(c *gin.Context, param ChatCompletionRequest) {
 	messages := make([]geniex_sdk.VlmChatMessage, 0, len(param.Messages))
 	for _, msg := range param.Messages {
 		if toolCalls := msg.GetToolCalls(); len(toolCalls) > 0 {
@@ -433,7 +433,7 @@ func chatCompletionsVLM(c *gin.Context, param ChatCompletionRequest, pluginId st
 		types.ModelParam{NCtx: param.NCtx, NGpuLayers: param.Ngl},
 		c.GetHeader("GenieX-KeepCache") != "true",
 	)
-	if writeKeepAliveError(c, err, pluginId) {
+	if writeKeepAliveError(c, err) {
 		return
 	}
 	if isWarmupRequest(param) {
@@ -560,7 +560,7 @@ func parseTools(param ChatCompletionRequest) (bool, string, error) {
 
 // writeKeepAliveError maps a KeepAliveGet error to its HTTP response;
 // returns true when handled (caller should return).
-func writeKeepAliveError(c *gin.Context, err error, pluginId string) bool {
+func writeKeepAliveError(c *gin.Context, err error) bool {
 	if err == nil {
 		return false
 	}
@@ -569,7 +569,7 @@ func writeKeepAliveError(c *gin.Context, err error, pluginId string) bool {
 		c.JSON(http.StatusNotFound, map[string]any{"error": "model not found"})
 	case errors.Is(err, geniex_sdk.ErrCommonParamNotSupported):
 		c.JSON(http.StatusBadRequest, map[string]any{
-			"error": fmt.Sprintf("a parameter in the request is not supported by the %s runtime", pluginId),
+			"error": "a parameter in the request is not supported by the runtime",
 			"code":  geniex_sdk.SDKErrorCode(err),
 		})
 	default:
