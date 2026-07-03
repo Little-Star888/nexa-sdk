@@ -262,22 +262,21 @@ int32_t QairtLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
     output->profile_data.prefill_speed =
         result.prompt_tokens > 0 && result.ttft_ms > 0.0 ? result.prompt_tokens / (result.ttft_ms / 1000.0) : 0.0;
 
-    // Stop reason (string must be static/persistent).
-    static const char* kStopEos    = "eos";
-    static const char* kStopLength = "length";
-    static const char* kStopUser   = "user";
-    if (result.stop_reason == "eos")
-        output->profile_data.stop_reason = kStopEos;
-    else if (result.stop_reason == "length" || result.stop_reason == "context_length")
-        output->profile_data.stop_reason = kStopLength;
-    else if (result.stop_reason == "user")
-        output->profile_data.stop_reason = kStopUser;
-    else
-        output->profile_data.stop_reason = kStopEos;
-
-    if (result.stop_reason == "context_length") {
+    // Stop Reason
+    if (result.stop_reason == "user") {
+        output->profile_data.stop_reason = "user";
+    } else if (result.stop_reason == "length") {
+        output->profile_data.stop_reason = "length";
+    } else if (result.stop_reason == "context_length") {
+        output->profile_data.stop_reason = "length";
         GENIEX_LOG_WARN("QAIRT generate: context length exceeded (partial result populated)");
         return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+    } else if (result.stop_reason == "error") {
+        output->profile_data.stop_reason = "eos";
+        GENIEX_LOG_ERROR("QAIRT generate failed during prompt processing (empty result)");
+        return GENIEX_ERROR_LLM_GENERATION_FAILED;
+    } else {
+        output->profile_data.stop_reason = "eos";
     }
     return GENIEX_SUCCESS;
 }

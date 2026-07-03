@@ -19,6 +19,7 @@
 #include "geniex-proc/types.h"    // ChatMessage, MMContent, Role::, Modality::
 #include "llm/llm_spec_loader.h"  // parseGenieSamplerConfig
 #include "logging.h"
+#include "path_utils.h"
 #include "pipeline/vlm_pipeline.h"
 #include "qnn_runtime_utils.h"
 #include "sampler_config_utils.h"
@@ -247,7 +248,7 @@ int32_t QairtVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
         image_paths.reserve(static_cast<size_t>(input->config->image_count));
         for (int32_t i = 0; i < input->config->image_count; ++i) {
             if (input->config->image_paths[i]) {
-                image_paths.emplace_back(input->config->image_paths[i]);
+                image_paths.emplace_back(qairt::to_loadable_path(input->config->image_paths[i]));
             }
         }
     }
@@ -289,22 +290,21 @@ int32_t QairtVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
                                                 ? static_cast<double>(result.prompt_tokens) / (result.ttft_ms / 1000.0)
                                                 : 0.0;
 
-    // Stop reason.
-    static const char* kStopEos    = "eos";
-    static const char* kStopLength = "length";
-    static const char* kStopUser   = "user";
-    if (result.stop_reason == "eos")
-        output->profile_data.stop_reason = kStopEos;
-    else if (result.stop_reason == "length" || result.stop_reason == "context_length")
-        output->profile_data.stop_reason = kStopLength;
-    else if (result.stop_reason == "user")
-        output->profile_data.stop_reason = kStopUser;
-    else
-        output->profile_data.stop_reason = kStopEos;
-
-    if (result.stop_reason == "context_length") {
+    // Stop Reason
+    if (result.stop_reason == "user") {
+        output->profile_data.stop_reason = "user";
+    } else if (result.stop_reason == "length") {
+        output->profile_data.stop_reason = "length";
+    } else if (result.stop_reason == "context_length") {
+        output->profile_data.stop_reason = "length";
         GENIEX_LOG_WARN("QAIRT VLM generate: context length exceeded (partial result populated)");
         return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+    } else if (result.stop_reason == "error") {
+        output->profile_data.stop_reason = "eos";
+        GENIEX_LOG_ERROR("QAIRT VLM generate failed during prompt processing (empty result)");
+        return GENIEX_ERROR_VLM_GENERATION_FAILED;
+    } else {
+        output->profile_data.stop_reason = "eos";
     }
     return GENIEX_SUCCESS;
 }
