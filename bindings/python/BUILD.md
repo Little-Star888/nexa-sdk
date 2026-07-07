@@ -40,15 +40,20 @@ is skipped entirely. See GH #538.
 ## Install sources
 
 ```bash
-# From GitHub Release (canonical) — pick the distribution you need
-pip install https://github.com/qualcomm/GenieX/releases/download/v0.0.3-alpha.1/geniex-0.0.3a1.tar.gz
-pip install https://github.com/qualcomm/GenieX/releases/download/v0.0.3-alpha.1/geniex_llama_cpp-0.0.3a1.tar.gz
-pip install https://github.com/qualcomm/GenieX/releases/download/v0.0.3-alpha.1/geniex_qairt-0.0.3a1.tar.gz
+# From PyPI (stable releases)
+pip install geniex
+pip install geniex-llama-cpp
+pip install geniex-qairt
 
 # From TestPyPI (pre-release tags are auto-published)
 pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
 pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex-llama-cpp
 pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex-qairt
+
+# From GitHub Release (canonical) — pick the distribution you need
+pip install https://github.com/qualcomm/GenieX/releases/download/v0.0.3-alpha.1/geniex-0.0.3a1.tar.gz
+pip install https://github.com/qualcomm/GenieX/releases/download/v0.0.3-alpha.1/geniex_llama_cpp-0.0.3a1.tar.gz
+pip install https://github.com/qualcomm/GenieX/releases/download/v0.0.3-alpha.1/geniex_qairt-0.0.3a1.tar.gz
 ```
 
 ### Supported platforms (automatic SDK download)

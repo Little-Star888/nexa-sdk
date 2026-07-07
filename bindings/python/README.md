@@ -16,9 +16,9 @@ plugin libraries the install-time SDK fetcher stages:
 | `pip install geniex-qairt`     | QAIRT only               | ~210 MB         |
 
 ```bash
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
+pip install geniex
 # or, e.g.:
-# pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex-llama-cpp
+# pip install geniex-llama-cpp
 ```
 
 The three distributions share the same top-level ``geniex`` package — they

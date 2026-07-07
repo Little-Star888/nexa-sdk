@@ -24,15 +24,15 @@ GenieX Python SDK 以 ARM64 wheel 形式发布，覆盖 Windows ARM64 与 Linux 
     python -c "import platform; print(platform.machine())"
     ```
 
-    创建虚拟环境并从 test PyPI 安装：
+    创建虚拟环境并安装：
 
     ```powershell
     python -m venv geniex-env
     .\geniex-env\Scripts\Activate.ps1
-    pip install -U -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
+    pip install -U geniex
     ```
 
-    这将从 [test PyPI](https://test.pypi.org/project/geniex/) 拉取 Python 包。
+    这将从 [PyPI](https://pypi.org/project/geniex/) 拉取 Python 包。
   </Tab>
 
   <Tab title="Linux ARM64">
@@ -45,10 +45,10 @@ GenieX Python SDK 以 ARM64 wheel 形式发布，覆盖 Windows ARM64 与 Linux 
     直接 pip install：
 
     ```bash
-    python3 -m pip install -U -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
+    python3 -m pip install -U geniex
     ```
 
-    这将从 [test PyPI](https://test.pypi.org/project/geniex/) 拉取 Python 包，并自动获取 Linux ARM64 SDK 库。
+    这将从 [PyPI](https://pypi.org/project/geniex/) 拉取 Python 包，并自动获取 Linux ARM64 SDK 库。
 
     <Note>
     如设备未预装 Python，请参考常见问题中的[如何在 Linux ARM64 设备上安装 Python？](/cn/resources/faq#如何在-linux-arm64-设备上安装-python)（已验证可用的 Miniconda 流程，覆盖 Qualcomm Yocto 与 Ubuntu ARM64）。

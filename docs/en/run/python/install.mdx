@@ -24,15 +24,15 @@ The GenieX Python SDK ships as an ARM64 wheel for Windows ARM64 and Linux ARM64.
     python -c "import platform; print(platform.machine())"
     ```
 
-    Create a virtual environment and install from test PyPI:
+    Create a virtual environment and install:
 
     ```powershell
     python -m venv geniex-env
     .\geniex-env\Scripts\Activate.ps1
-    pip install -U -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
+    pip install -U geniex
     ```
 
-    This pulls the package from [test PyPI](https://test.pypi.org/project/geniex/).
+    This pulls the package from [PyPI](https://pypi.org/project/geniex/).
   </Tab>
 
   <Tab title="Linux ARM64">
@@ -45,10 +45,10 @@ The GenieX Python SDK ships as an ARM64 wheel for Windows ARM64 and Linux ARM64.
     Directly pip install:
 
     ```bash
-    python3 -m pip install -U -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
+    python3 -m pip install -U geniex
     ```
 
-    This pulls the package from [test PyPI](https://test.pypi.org/project/geniex/) and auto-fetches the Linux ARM64 SDK libraries.
+    This pulls the package from [PyPI](https://pypi.org/project/geniex/) and auto-fetches the Linux ARM64 SDK libraries.
 
     <Note>
     If Python is not pre-installed, see [How do I install Python on a Linux ARM64 device?](/en/resources/faq#how-do-i-install-python-on-a-linux-arm64-device) for a verified Miniconda recipe (covers Qualcomm Yocto and Ubuntu ARM64).

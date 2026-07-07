@@ -76,7 +76,7 @@ geniex infer ai-hub-models/Qwen2.5-VL-7B-Instruct
 **Install**
 
 ```bash
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple geniex
+pip install geniex
 ```
 
 **Run** — mirrors Hugging Face `transformers` (`from_pretrained()` → `.generate()`):
