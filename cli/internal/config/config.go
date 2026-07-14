@@ -31,7 +31,7 @@ type Config struct {
 	// per-request body fields still override). Compute is the alias resolved by
 	// the SDK (sdk/src/device.cpp); empty means the SDK's own default.
 	NCtx    int32  // Default context window size (default: 4096)
-	Ngl     int32  // Default GPU/NPU layers to offload (default: 999)
+	Ngl     int32  // Default GPU/NPU layers to offload, -1 = all (default: -1)
 	Compute string // Default compute unit: cpu, gpu, npu, hybrid (default: "")
 	// HTTPS / TLS settings
 	HTTPS    bool   // Whether to serve over HTTPS (default: false)

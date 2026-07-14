@@ -278,15 +278,15 @@ GENIEX_API int32_t geniex_get_device_list(const geniex_GetDeviceListInput* input
  * plugin's default"). Matching is case-insensitive; surrounding whitespace
  * is trimmed.
  *
- * `model_name` is an optional hint (may be NULL) that lets the SDK apply
- * model-specific overrides to the "auto" default — e.g. `llama_cpp` models
- * whose name contains `gpt-oss` default to `npu` instead of `hybrid`
- * because the hybrid per-tensor scheduler can't place all their ops on
- * HTP end-to-end.
+ * `model_name` is an optional hint (may be NULL). It is currently
+ * unused by the resolver and reserved for future model-specific
+ * defaults.
  *
  * `ngl_default` is forwarded as the caller's preferred `n_gpu_layers`
- * value. The resolver returns it unchanged in `ngl` except when the
- * alias forces a specific value (cpu → 0, hybrid → 999).
+ * and passes through unchanged for llama_cpp gpu / npu / hybrid. A
+ * negative value means "all layers" to llama.cpp, so callers signal
+ * "offload everything" (and "unset") with -1. `cpu` forces `ngl` to 0,
+ * and qairt forces it to 0 (its plugin rejects any non-zero value).
  */
 typedef struct {
     geniex_PluginId plugin_id;   /**< Plugin identifier (must be non-NULL) */
@@ -304,8 +304,9 @@ typedef struct {
  * llama_cpp). Callers that set the value onto a plugin input must copy
  * it and then free the output with `geniex_free` (see memory notes).
  *
- * `ngl` is the resolved `n_gpu_layers` value, already adjusted for the
- * alias (cpu → 0, hybrid → 999, otherwise `ngl_default` passes through).
+ * `ngl` is the resolved `n_gpu_layers` value: `cpu` and qairt → 0;
+ * llama_cpp gpu / npu / hybrid pass `ngl_default` through unchanged (a
+ * negative value means "all layers" to llama.cpp).
  *
  * `warning` is non-NULL when the alias was coerced (e.g. qairt only has
  * an NPU device, so cpu/gpu/hybrid fall back to NPU with a warning).

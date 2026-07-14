@@ -101,10 +101,10 @@ geniex-bench \
   -m /path/to/qualcomm/Qwen2.5-VL-7B-Instruct/ \
   --image /path/to/sample.jpg
 
-# GPU (llama_cpp) — the gpu alias selects GPUOpenCL but offloads no layers by
-# default; pass a high --n-gpu-layers to actually run on the Adreno GPU
+# GPU (llama_cpp) — the gpu alias selects GPUOpenCL and offloads all layers by
+# default (-1); pass --n-gpu-layers to offload only some
 geniex-bench \
-  --plugin llama_cpp --device gpu --n-gpu-layers 999 \
+  --plugin llama_cpp --device gpu \
   -m /path/to/Qwen3-4B-Q4_K_M.gguf
 
 # Customise: prompt, sample count, output files

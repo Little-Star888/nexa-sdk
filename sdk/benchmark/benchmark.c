@@ -216,7 +216,7 @@ static void usage(const char* argv0) {
         "  -c, --ctx-size N       model n_ctx (0 = from model, default 0)\n"
         "  -t, --threads N        generation threads (0 = SDK default)\n"
         "  -ngl, --n-gpu-layers N llama_cpp layers to offload; overrides the\n"
-        "                         device alias default (needed for a real gpu run)\n"
+        "                         device alias default (-1 = all layers)\n"
         "  --warmup N             default 1\n"
         "  --no-warmup            equivalent to --warmup 0\n"
         "  --temperature F        default 0.0\n"
@@ -1580,10 +1580,8 @@ static int run_one_cell(options_t* o) {
         o->model_path = anchored;
     }
 
-    /* Device-alias resolution. ngl_default=-1 is the sentinel `auto.py` uses
-     * to distinguish "SDK forced a value" (cpu→0, hybrid→999) from "alias
-     * passed through". Treat -1 as "leave n_gpu_layers at its plugin default
-     * (0)". */
+    /* Device-alias resolution. ngl_default=-1 means "all layers" to
+     * llama.cpp (cpu and qairt are forced to 0 by the SDK). */
     geniex_ResolveDeviceInput rin;
     memset(&rin, 0, sizeof(rin));
     rin.plugin_id   = o->plugin;
@@ -1601,10 +1599,8 @@ static int run_one_cell(options_t* o) {
         fprintf(stderr, "[warn] %s\n", rout.warning);
     }
     const char* device_id = o->device_id ? o->device_id : rout.device_id;
-    int32_t     ngl       = (rout.ngl == -1) ? 0 : rout.ngl;
-    /* --n-gpu-layers overrides the alias default. The gpu alias resolves
-     * device_id but no ngl, so a high --n-gpu-layers is what actually
-     * offloads layers to the GPU. */
+    int32_t     ngl       = rout.ngl;
+    /* --n-gpu-layers overrides the resolved value. */
     if (o->ngl_override >= 0) {
         ngl = o->ngl_override;
     }

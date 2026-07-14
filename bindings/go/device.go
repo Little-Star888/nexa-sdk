@@ -94,8 +94,8 @@ func freeResolveDeviceOutput(c *C.geniex_ResolveDeviceOutput) {
 // concrete (DeviceID, Ngl) pair the runtimes expect. See `geniex_resolve_device`
 // in the C API for alias semantics — the SDK is the single source of truth.
 //
-// ModelName may be empty if the caller doesn't know it; it's only consulted
-// for model-specific default overrides (e.g. llama_cpp gpt-oss → npu).
+// ModelName may be empty if the caller doesn't know it; it's currently
+// unused by the resolver and reserved for future model-specific defaults.
 //
 // A non-nil error means ComputeUnit was a non-empty unknown alias; the SDK
 // returned GENIEX_ERROR_COMMON_INVALID_DEVICE. Warning is non-empty when the

@@ -561,8 +561,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default='auto',
         help=(
             "'auto' | 'cpu' | 'gpu' | 'npu' | 'hybrid' | '<plugin>' | "
-            "'<plugin>:<device>' (default: hybrid for llama_cpp, npu for "
-            "qairt; run 'geniex-py devices' to list concrete ids)"
+            "'<plugin>:<device>' (default: npu; "
+            "run 'geniex-py devices' to list concrete ids)"
         ),
     )
     _add_hub_args(chat)
