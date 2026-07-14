@@ -251,7 +251,7 @@ Hugging Face 上的部分模型是**受限模型（gated）**——你需要在 
 
     model = AutoModelForCausalLM.from_pretrained(
         r"C:\models\my-model\model.gguf",   # 本地 .gguf 文件路径
-        device_map="auto",                  # auto -> llama_cpp 使用 hybrid
+        device_map="auto",                  # auto -> llama_cpp 使用 npu
     )
     ```
 

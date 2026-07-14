@@ -45,10 +45,10 @@ If you don't pass a compute unit:
 
 | Runtime | Default compute unit |
 |---|---|
-| `llama_cpp` | `hybrid` (HTP + CPU per-tensor scheduling — the fast path on Snapdragon) |
+| `llama_cpp` | `npu` (pinned to `HTP0`) |
 | `qairt` | `npu` |
 
-Some model families override this — for example, `gpt-oss` falls back to `npu` on `llama_cpp` because it can't run on the hybrid path.
+For llama.cpp's HTP + CPU per-tensor scheduling (the faster path on Snapdragon), pass `hybrid` explicitly.
 
 ---
 
@@ -62,10 +62,10 @@ The `llama_cpp` runtime executes **any GGUF model** through llama.cpp with Qualc
 
 | Alias | Effect |
 |---|---|
-| `npu` | Pin to Hexagon NPU (`HTP0`). Best NPU-only path. |
+| `npu` *(default)* | Pin to Hexagon NPU (`HTP0`). Best NPU-only path. |
 | `gpu` | Adreno GPU via OpenCL. |
 | `cpu` | Pure CPU. Forces `nGpuLayers = 0`. |
-| `hybrid` *(default)* | Empty `device_id` + `n_gpu_layers=999` — llama.cpp's per-tensor HTP+CPU scheduler. **The fast path on Snapdragon.** |
+| `hybrid` | Empty `device_id` + `n_gpu_layers=-1` (all layers) — llama.cpp's per-tensor HTP+CPU scheduler. **The fast path on Snapdragon.** |
 
 The precision you pick at `geniex pull` time also determines where the model lands — see [Precisions (Quantizations) Supported](/en/models/supported#precisions-quantizations-supported).
 
