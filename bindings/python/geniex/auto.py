@@ -63,7 +63,9 @@ def resolve_device_map(
     ``"<runtime>:<compute-unit>"``.
 
     ``ngl_override`` is ``None`` unless the alias forces a specific
-    ``n_gpu_layers`` (``cpu`` → 0, ``hybrid`` → 999).
+    ``n_gpu_layers`` (only ``cpu`` → 0). gpu / npu / hybrid pass no
+    explicit ngl, so the resolver returns -1 (all layers) and this
+    surfaces as ``None``; callers keep their own default.
     """
     if not device_map or device_map == 'auto':
         runtimes = get_runtime_list()
@@ -206,7 +208,7 @@ def _reject_gguf_on_qairt(model_path: str, plugin_id: str | None, device_map: st
 
 
 # AutoModelFor*.from_pretrained factory defaults; not user overrides, so coerce silently.
-_QAIRT_SILENT_NGL = 999
+_QAIRT_SILENT_NGL = -1
 _QAIRT_SILENT_NCTX = 0
 
 
@@ -351,7 +353,7 @@ class AutoModelForCausalLM:
         precision: str | None = None,
         device_map: str = 'auto',
         n_ctx: int = 0,
-        n_gpu_layers: int = 999,
+        n_gpu_layers: int = -1,
         mmproj_path: str | None = None,
         tokenizer_path: str | None = None,
         license_id: str | None = None,
@@ -365,9 +367,7 @@ class AutoModelForCausalLM:
         ``model_name`` is **optional**. The QAIRT plugin no longer needs it —
         it dispatches by reading ``metadata.json`` from the bundle. Pass it
         only if you want to register a local-path bundle in the geniex cache
-        (so it shows up in ``geniex list`` and survives across runs), or to
-        provide a hint to ``geniex_resolve_device`` for the gpt-oss
-        llama_cpp device-default override.
+        (so it shows up in ``geniex list`` and survives across runs).
 
         When the model is detected as multimodal (e.g. phi4_multimodal,
         qwen3.5-vl, gemma4), a :class:`GenieXVLM` is returned instead.
@@ -446,7 +446,7 @@ class AutoModelForVision2Seq:
         precision: str | None = None,
         device_map: str = 'auto',
         n_ctx: int = 0,
-        n_gpu_layers: int = 999,
+        n_gpu_layers: int = -1,
         mmproj_path: str | None = None,
         tokenizer_path: str | None = None,
         license_id: str | None = None,

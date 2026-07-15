@@ -15,38 +15,27 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/types"
 )
 
-// ResolveModelParam turns the per-request (nctx, ngl, compute) knobs into the
-// ModelParam the keep-alive cache keys on, filling unset fields from the
-// server-wide defaults (config: --nctx / --ngl / --compute). A request value of
-// 0 / "" means "unset, use the server default". NCtx / NGpuLayers are meaningful
-// only for llama_cpp; for other plugins (e.g. qairt) they stay 0 so the plugin's
-// param-guard is not tripped. Compute is resolved to a concrete DeviceID by the
-// SDK (sdk/src/device.cpp); any coercion warning is logged.
-//
-// Every handler that loads a model must build its ModelParam through this so the
-// server-wide defaults and device resolution apply uniformly.
+// ResolveModelParam turns the (nctx, ngl, compute) knobs into the ModelParam
+// the keep-alive cache keys on. The caller passes already-resolved values (the
+// handler prefills unset request fields with the server-wide --nctx / --ngl /
+// --compute defaults). NCtx / NGpuLayers are meaningful only for llama_cpp; for
+// other plugins (e.g. qairt) NCtx is zeroed here and the SDK zeroes ngl so the
+// plugin's param-guard is not tripped. Compute is resolved to a concrete
+// DeviceID by the SDK (sdk/src/device.cpp); coercion warnings are logged.
 func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute string) (types.ModelParam, error) {
-	cfg := config.Get()
-
+	// nctx / ngl / compute already carry the resolved value (explicit request
+	// or the server default prefilled by the handler). Non-llama_cpp plugins
+	// (e.g. qairt) reject non-zero nctx, so zero it for them; the SDK does the
+	// same for ngl in geniex_resolve_device.
 	nctx, ngl := reqNCtx, reqNgl
-	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
-		if nctx == 0 {
-			nctx = cfg.NCtx
-		}
-		if ngl == 0 {
-			ngl = cfg.Ngl
-		}
-	}
-
-	compute := reqCompute
-	if compute == "" {
-		compute = cfg.Compute
+	if runtimeID != geniex_sdk.RuntimeLlamaCpp {
+		nctx = 0
 	}
 
 	resolved, err := geniex_sdk.ResolveDevice(geniex_sdk.ResolveDeviceInput{
 		RuntimeID:   runtimeID,
 		ModelName:   modelName,
-		ComputeUnit: compute,
+		ComputeUnit: reqCompute,
 		NglDefault:  ngl,
 	})
 	if err != nil {

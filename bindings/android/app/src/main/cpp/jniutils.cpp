@@ -40,15 +40,18 @@ std::string jstring2str(JNIEnv* env, jstring jstr) {
 // Thin wrapper over the SDK's geniex_resolve_device. The SDK owns the
 // alias table — we just marshal strings and translate the output into
 // the Android-local ResolvedDevice struct so the 8 JNI call sites keep
-// their existing shape.
-ResolvedDevice resolve_device(const char* plugin_id, const char* model_name, const std::string& raw) {
+// their existing shape. `ngl_default` is the caller's n_gpu_layers, which
+// the SDK passes through for gpu/npu/hybrid (-1 = all layers) and forces
+// to 0 for cpu/qairt.
+ResolvedDevice resolve_device(
+    const char* plugin_id, const char* model_name, const std::string& raw, int32_t ngl_default) {
     ResolvedDevice r;
 
     geniex_ResolveDeviceInput in{};
     in.plugin_id   = plugin_id;
     in.model_name  = model_name;
     in.mode        = raw.empty() ? nullptr : raw.c_str();
-    in.ngl_default = -1;  // sentinel: "no override" unless the SDK forces one
+    in.ngl_default = ngl_default;
 
     geniex_ResolveDeviceOutput out{};
     int32_t                    rc = geniex_resolve_device(&in, &out);
@@ -66,8 +69,7 @@ ResolvedDevice resolve_device(const char* plugin_id, const char* model_name, con
         LOGi("[JNI] resolve_device: %s", r.warning.c_str());
         geniex_free(out.warning);
     }
-    // Preserve the "-1 means no override" contract downstream relies on.
-    if (out.ngl != -1) r.ngl_override = out.ngl;
+    r.ngl = out.ngl;
     return r;
 }
 
@@ -335,8 +337,8 @@ geniex_LlmCreateInput extract_llm_create_input(JNIEnv* env, jobject inputObj) {
     jfieldID fid;
     jstring  jstr;
 
-    // === model_name (optional — QAIRT plugin reads metadata.json, only
-    //     llama_cpp's gpt-oss device-default override consults it) ===
+    // === model_name (optional — QAIRT plugin reads metadata.json; currently
+    //     unused by the resolver, reserved for future model-specific defaults) ===
     LOGi("[JNI] [extract] locating field 'model_name' (Ljava/lang/String;)");
     fid = env->GetFieldID(cls, "model_name", "Ljava/lang/String;");
     if (checkAndLogJniException(env, "GetFieldID(model_name)") || !fid) {
@@ -431,9 +433,9 @@ geniex_LlmCreateInput extract_llm_create_input(JNIEnv* env, jobject inputObj) {
         }
     }
     {
-        ResolvedDevice r = resolve_device(out.plugin_id, out.model_name, raw_dev);
-        out.device_id    = r.device_id.empty() ? nullptr : hold_c_str(r.device_id);
-        if (r.ngl_override >= 0) out.config.n_gpu_layers = r.ngl_override;
+        ResolvedDevice r        = resolve_device(out.plugin_id, out.model_name, raw_dev, out.config.n_gpu_layers);
+        out.device_id           = r.device_id.empty() ? nullptr : hold_c_str(r.device_id);
+        out.config.n_gpu_layers = r.ngl;
         LOGi("[JNI] [extract] compute_unit = %s, n_gpu_layers = %d (from raw='%s')",
             r.device_id.empty() ? "(null)" : r.device_id.c_str(),
             out.config.n_gpu_layers,
@@ -509,9 +511,9 @@ geniex_VlmCreateInput extract_vlm_create_input(JNIEnv* env, jobject inputObj) {
                 env->DeleteLocalRef(jstr);
             }
         }
-        ResolvedDevice r = resolve_device(out.plugin_id, out.model_name, raw_dev);
-        out.device_id    = r.device_id.empty() ? nullptr : hold_c_str(r.device_id);
-        if (r.ngl_override >= 0) out.config.n_gpu_layers = r.ngl_override;
+        ResolvedDevice r        = resolve_device(out.plugin_id, out.model_name, raw_dev, out.config.n_gpu_layers);
+        out.device_id           = r.device_id.empty() ? nullptr : hold_c_str(r.device_id);
+        out.config.n_gpu_layers = r.ngl;
         LOGi("[JNI] [extract_vlm] compute_unit = %s, n_gpu_layers = %d (from raw='%s')",
             r.device_id.empty() ? "(null)" : r.device_id.c_str(),
             out.config.n_gpu_layers,

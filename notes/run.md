@@ -33,24 +33,19 @@ FFI-sync rule).
 
 | Alias    | `device_id` sent to SDK | `n_gpu_layers` override | Use case                                                                                    |
 |----------|-------------------------|-------------------------|---------------------------------------------------------------------------------------------|
-| `cpu`    | empty                   | `0`                     | Pure CPU.                                                                                   |
-| `gpu`    | `GPUOpenCL`             | (none; caller default)  | Adreno via OpenCL. Pair with a high `--ngl`.                                               |
-| `npu`    | `HTP0`                  | `999`                   | Pinned single-session HTP. Deterministic, slower on LLMs — see § NPU compute-unit selection (llama_cpp). |
-| `hybrid` | empty                   | `999`                   | `llama_cpp` fast path: per-tensor HTP+CPU scheduler. Default when nothing is passed.         |
+| `cpu`    | empty                   | `0`                  | Pure CPU.                                                                                   |
+| `gpu`    | `GPUOpenCL`             | `--ngl` (default -1) | Adreno via OpenCL.                                                                          |
+| `npu`    | `HTP0`                  | `--ngl` (default -1) | Pinned single-session HTP. Deterministic, slower on LLMs — see § NPU compute-unit selection (llama_cpp). |
+| `hybrid` | empty                   | `--ngl` (default -1) | `llama_cpp` per-tensor HTP+CPU scheduler.                                                    |
+
+`--ngl` defaults to `-1`, which llama.cpp reads as "all layers", so
+gpu / npu / hybrid offload everything unless `--ngl` is set. The value
+passes through the SDK unchanged. qairt ignores `--ngl` (forced to 0).
 
 Defaults when the user passes nothing (`--device ""` / `device_map="auto"`):
-`hybrid` for `llama_cpp`, `npu` for `qairt`. QAIRT exposes only one
-device, so `cpu` / `gpu` / `hybrid` against a qairt model get coerced to
-`NPU` with a warning on stderr — the CLI does **not** exit early.
-
-**Model-specific default override**: the SDK also inspects the model
-name when the caller passes no device. Families listed in
-`is_llama_cpp_hybrid_incompatible` ([`sdk/src/device.cpp`](../sdk/src/device.cpp))
-— currently anything whose name contains `gpt-oss` — default to `npu`
-instead of `hybrid`, because the per-tensor hybrid scheduler can't
-place all of their ops on HTP end-to-end. Pass `--device hybrid`
-explicitly to override the override. Adding a new family means editing
-that one function and rebuilding the SDK bridge.
+`npu` for both `llama_cpp` and `qairt`. QAIRT exposes only one device,
+so `cpu` / `gpu` / `hybrid` against a qairt model get coerced to `NPU`
+with a warning on stderr — the CLI does **not** exit early.
 
 Concrete ids (`HTP0,HTP1,HTP2,HTP3`, `GPUOpenCL`, etc.) pass through
 unchanged when supplied via `<plugin>:<device>`.
@@ -60,15 +55,15 @@ unchanged when supplied via `<plugin>:<device>`.
 `llama_cpp` supports OpenCL and Hexagon on Windows ARM64. The compute unit is driven by two inputs on `geniex_LlmCreateInput`:
 
 - `device_id` — string, runtime-specific (`HTP0`, `GPUOpenCL`, `CPU`, …).
-- `config.n_gpu_layers` — int; how many layers to offload. `999` = all.
+- `config.n_gpu_layers` — int; how many layers to offload. `-1` = all.
 
 ### NPU compute-unit selection (llama_cpp)
 
 `sdk/plugins/llama_cpp/src/llm.cpp:73-114` branches on whether `device_id` is non-null, producing **two runtime paths** with very different performance:
 
-1. **`device_id` null + `n_gpu_layers=999`** (the `hybrid` alias) → llama.cpp's **per-tensor scheduler**. It inspects each tensor and assigns it to whichever registered backend supports the op (HTP for computable ops, CPU for fallbacks), using CPU-resident buffers for the fallback tensors. **Fast path.** On X1E80100 + Qwen3-1.7B-Q8_0: ~90 tok/s prefill, ~27 tok/s decode, ~200 ms TTFT. Task Manager shows NPU pegged.
+1. **`device_id` null + `n_gpu_layers=-1`** (the `hybrid` alias) → llama.cpp's **per-tensor scheduler**. It inspects each tensor and assigns it to whichever registered backend supports the op (HTP for computable ops, CPU for fallbacks), using CPU-resident buffers for the fallback tensors. **Fast path.** On X1E80100 + Qwen3-1.7B-Q8_0: ~90 tok/s prefill, ~27 tok/s decode, ~200 ms TTFT. Task Manager shows NPU pegged.
 
-2. **`device_id="HTP0"` + `n_gpu_layers=999`** (the `npu` alias) → runtime calls `ggml_backend_dev_by_name("HTP0")` and sets `mpar.devices = {HTP0}`. This **pins the model to a single compute-unit layout** and disables per-tensor hybrid assignment. Any op HTP doesn't support gets handled less efficiently. On the same model: ~60 tok/s prefill, ~22 tok/s decode, ~350 ms TTFT. Task Manager shows CPU pegged (the host thread driving HTP busy-waits, *plus* all fallbacks run there). Useful when you want deterministic layout / all weights on a known compute unit. Note: `n_gpu_layers` is required even with the compute unit pinned — `device_id="HTP0"` with `ngl=0` opens an HTP session and then runs every layer on CPU, so the SDK forces `ngl=999` for this alias (`sdk/src/device.cpp`).
+2. **`device_id="HTP0"` + `n_gpu_layers=-1`** (the `npu` alias) → runtime calls `ggml_backend_dev_by_name("HTP0")` and sets `mpar.devices = {HTP0}`. This **pins the model to a single compute-unit layout** and disables per-tensor hybrid assignment. Any op HTP doesn't support gets handled less efficiently. On the same model: ~60 tok/s prefill, ~22 tok/s decode, ~350 ms TTFT. Task Manager shows CPU pegged (the host thread driving HTP busy-waits, *plus* all fallbacks run there). Useful when you want deterministic layout / all weights on a known compute unit. Note: a non-zero `n_gpu_layers` is required even with the compute unit pinned — `device_id="HTP0"` with `ngl=0` opens an HTP session and then runs every layer on CPU, so the default `ngl=-1` (all layers) applies for this alias (`sdk/src/device.cpp`).
 
 Bonus: when the `device_id` string starts with `"HTP0"`, the runtime also flips KV cache to Q8_0 and enables flash-attn (`llm.cpp:136-140`). Orthogonal to perf — path (2) is slower than (1) even with those enabled.
 

@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//bindings/go:geniex_sdk_go",
+        "//cli/internal/config",
         "//cli/internal/types",
         "//cli/server/service",
         "//cli/server/utils",

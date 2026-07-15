@@ -25,16 +25,26 @@ def test_cpu_alias_zeroes_gpu_layers(geniex_session):
     assert ngl == 0
 
 
-def test_hybrid_alias_pins_gpu_layers_to_999(geniex_session):
+def test_hybrid_alias_offloads_all_layers(geniex_session):
+    # resolve_device_map passes no explicit ngl, so the resolver returns -1
+    # (all layers) which surfaces as None (no override).
     runtime, _, ngl = geniex.resolve_device_map('hybrid')
     assert runtime == 'llama_cpp'
-    assert ngl == 999
+    assert ngl is None
+
+
+def test_llama_cpp_auto_defaults_to_npu(geniex_session):
+    runtime, device_id, ngl = geniex.resolve_device_map('llama_cpp')
+    assert runtime == 'llama_cpp'
+    assert device_id == 'HTP0'
+    assert ngl is None
 
 
 def test_llama_cpp_npu_alias_pins_htp0(geniex_session):
-    runtime, device_id, _ = geniex.resolve_device_map('llama_cpp:npu')
+    runtime, device_id, ngl = geniex.resolve_device_map('llama_cpp:npu')
     assert runtime == 'llama_cpp'
     assert device_id == 'HTP0'
+    assert ngl is None
 
 
 def test_qairt_npu_alias_resolves_to_qairt(geniex_session):

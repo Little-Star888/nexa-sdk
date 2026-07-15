@@ -123,7 +123,7 @@ Control model loading, context, and generation limits.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `-n`, `--ngl` | int | `999` | Number of layers to offload to GPU. |
+| `-n`, `--ngl` | int | `-1` | Number of layers to offload to GPU/NPU, `-1` = all (llama_cpp only). |
 | `--nctx` | int | `4096` | Context window size (max input + output tokens). |
 | `--max-tokens` | int | `2048` | Maximum tokens to generate per response. |
 | `--stop` | string[] | — | Stop sequences (can be specified multiple times). |

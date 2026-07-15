@@ -23,6 +23,7 @@ import (
 	"github.com/openai/openai-go/v3/shared/constant"
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
+	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/internal/types"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/utils"
@@ -38,7 +39,7 @@ type ChatCompletionRequest struct {
 
 	EnableThink bool   `json:"enable_think"`
 	NCtx        int32  `json:"nctx"`
-	Ngl         int32  `json:"ngl"`
+	Ngl         int32  `json:"ngl"` // 0 = pure CPU, -1 = all layers, N = N layers; defaults to the server --ngl when omitted
 	Compute     string `json:"compute"`
 
 	ImageMaxLength int32 `json:"image_max_length"`
@@ -52,6 +53,11 @@ type ChatCompletionRequest struct {
 }
 
 func defaultChatCompletionRequest() ChatCompletionRequest {
+	// Prefill llama_cpp knobs with the server-wide defaults (--nctx / --ngl /
+	// --compute). ShouldBindJSON only overwrites fields present in the body, so
+	// an omitted knob keeps the server default while an explicit value (incl.
+	// ngl 0 = pure CPU, -1 = all layers) passes through verbatim.
+	cfg := config.Get()
 	return ChatCompletionRequest{
 		ChatCompletionNewParams: ChatCompletionNewParams{
 			MaxCompletionTokens: param.NewOpt[int64](2048),
@@ -59,9 +65,9 @@ func defaultChatCompletionRequest() ChatCompletionRequest {
 		Stream: false,
 
 		EnableThink:       true,
-		NCtx:              0,  // llama_cpp only; 0 = not set, falls back to server default (--nctx)
-		Ngl:               0,  // llama_cpp only; 0 = not set, falls back to server default (--ngl)
-		Compute:           "", // "" = not set, falls back to server default (--compute)
+		NCtx:              cfg.NCtx,
+		Ngl:               cfg.Ngl,
+		Compute:           cfg.Compute,
 		ImageMaxLength:    512,
 		TopK:              0,
 		MinP:              0.0,

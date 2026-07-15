@@ -29,7 +29,7 @@ constexpr Platform kHostPlatform =
 // Device
 
 Device classify_device(const char* device_id, int n_gpu_layers) {
-    if (n_gpu_layers <= 0) return Device::CPU;
+    if (n_gpu_layers == 0) return Device::CPU;                   // <0 means "all layers" to llama.cpp
     if (!device_id || device_id[0] == '\0') return Device::NPU;  // HYBRID treat as NPU
     const std::string id(device_id);
     if (id.rfind("GPU", 0) == 0) return Device::GPU;

@@ -28,7 +28,7 @@ std::optional<std::vector<ggml_backend_dev_t>> resolve_devices(const char* devic
 //   cpu    -> n_gpu_layers == 0                     -> CPU
 //   gpu    -> device_id starts with "GPU"           -> GPU
 //   npu    -> device_id starts with "HTP"           -> HTP
-//   hybrid -> empty device_id, ngl == 999           -> HTP
+//   hybrid -> empty device_id, ngl != 0             -> HTP
 Device classify_device(const char* device_id, int n_gpu_layers);
 
 // Map a caller's config to llama params, filling each unset (0) field from the

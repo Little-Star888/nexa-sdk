@@ -75,9 +75,9 @@ var (
 	llmFlags = func() *pflag.FlagSet {
 		llmFlags := pflag.NewFlagSet("LLM/VLM Model", pflag.ExitOnError)
 		llmFlags.SortFlags = false
-		llmFlags.StringVarP(&computeUnit, "compute", "c", "", "compute unit to run on: cpu, gpu, npu, or hybrid (default: hybrid for llama_cpp, npu for qairt)")
-		llmFlags.Int32VarP(&ngl, "ngl", "n", 0, "number of layers to offload to gpu/npu (llama_cpp only, default 999)")
-		llmFlags.Int32VarP(&nctx, "nctx", "", 0, "context window size (llama_cpp only, default 4096)")
+		llmFlags.StringVarP(&computeUnit, "compute", "c", "", "compute unit to run on: cpu, gpu, npu, or hybrid (default: npu)")
+		llmFlags.Int32VarP(&ngl, "ngl", "n", -1, "number of layers to offload to gpu/npu, -1 = all (llama_cpp only)")
+		llmFlags.Int32VarP(&nctx, "nctx", "", 4096, "context window size (llama_cpp only)")
 		llmFlags.Int32VarP(&maxTokens, "max-tokens", "", 2048, "max tokens")
 		llmFlags.StringArrayVarP(&stop, "stop", "", nil, "stop sequences (llama_cpp only)")
 		llmFlags.StringVarP(&stopFile, "stop-file", "", "", "file containing stop sequences (llama_cpp only)")
@@ -211,19 +211,14 @@ func loadStopSequences() ([]string, error) {
 }
 
 // resolveModelParams resolves --compute / --ngl / --nctx into the
-// (device_id, ngl, nctx) triple the SDK expects. For llama_cpp, unset
-// --ngl / --nctx fall back to 999 / 4096; other runtimes keep 0 so their
-// param-guard isn't tripped by the flag default. Compute-unit alias mapping
-// is delegated to geniex_resolve_device (sdk/src/device.cpp).
+// (device_id, ngl, nctx) triple the SDK expects. --ngl (-1 = all) and
+// --nctx are llama_cpp-only; qairt rejects any non-zero value, so both
+// are zeroed for it (the SDK also forces ngl to 0). Compute-unit alias
+// mapping is delegated to geniex_resolve_device (sdk/src/device.cpp).
 func resolveModelParams(runtimeID, modelName string) (deviceID string, resolvedNgl, resolvedNctx int32, err error) {
 	resolvedNgl, resolvedNctx = ngl, nctx
-	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
-		if !llmFlags.Changed("ngl") {
-			resolvedNgl = 999
-		}
-		if !llmFlags.Changed("nctx") {
-			resolvedNctx = 4096
-		}
+	if runtimeID != geniex_sdk.RuntimeLlamaCpp {
+		resolvedNctx = 0
 	}
 
 	resolved, err := geniex_sdk.ResolveDevice(geniex_sdk.ResolveDeviceInput{

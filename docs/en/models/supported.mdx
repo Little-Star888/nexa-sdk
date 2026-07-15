@@ -251,7 +251,7 @@ A local GGUF model is a directory (or file) holding your `.gguf` weights — sid
 
     model = AutoModelForCausalLM.from_pretrained(
         r"C:\models\my-model\model.gguf",   # path to a local .gguf file
-        device_map="auto",                  # auto -> hybrid for llama_cpp
+        device_map="auto",                  # auto -> npu for llama_cpp
     )
     ```
 

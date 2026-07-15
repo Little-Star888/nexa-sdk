@@ -21,8 +21,7 @@
 
 namespace {
 
-constexpr const char* kPluginLlamaCpp = "llama_cpp";
-constexpr const char* kPluginQairt    = "qairt";
+constexpr const char* kPluginQairt = "qairt";
 
 constexpr const char* kAliasCPU    = "cpu";
 constexpr const char* kAliasGPU    = "gpu";
@@ -55,14 +54,6 @@ bool is_known_alias(const std::string& s) {
     return s == kAliasCPU || s == kAliasGPU || s == kAliasNPU || s == kAliasHybrid;
 }
 
-// llama_cpp model families that can't run on the per-tensor hybrid
-// scheduler. gpt-oss uses ops the hybrid dispatcher won't place on HTP
-// end-to-end, so we fall back to the pinned-NPU path as the default
-// when the user doesn't override it.
-bool is_llama_cpp_hybrid_incompatible(const char* model_name) {
-    return to_lower(model_name).find("gpt-oss") != std::string::npos;
-}
-
 }  // namespace
 
 int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_ResolveDeviceOutput* output) {
@@ -89,19 +80,14 @@ int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_Res
         return GENIEX_ERROR_COMMON_INVALID_DEVICE;
     }
 
-    // Empty / "auto" → plugin-specific default, with a model-name hook.
+    // Empty / "auto" → plugin default. Both qairt and llama_cpp default to
+    // the pinned-NPU path.
     if (alias.empty() || alias == kAliasAuto) {
-        if (plugin == kPluginQairt) {
-            alias = kAliasNPU;
-        } else if (plugin == kPluginLlamaCpp && is_llama_cpp_hybrid_incompatible(input->model_name)) {
-            alias = kAliasNPU;
-        } else {
-            alias = kAliasHybrid;
-        }
+        alias = kAliasNPU;
     }
 
-    // QAIRT only exposes its NPU device. Coerce other aliases with a
-    // warning instead of erroring so existing shell pipelines keep working.
+    // QAIRT is NPU-only and rejects any non-zero n_gpu_layers, so force
+    // ngl to 0. Non-npu aliases are coerced with a warning, not an error.
     if (plugin == kPluginQairt) {
         if (alias != kAliasNPU) {
             std::string msg =
@@ -109,22 +95,18 @@ int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_Res
             output->warning = portable_strdup(msg.c_str());
         }
         output->device_id = portable_strdup(kDeviceQairtNPU);
+        output->ngl       = 0;
         return GENIEX_SUCCESS;
     }
 
-    // llama_cpp (and any future non-qairt plugin that reuses the table).
+    // llama_cpp: ngl passes through unchanged (-1 means "all layers" to
+    // llama.cpp). Only cpu forces it to 0.
     if (alias == kAliasCPU) {
         output->ngl = 0;
     } else if (alias == kAliasGPU) {
         output->device_id = portable_strdup(kDeviceGPUOpenCL);
     } else if (alias == kAliasNPU) {
-        // device_id alone isn't enough — llama.cpp needs ngl>=layer_count
-        // to actually offload. ngl=0 with a pinned NPU device opens an HTP
-        // session and then runs every layer on CPU.
         output->device_id = portable_strdup(kDeviceHTP0);
-        output->ngl       = 999;
-    } else if (alias == kAliasHybrid) {
-        output->ngl = 999;
     }
     return GENIEX_SUCCESS;
 }

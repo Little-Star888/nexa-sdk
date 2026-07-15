@@ -165,7 +165,7 @@ data class ModelConfig(
     var nBatch:                Int     = 2048,
     var nUBatch:               Int     = 512,
     var nSeqMax:               Int     = 1,
-    var nGpuLayers:            Int     = 0,
+    var nGpuLayers:            Int     = -1,    // -1 = all layers
     val chat_template_path:    String  = "",
     val chat_template_content: String  = "",
     val max_tokens:            Int     = 2048,
@@ -175,7 +175,7 @@ data class ModelConfig(
 ```
 
 <Note>
-`nGpuLayers` is rewritten by the JNI based on `compute_unit`: `cpu` forces 0, `npu` forces 999. For `gpu` the value you pass is used as-is — set 999 to offload all layers.
+`nGpuLayers` is rewritten by the JNI based on `compute_unit`: `cpu` forces 0; `gpu` / `npu` / `hybrid` pass the value through (`-1` = all layers).
 </Note>
 
 ### `ChatMessage`
@@ -275,7 +275,7 @@ llmWrapper.applyChatTemplate(chat.toTypedArray(), null, false).onSuccess { t ->
 | Goal | `compute_unit` | Notes |
 |---|---|---|
 | Snapdragon NPU (recommended) | `"npu"` or `null` | Hexagon NPU acceleration. |
-| Adreno GPU (OpenCL) | `"gpu"` | Set `nGpuLayers = 999` to offload all layers. |
+| Adreno GPU (OpenCL) | `"gpu"` | Defaults to `nGpuLayers = -1` (all layers). |
 | Pure CPU | `"cpu"` | Works on any ARM64 chipset. |
 
 ### VLM

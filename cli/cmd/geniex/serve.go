@@ -30,7 +30,7 @@ func serve() *cobra.Command {
 	// Model-load defaults applied when a request omits them (llama_cpp only;
 	// per-request body fields still override).
 	serveCmd.Flags().Int32("nctx", 4096, "Default context window size, llama_cpp only (env: GENIEX_NCTX)")
-	serveCmd.Flags().Int32P("ngl", "n", 999, "Default layers to offload to gpu/npu, llama_cpp only (env: GENIEX_NGL)")
+	serveCmd.Flags().Int32P("ngl", "n", -1, "Default layers to offload to gpu/npu, -1 = all, llama_cpp only (env: GENIEX_NGL)")
 	serveCmd.Flags().StringP("compute", "c", "", "Default compute unit: cpu, gpu, npu, or hybrid (env: GENIEX_COMPUTE)")
 	// HTTPS / TLS flags
 	serveCmd.Flags().Bool("https", false, "Enable HTTPS/TLS (env: GENIEX_HTTPS)")

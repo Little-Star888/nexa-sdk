@@ -23,13 +23,13 @@ data class ModelConfig(
     var nSeqMax: Int = 1,
 
     /**
-     * Number of layers to offload to GPU / NPU. The JNI layer overrides
-     * this when [InputPluginBase.compute_unit] is [ComputeUnitValue.CPU] (forces
-     * 0) or [ComputeUnitValue.HYBRID] (forces 999). For [ComputeUnitValue.GPU]
-     * and [ComputeUnitValue.NPU] the caller's value is used as-is; set it
-     * to 999 to offload every layer.
+     * Number of layers to offload to GPU / NPU; -1 (the default) means all
+     * layers, which llama.cpp interprets natively. The JNI layer forces 0
+     * when [InputPluginBase.compute_unit] is [ComputeUnitValue.CPU] (and for
+     * qairt, which ignores it). For [ComputeUnitValue.GPU] / [ComputeUnitValue.NPU]
+     * / [ComputeUnitValue.HYBRID] the caller's value passes through.
      */
-    var nGpuLayers: Int = 0,
+    var nGpuLayers: Int = -1,
 
     /** Path to the chat template file (optional) */
     val chat_template_path: String = "",

@@ -165,7 +165,7 @@ data class ModelConfig(
     var nBatch:                Int     = 2048,
     var nUBatch:               Int     = 512,
     var nSeqMax:               Int     = 1,
-    var nGpuLayers:            Int     = 0,
+    var nGpuLayers:            Int     = -1,    // -1 = all layers
     val chat_template_path:    String  = "",
     val chat_template_content: String  = "",
     val max_tokens:            Int     = 2048,
@@ -175,7 +175,7 @@ data class ModelConfig(
 ```
 
 <Note>
-JNI 会根据 `compute_unit` 改写 `nGpuLayers`：`cpu` 强制为 0，`npu` 强制为 999。`gpu` 会保留传入值——如要全层卸载，请设为 999。
+JNI 会根据 `compute_unit` 改写 `nGpuLayers`：`cpu` 强制为 0；`gpu` / `npu` / `hybrid` 保留传入值（`-1` = 全部层）。
 </Note>
 
 ### `ChatMessage`
@@ -275,7 +275,7 @@ llmWrapper.applyChatTemplate(chat.toTypedArray(), null, false).onSuccess { t ->
 | 目标 | `compute_unit` | 备注 |
 |---|---|---|
 | 骁龙 NPU（推荐） | `"npu"` 或 `null` | Hexagon NPU 加速。 |
-| Adreno GPU（OpenCL） | `"gpu"` | 设 `nGpuLayers = 999` 全层卸载。 |
+| Adreno GPU（OpenCL） | `"gpu"` | 默认 `nGpuLayers = -1` 全层卸载。 |
 | 纯 CPU | `"cpu"` | 兼容任意 ARM64 芯片。 |
 
 ### VLM
