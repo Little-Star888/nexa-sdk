@@ -26,7 +26,7 @@ LlamaLlm::~LlamaLlm() {
     // pools_ frees its threadpools in its own destructor, after ctx is freed.
 }
 
-int32_t LlamaLlm::create_impl(const geniex_LlmCreateInput* input) {
+int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
     if (!input || !input->model_path) {
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }

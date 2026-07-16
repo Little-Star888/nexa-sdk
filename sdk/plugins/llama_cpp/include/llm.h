@@ -32,7 +32,7 @@ class LlamaLlm : public ILlm {
    public:
     virtual ~LlamaLlm() override;
 
-    virtual int32_t create_impl(const geniex_LlmCreateInput*) override;
+    virtual int32_t create(const geniex_LlmCreateInput*) override;
 
     virtual int32_t reset() override;
 

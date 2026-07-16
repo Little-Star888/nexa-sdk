@@ -55,11 +55,6 @@ const char* geniex_get_error_message(const geniex_ErrorCode error_code) {
             return "Plugin loading failed";
         case GENIEX_ERROR_COMMON_PLUGIN_INVALID:
             return "Invalid plugin";
-        case GENIEX_ERROR_COMMON_LICENSE_INVALID:
-            return "Invalid license";
-        case GENIEX_ERROR_COMMON_LICENSE_EXPIRED:
-            return "License expired";
-
             /* ===== LLM ERRORS (200xxx) ===== */
         case GENIEX_ERROR_LLM_TOKENIZATION_FAILED:
             return "Tokenization failed";

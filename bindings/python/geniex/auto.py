@@ -313,8 +313,6 @@ def _create_vlm_handle(
     plugin_id: str | None,
     device_id: str | None,
     config: geniex_ModelConfig,
-    license_id: str | None,
-    license_key: str | None,
     meta: dict | None = None,
 ) -> GenieXVLM:
     inp = geniex_VlmCreateInput(
@@ -330,10 +328,6 @@ def _create_vlm_handle(
         inp.plugin_id = plugin_id.encode()
     if device_id:
         inp.device_id = device_id.encode()
-    if license_id:
-        inp.license_id = license_id.encode()
-    if license_key:
-        inp.license_key = license_key.encode()
 
     handle = c_void_p()
     lib = load_library()
@@ -356,8 +350,6 @@ class AutoModelForCausalLM:
         n_gpu_layers: int = -1,
         mmproj_path: str | None = None,
         tokenizer_path: str | None = None,
-        license_id: str | None = None,
-        license_key: str | None = None,
         hf_token: str | None = None,
         progress: ProgressCallback | bool | None = None,
         **kwargs,
@@ -407,8 +399,6 @@ class AutoModelForCausalLM:
                 plugin_id,
                 device_id,
                 config,
-                license_id,
-                license_key,
                 meta=meta,
             )
 
@@ -423,10 +413,6 @@ class AutoModelForCausalLM:
             inp.plugin_id = plugin_id.encode()
         if device_id:
             inp.device_id = device_id.encode()
-        if license_id:
-            inp.license_id = license_id.encode()
-        if license_key:
-            inp.license_key = license_key.encode()
 
         handle = c_void_p()
         lib = load_library()
@@ -449,8 +435,6 @@ class AutoModelForVision2Seq:
         n_gpu_layers: int = -1,
         mmproj_path: str | None = None,
         tokenizer_path: str | None = None,
-        license_id: str | None = None,
-        license_key: str | None = None,
         hf_token: str | None = None,
         progress: ProgressCallback | bool | None = None,
         **kwargs,
@@ -495,7 +479,5 @@ class AutoModelForVision2Seq:
             plugin_id,
             device_id,
             config,
-            license_id,
-            license_key,
             meta=meta,
         )

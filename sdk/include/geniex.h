@@ -67,9 +67,6 @@ typedef enum {
     GENIEX_ERROR_COMMON_PLUGIN_LOAD    = -100301, /**< Plugin loading failed */
     GENIEX_ERROR_COMMON_PLUGIN_INVALID = -100302, /**< Invalid plugin */
 
-    GENIEX_ERROR_COMMON_LICENSE_INVALID = -100601, /**< Invalid license */
-    GENIEX_ERROR_COMMON_LICENSE_EXPIRED = -100602, /**< License expired */
-
     /* ===== LLM ERRORS (200xxx) ===== */
 
     GENIEX_ERROR_LLM_TOKENIZATION_FAILED         = -200001, /**< Tokenization failed */
@@ -438,9 +435,6 @@ typedef struct {
     geniex_ModelConfig config;         /** Model configuration */
     geniex_PluginId    plugin_id;      /** plugin to use for the model */
     const char*        device_id;      /** device to use for the model, NULL for default device */
-    const char* license_id;  /** licence id for loading NPU models, must be provided upon the first use of the license
-                                key. null terminated string */
-    const char* license_key; /** licence key for loading NPU models, null terminated string */
 } geniex_LlmCreateInput;
 
 /**
@@ -639,9 +633,6 @@ typedef struct {
     geniex_PluginId    plugin_id;      /** Plugin to use for the model */
     const char*        device_id;      /** device to use for the model */
     geniex_Path        tokenizer_path; /** Path to the tokenizer file */
-    const char* license_id;  /** licence id for loading NPU models, must be provided upon the first use of the license
-                                key. null terminated string */
-    const char* license_key; /** licence key for loading NPU models, null terminated string */
 } geniex_VlmCreateInput;
 
 /**

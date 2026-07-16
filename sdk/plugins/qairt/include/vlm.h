@@ -19,7 +19,7 @@ class QairtVlm : public IVlm {
     // wired into the QAIRT VLM pipeline yet, so always reported as unsupported.
     bool has_vision_encoder_ = false;
 
-    // Bundle's `dialog.sampler` defaults; parsed once at create_impl().
+    // Bundle's `dialog.sampler` defaults; parsed once at create().
     ParsedSamplerConfig bundle_sampler_;
 
     // Incremental history tracking.
@@ -31,7 +31,7 @@ class QairtVlm : public IVlm {
    public:
     virtual ~QairtVlm() override;
 
-    virtual int32_t create_impl(const geniex_VlmCreateInput*) override;
+    virtual int32_t create(const geniex_VlmCreateInput*) override;
 
     virtual int32_t reset() override;
 

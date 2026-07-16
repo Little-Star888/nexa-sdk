@@ -11,14 +11,6 @@
 #define portable_strdup strdup
 #endif
 
-// keep geniex_plugin link openssl
-#ifdef GENIEX_VALIDATION
-#include "openssl/crypto.h"
-#include "openssl/ssl.h"
-void* _ssl_dummy    = (void*)SSL_CTX_get_options;
-void* _crypto_dummy = (void*)OpenSSL_version;
-#endif
-
 #include <cstdlib>
 #include <iostream>
 

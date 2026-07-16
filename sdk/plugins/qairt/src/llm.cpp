@@ -38,7 +38,7 @@ constexpr const char* kDefaultSystemPrompt = "You are a helpful AI assistant.";
 
 QairtLlm::~QairtLlm() = default;
 
-int32_t QairtLlm::create_impl(const geniex_LlmCreateInput* input) {
+int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
     if (!input || !input->model_path) {
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }

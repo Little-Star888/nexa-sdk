@@ -38,7 +38,7 @@ class LlamaVlm : public IVlm {
    public:
     ~LlamaVlm() override;
 
-    virtual int32_t create_impl(const geniex_VlmCreateInput* input) override;
+    virtual int32_t create(const geniex_VlmCreateInput* input) override;
 
     virtual int32_t reset() override;
 
