@@ -82,7 +82,7 @@ int32_t LlamaVlm::create(const geniex_VlmCreateInput* input) {
     // Initialize vision context if mmproj_path provided
     if (input->mmproj_path) {
         mtmd_context_params mparams = mtmd_context_params_default();
-        mparams.use_gpu             = config.n_gpu_layers > 0;
+        mparams.use_gpu             = config.n_gpu_layers != 0;
         mparams.print_timings       = false;
         mparams.n_threads           = 4;
         // Zack TODO: elegant fix this error:  no member named 'verbosity' in 'mtmd_context_params'
