@@ -81,7 +81,7 @@ jobs:
       QDC_API_KEY: ${{ secrets.QDC_API_KEY }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - id: sdk
@@ -119,7 +119,7 @@ jobs:
         device: ${{ fromJson(needs.load-models.outputs.devices) }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - uses: actions/download-artifact@v8
