@@ -82,8 +82,14 @@ async fn fetch_platform_info(
         cfg.endpoint, cfg.version
     );
     let platform_cache = cfg.cache_dir.join(PLATFORM_FILENAME);
-    let platform_bytes =
-        fetch_with_cache(&platform_url, &platform_cache, cfg.skip_cache, transport).await?;
+    let platform_bytes = fetch_with_cache(
+        &platform_url,
+        &platform_cache,
+        &cfg.version,
+        cfg.skip_cache,
+        transport,
+    )
+    .await?;
     serde_json::from_slice(&platform_bytes).map_err(|source| Error::ManifestParse {
         what: "platform.json",
         source,
@@ -174,6 +180,7 @@ impl ModelSource for AiHubSource {
         let manifest_bytes = fetch_with_cache(
             &manifest_url,
             &manifest_cache,
+            version,
             self.cfg.skip_cache,
             &self.transport,
         )
@@ -312,10 +319,11 @@ impl ModelSource for AiHubSource {
                 .cfg
                 .cache_dir
                 .join("info")
-                .join(format!("{version}-{}.json", entry.id));
+                .join(format!("{}.json", entry.id));
             match fetch_with_cache(
                 &entry.manifest_urls.info,
                 &cache_path,
+                version,
                 self.cfg.skip_cache,
                 &self.transport,
             )
@@ -426,11 +434,12 @@ fn is_macos_metadata(path: &str) -> bool {
 async fn fetch_with_cache(
     url: &str,
     cache_path: &Path,
+    version: &str,
     skip_cache: bool,
     transport: &Arc<dyn HttpTransport>,
 ) -> Result<Vec<u8>> {
     if !skip_cache {
-        if let Some(bytes) = read_cache(cache_path, CACHE_TTL) {
+        if let Some(bytes) = read_cache(cache_path, version, CACHE_TTL) {
             return Ok(bytes);
         }
     }
@@ -441,16 +450,21 @@ async fn fetch_with_cache(
     Ok(bytes)
 }
 
-/// Return cached bytes if the file was modified within `ttl`. Any I/O
-/// error is treated as a cache miss.
-fn read_cache(path: &Path, ttl: Duration) -> Option<Vec<u8>> {
+/// Return cached bytes if the file is within `ttl` and stamped with the
+/// requested `version`, so a release bump invalidates stale caches before
+/// the TTL elapses. Any I/O or parse error is a cache miss.
+fn read_cache(path: &Path, version: &str, ttl: Duration) -> Option<Vec<u8>> {
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
-    let age = SystemTime::now().duration_since(mtime).ok()?;
-    if age > ttl {
+    if SystemTime::now().duration_since(mtime).ok()? > ttl {
         return None;
     }
-    std::fs::read(path).ok()
+    let bytes = std::fs::read(path).ok()?;
+    // manifest.json stamps `version`; platform.json / info.json use
+    // `aihm_version`. Both omit the leading `v` the config carries.
+    let doc: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let cached = doc.get("version").or_else(|| doc.get("aihm_version"))?;
+    (cached.as_str()? == version.trim_start_matches('v')).then_some(bytes)
 }
 
 /// Best-effort cache write. Failures are logged and swallowed — the
@@ -663,15 +677,31 @@ mod tests {
     #[test]
     fn cache_miss_on_missing_file() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(read_cache(&tmp.path().join("nope.json"), CACHE_TTL).is_none());
+        assert!(read_cache(&tmp.path().join("nope.json"), "0.58.0", CACHE_TTL).is_none());
     }
 
     #[test]
     fn cache_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("x.json");
-        write_cache(&p, b"hello");
-        assert_eq!(read_cache(&p, CACHE_TTL).unwrap(), b"hello");
-        assert!(read_cache(&p, Duration::ZERO).is_none());
+        write_cache(&p, br#"{"version":"0.58.0"}"#);
+        // Requested version is passed with the leading `v`, as cfg holds it.
+        assert!(read_cache(&p, "v0.58.0", CACHE_TTL).is_some());
+        assert!(read_cache(&p, "v0.58.0", Duration::ZERO).is_none());
+    }
+
+    #[test]
+    fn cache_miss_on_version_mismatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = tmp.path().join("manifest.json");
+        write_cache(&manifest, br#"{"version":"0.52.0"}"#);
+        assert!(read_cache(&manifest, "v0.58.0", CACHE_TTL).is_none());
+        assert!(read_cache(&manifest, "v0.52.0", CACHE_TTL).is_some());
+
+        // platform.json / info.json use the `aihm_version` key instead.
+        let platform = tmp.path().join("platform.json");
+        write_cache(&platform, br#"{"aihm_version":"0.52.0"}"#);
+        assert!(read_cache(&platform, "v0.58.0", CACHE_TTL).is_none());
+        assert!(read_cache(&platform, "v0.52.0", CACHE_TTL).is_some());
     }
 }
