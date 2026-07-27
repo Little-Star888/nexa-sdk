@@ -125,7 +125,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: qcom-ai-hub/geniex
-          ref: main
+          ref: chore/signed-htp-lfs-store
           lfs: false
           path: signed-htp-src
           sparse-checkout: sdk/signed-htp
