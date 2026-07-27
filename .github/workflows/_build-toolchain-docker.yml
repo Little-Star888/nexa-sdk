@@ -94,8 +94,11 @@ jobs:
           steps.meta.outputs.platforms != 'both' &&
           steps.meta.outputs.platforms != matrix.platform
         shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          PLATFORMS: ${{ steps.meta.outputs.platforms }}
         run: |
-          echo "Skipping ${{ matrix.platform }}; platforms filter is ${{ steps.meta.outputs.platforms }}"
+          echo "Skipping $PLATFORM; platforms filter is $PLATFORMS"
           exit 0
 
       - name: Set up Docker Buildx
