@@ -413,7 +413,7 @@ static int resolve_via_mm(options_t* o, const char* id_in) {
      * second cell of a matrix. Fall through to pull on file-not-found. */
     geniex_ModelPaths paths;
     memset(&paths, 0, sizeof(paths));
-    int32_t rc = geniex_model_get_paths(name, &paths);
+    int32_t rc = geniex_model_get_paths(id_in, &paths);
     if (rc != GENIEX_SUCCESS) {
         geniex_ModelPullInput in;
         memset(&in, 0, sizeof(in));
@@ -431,7 +431,7 @@ static int resolve_via_mm(options_t* o, const char* id_in) {
             free(buf);
             return 1;
         }
-        rc = geniex_model_get_paths(name, &paths);
+        rc = geniex_model_get_paths(id_in, &paths);
         if (rc != GENIEX_SUCCESS) {
             const char* m = geniex_model_last_error_message();
             fprintf(stderr, "ERROR: geniex_model_get_paths(%s): %s (%d)\n", id_in, m ? m : "?", rc);
