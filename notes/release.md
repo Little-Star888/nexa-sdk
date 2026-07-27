@@ -172,7 +172,7 @@ The Windows ARM64 SDK ships `libggml-htp.cat` plus `libggml-htp-v{68,69,73,75,79
 
 The signed bundle must contain exactly these eight files at the zip root: `libggml-htp.cat`, `libggml-htp.inf`, and `libggml-htp-v{68,69,73,75,79,81}.so`.
 
-The cross-repo checkout uses `secrets.QCOM_AI_HUB_GENIEX_READ_TOKEN` — a GitHub App / fine-grained PAT scoped to `qcom-ai-hub/geniex` with `contents: read` + `metadata: read`. If CI reports `signed=false` but the bundle is merged on `main`, first check that this secret has not expired.
+The cross-repo checkout reuses `secrets.GH_PAT` (already scoped for cross-repo access to `qcom-ai-hub/geniex` — see `publish-s3` below). If CI reports `signed=false` but the bundle is merged on `main`, first check that `GH_PAT` has not expired.
 
 ### Promoting self-signed → Microsoft-signed
 

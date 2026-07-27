@@ -130,7 +130,7 @@ jobs:
           path: signed-htp-src
           sparse-checkout: sdk/signed-htp
           sparse-checkout-cone-mode: false
-          token: ${{ secrets.QCOM_AI_HUB_GENIEX_READ_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
           fetch-depth: 1
 
       - uses: actions/download-artifact@v8
