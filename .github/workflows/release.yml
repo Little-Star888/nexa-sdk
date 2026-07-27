@@ -101,8 +101,9 @@ jobs:
       version_tag: ${{ needs.resolve-tag.outputs.tag }}
       upload_artifact: true
 
-  # Overlay the Microsoft-signed HTP bundle from S3 if available; otherwise
-  # the Windows SDK stays self-signed and gets marked as such downstream.
+  # Overlay the Microsoft-signed HTP bundle from qcom-ai-hub/geniex LFS if
+  # available; otherwise the Windows SDK stays self-signed and gets marked
+  # as such downstream.
   overlay-htp:
     name: overlay-htp (windows-arm64)
     runs-on: ubuntu-latest
@@ -120,24 +121,35 @@ jobs:
       - name: Init llama.cpp submodule
         run: git submodule update --init --depth=1 third-party/llama.cpp
 
+      - name: Fetch signed HTP archive from qcom-ai-hub/geniex
+        uses: actions/checkout@v7
+        with:
+          repository: qcom-ai-hub/geniex
+          ref: main
+          lfs: true
+          path: signed-htp-src
+          sparse-checkout: sdk/signed-htp
+          sparse-checkout-cone-mode: false
+          token: ${{ secrets.QCOM_AI_HUB_GENIEX_READ_TOKEN }}
+          fetch-depth: 1
+
       - uses: actions/download-artifact@v8
         with:
           name: sdk-windows-arm64
           path: sdk-windows-arm64
 
-      - name: Overlay Microsoft-signed HTP bundle from S3 (if available)
+      - name: Overlay Microsoft-signed HTP bundle from LFS (if available)
         id: htp
         run: |
           set -euo pipefail
           sha=$(git -C third-party/llama.cpp rev-parse --short=6 HEAD)
-          url="https://qaihub-public-assets.s3.us-west-2.amazonaws.com/llama-cpp/libggml-htp-${sha}.zip"
-          if curl -fsSL -o htp-signed.zip "$url"; then
-            unzip -o htp-signed.zip -d sdk-windows-arm64/lib/llama_cpp/
+          src="signed-htp-src/sdk/signed-htp/libggml-htp-${sha}.zip"
+          if [[ -f "$src" ]]; then
+            unzip -o "$src" -d sdk-windows-arm64/lib/llama_cpp/
             signed=true
           else
             signed=false
           fi
-          rm -f htp-signed.zip
           echo "Signed HTP bundle for llama.cpp @ ${sha}: ${signed}"
           echo "signed=${signed}" >> "$GITHUB_OUTPUT"
           echo "llama_sha=${sha}" >> "$GITHUB_OUTPUT"
