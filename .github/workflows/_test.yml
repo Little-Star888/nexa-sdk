@@ -98,10 +98,12 @@ jobs:
         env:
           GATE: ${{ inputs.gate_on_changed_files }}
           ANY: ${{ steps.files.outputs.any }}
+          LANGUAGE: ${{ inputs.language }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
           if [ "$GATE" = "true" ] && [ "$ANY" != "true" ]; then
-            echo "No ${{ inputs.language }} path changes — skipping ${{ matrix.platform }}"
+            echo "No $LANGUAGE path changes — skipping $PLATFORM"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -172,6 +174,8 @@ jobs:
       - name: Run pytest (Windows)
         if: steps.skip.outputs.skip != 'true' && inputs.language != 'go' && matrix.platform == 'windows-arm64'
         shell: bash
+        env:
+          LANGUAGE: ${{ inputs.language }}
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
@@ -180,7 +184,7 @@ jobs:
           # so install runtime deps directly instead of `pip install ./bindings/python`.
           python -m pip install "pytest>=7.0" "tqdm>=4.65"
           python -c "import geniex; geniex.init(); geniex.deinit()"
-          if [ "${{ inputs.language }}" = "sdk" ]; then
+          if [ "$LANGUAGE" = "sdk" ]; then
             python -m pytest tests -m api -v | tee .pytest-api.log
           else
             python -m pytest bindings/python/tests/unit -v | tee .pytest-unit.log
@@ -220,10 +224,13 @@ jobs:
       - name: Publish step summary
         if: always() && steps.skip.outputs.skip != 'true'
         shell: bash
+        env:
+          LANGUAGE: ${{ inputs.language }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
           {
-            echo "## ${{ inputs.language }} test results — ${{ matrix.platform }}"
+            echo "## $LANGUAGE test results — $PLATFORM"
             echo
             for log in .pytest-api.log .pytest-unit.log .pytest-int.log .bazel-test.log; do
               [ -f "$log" ] || continue

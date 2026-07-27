@@ -85,8 +85,10 @@ jobs:
         with:
           python-version: "3.11"
       - id: sdk
+        env:
+          DEVICE: ${{ matrix.device }}
         run: |
-          case "${{ matrix.device }}" in
+          case "$DEVICE" in
             SM*)         echo "name=sdk-android-arm64" ;;
             SC*|CRD*|X*) echo "name=sdk-windows-arm64" ;;
             *)           echo "name=sdk-linux-arm64" ;;
@@ -96,12 +98,15 @@ jobs:
           name: ${{ steps.sdk.outputs.name }}
           path: pkg-geniex
       - uses: ./.github/actions/install-qdc-sdk
-      - run: |
+      - env:
+          DEVICE: ${{ matrix.device }}
+          MODEL_NAME: ${{ matrix.model.name }}
+        run: |
           python sdk/benchmark/qdc/run_qdc_jobs.py \
             --pkg-dir pkg-geniex \
-            --device "${{ matrix.device }}" \
-            --model-name "${{ matrix.model.name }}" \
-            --cells-out "${{ matrix.device }}-${{ matrix.model.name }}.json"
+            --device "$DEVICE" \
+            --model-name "$MODEL_NAME" \
+            --cells-out "$DEVICE-$MODEL_NAME.json"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -126,7 +131,9 @@ jobs:
         with:
           pattern: bench-cells-${{ matrix.device }}-*
           path: cells
-      - run: |
+      - env:
+          DEVICE: ${{ matrix.device }}
+        run: |
           python sdk/benchmark/qdc/run_qdc_jobs.py \
-            --device "${{ matrix.device }}" \
+            --device "$DEVICE" \
             --render-dir cells
