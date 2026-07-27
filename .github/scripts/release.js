@@ -34,7 +34,7 @@ module.exports = async ({ github, context, core }) => {
   const htpNote =
     HTP_SIGNED === "true"
       ? `## Hexagon HTP\n\nMicrosoft-signed HTP catalog (llama.cpp @ \`${LLAMA_SHA}\`). No cert import required on Windows on Snapdragon.`
-      : `## Hexagon HTP\n\nSelf-signed HTP catalog (llama.cpp @ \`${LLAMA_SHA}\`). End users must enable test signing and import \`ggml-htp-v1.cer\` per [notes/run.md](../blob/${VERSION}/notes/run.md).\n\nOperators: ship \`libggml-htp-to-sign-${LLAMA_SHA}.zip\` to the signing pipeline, then commit the signed result as \`sdk/signed-htp/libggml-htp-${LLAMA_SHA}.zip\` to \`qcom-ai-hub/geniex\` via PR (LFS-tracked) and re-run this release.`;
+      : `## Hexagon HTP\n\nSelf-signed HTP catalog (llama.cpp @ \`${LLAMA_SHA}\`). End users: import \`ggml-htp-v1.cer\` per [notes/run.md](../blob/${VERSION}/notes/run.md). Operators: promote per [notes/release.md § Hexagon HTP signing](../blob/${VERSION}/notes/release.md#hexagon-htp-signing).`;
 
   let release;
   for await (const res of github.paginate.iterator(

@@ -121,15 +121,16 @@ jobs:
       - name: Init llama.cpp submodule
         run: git submodule update --init --depth=1 third-party/llama.cpp
 
-      - name: Fetch signed HTP archive from qcom-ai-hub/geniex
+      - name: Fetch signed HTP index from qcom-ai-hub/geniex
         uses: actions/checkout@v7
         with:
           repository: qcom-ai-hub/geniex
           ref: main
-          lfs: true
+          lfs: false
           path: signed-htp-src
           sparse-checkout: sdk/signed-htp
           sparse-checkout-cone-mode: false
+          persist-credentials: false
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 1
 
@@ -140,11 +141,17 @@ jobs:
 
       - name: Overlay Microsoft-signed HTP bundle from LFS (if available)
         id: htp
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
           sha=$(git -C third-party/llama.cpp rev-parse --short=6 HEAD)
           src="signed-htp-src/sdk/signed-htp/libggml-htp-${sha}.zip"
           if [[ -f "$src" ]]; then
+            git -C signed-htp-src remote set-url origin \
+              "https://x-access-token:${GH_PAT}@github.com/qcom-ai-hub/geniex.git"
+            git -C signed-htp-src lfs install --local
+            git -C signed-htp-src lfs pull --include "sdk/signed-htp/libggml-htp-${sha}.zip"
             unzip -o "$src" -d sdk-windows-arm64/lib/llama_cpp/
             signed=true
           else
