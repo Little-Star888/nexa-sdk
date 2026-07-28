@@ -589,12 +589,6 @@ void LlamaLlm::teardown_speculative() {
     this->spec_n_max = 0;
 }
 
-// Set up speculative decoding from config.spec_type (one or more comma-separated
-// llama.cpp type names). draft-model types (draft-mtp / draft-eagle3 / draft-simple) load a
-// separate draft GGUF into a context sharing the target KV cache; ngram-* types
-// are self-speculative and need no draft model. We keep our own model/context
-// builders (not llama.cpp's factory) so the drafter inherits the target's device
-// placement — without it the drafter grabs HTP0 and breaks the MTP graph.
 int32_t LlamaLlm::setup_speculative(const geniex_ModelConfig& config, Device device, const char* device_id) {
     std::vector<common_speculative_type> types =
         common_speculative_types_from_names(string_split<std::string>(config.spec_type, ','));
