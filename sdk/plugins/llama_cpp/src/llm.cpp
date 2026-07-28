@@ -280,7 +280,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
             GENIEX_LOG_INFO("prefix match: n_past_global rollback to: {}", this->n_past_global);
         } else {
             // match in kvcache, need rollback
-            llama_memory_seq_rm(mem, 0, match_len, this->n_past - match_len);
+            llama_memory_seq_rm(mem, 0, match_len, -1);
             this->n_past        = match_len;
             this->n_past_global = match_len;
             GENIEX_LOG_INFO("prefix match: n_past_global rollback to: {}", this->n_past_global);
@@ -320,14 +320,30 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         return n_discard;
     };
 
+    const bool spec_prefill = this->spec != nullptr && (this->draft_ctx != nullptr);
+
     // Decode one batch (caller chunks long inputs) and advance n_past.
     auto process = [&](const llama_token* tokens, int n_tokens) -> int32_t {
-        llama_batch batch = llama_batch_get_one(const_cast<llama_token*>(tokens), n_tokens);
-        // decode returns 1 when the batch does not fit; slide on demand and retry rather than gating on
-        // n_past >= n_ctx, which never trips for SWA models (physical KV fills before n_past reaches n_ctx).
-        int rc = llama_decode(this->ctx, batch);
-        while (rc == 1 && can_shift && slide_window(n_tokens) > 0) {
+        int rc;
+        if (spec_prefill) {
+            llama_batch batch = llama_batch_init(n_tokens, /*embd=*/0, /*n_seq_max=*/1);
+            for (int i = 0; i < n_tokens; ++i) {
+                common_batch_add(batch, tokens[i], this->n_past + i, {0}, /*logits=*/true);
+            }
             rc = llama_decode(this->ctx, batch);
+            while (rc == 1 && can_shift && slide_window(n_tokens) > 0) {
+                rc = llama_decode(this->ctx, batch);
+            }
+            if (rc == 0 && !common_speculative_process(this->spec, batch)) {
+                rc = -1;
+            }
+            llama_batch_free(batch);
+        } else {
+            llama_batch batch = llama_batch_get_one(const_cast<llama_token*>(tokens), n_tokens);
+            rc = llama_decode(this->ctx, batch);
+            while (rc == 1 && can_shift && slide_window(n_tokens) > 0) {
+                rc = llama_decode(this->ctx, batch);
+            }
         }
         switch (rc) {
             case 0:
@@ -471,10 +487,6 @@ int32_t LlamaLlm::decode_speculative(const geniex_GenerationConfig& cfg, const s
     const llama_seq_id seq_id  = 0;
     auto*              mem_tgt = llama_get_memory(this->ctx);
     auto*              mem_dft = llama_get_memory(this->draft_ctx);
-
-    // The MTP head reads the target's nextn embeddings; enable them for every
-    // decode. This is a static property of the speculator, so set it once.
-    llama_set_embeddings(this->ctx, common_speculative_need_embd_nextn(this->spec));
 
     // Local view of the committed tokens the drafter reads; grows as we accept.
     std::vector<llama_token> prompt = prompt_ids;
