@@ -340,7 +340,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
             llama_batch_free(batch);
         } else {
             llama_batch batch = llama_batch_get_one(const_cast<llama_token*>(tokens), n_tokens);
-            rc = llama_decode(this->ctx, batch);
+            rc                = llama_decode(this->ctx, batch);
             while (rc == 1 && can_shift && slide_window(n_tokens) > 0) {
                 rc = llama_decode(this->ctx, batch);
             }
