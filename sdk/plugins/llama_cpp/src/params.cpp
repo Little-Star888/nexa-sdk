@@ -60,13 +60,11 @@ llama_model_params build_model_params(const geniex_ModelConfig& config, Device d
     bool use_mmap = mmap_matrix[static_cast<int>(kHostPlatform)][static_cast<int>(device)];
 
     llama_model_params mpar = llama_model_default_params();
-    mpar.use_mmap           = use_mmap;
-    mpar.use_mlock          = false;
+    mpar.load_mode          = use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE;
     mpar.n_gpu_layers       = config.n_gpu_layers;
-    GENIEX_LOG_INFO("[Optimise] model params: n_gpu_layers={}, use_mmap={}, use_mlock={}",
+    GENIEX_LOG_INFO("[Optimise] model params: n_gpu_layers={}, load_mode={}",
         mpar.n_gpu_layers,
-        mpar.use_mmap,
-        mpar.use_mlock);
+        llama_load_mode_name(mpar.load_mode));
     return mpar;
 }
 
