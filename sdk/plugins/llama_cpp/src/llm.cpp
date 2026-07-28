@@ -635,12 +635,13 @@ int32_t LlamaLlm::setup_speculative(const geniex_ModelConfig& config, Device dev
             return GENIEX_ERROR_COMMON_MODEL_LOAD;
         }
 
-        // Draft context: same tuning as the target, plus the MTP wiring (shared
-        // KV via ctx_other, no rollback snapshots).
         llama_context_params dcpar = build_context_params(config, /*n_ctx_default=*/4096, device);
         dcpar.ctx_type             = LLAMA_CONTEXT_TYPE_MTP;
         dcpar.ctx_other            = this->ctx;
         dcpar.n_rs_seq             = 0;
+        const uint32_t draft_batch = std::max<uint32_t>(64, static_cast<uint32_t>(this->spec_n_max));
+        dcpar.n_batch              = draft_batch;
+        dcpar.n_ubatch             = draft_batch;
 
         this->draft_ctx = llama_init_from_model(this->draft_model, dcpar);
         if (!this->draft_ctx) {
