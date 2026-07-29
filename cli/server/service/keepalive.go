@@ -6,6 +6,7 @@ package service
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -22,7 +23,50 @@ import (
 // other plugins (e.g. qairt) NCtx is zeroed here and the SDK zeroes ngl so the
 // plugin's param-guard is not tripped. Compute is resolved to a concrete
 // DeviceID by the SDK (sdk/src/device.cpp); coercion warnings are logged.
-func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute string) (types.ModelParam, error) {
+// SpecParam bundles the speculative-decoding knobs sourced from a request; all
+// zero-values mean "spec disabled". Only llama_cpp consumes these fields.
+type SpecParam struct {
+	Type       string
+	DraftModel string
+	NMax       int32
+	NMin       int32
+	PMin       float32
+}
+
+// resolveDraftModelPath maps a request's spec_draft_model value to an absolute
+// GGUF path. An existing filesystem path is returned as-is; anything else is
+// treated as a catalogue name (optionally suffixed with :precision) and pulled
+// through the model manager on first use.
+func resolveDraftModelPath(draft string) (string, error) {
+	if draft == "" {
+		return "", nil
+	}
+	if _, err := os.Stat(draft); err == nil {
+		return draft, nil
+	}
+	name, precision := geniex_sdk.SplitNamePrecision(draft)
+	key := name
+	if precision != "" {
+		key = name + ":" + precision
+	}
+	paths, err := geniex_sdk.ModelGetPaths(key)
+	if geniex_sdk.IsModelNotFound(err) {
+		if err := geniex_sdk.ModelPull(geniex_sdk.ModelPullInput{
+			ModelName: name,
+			Precision: precision,
+			Hub:       geniex_sdk.HubAuto,
+		}); err != nil {
+			return "", fmt.Errorf("pull draft model %q: %w", draft, err)
+		}
+		paths, err = geniex_sdk.ModelGetPaths(key)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve draft model %q: %w", draft, err)
+	}
+	return paths.ModelPath, nil
+}
+
+func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute string, spec SpecParam) (types.ModelParam, error) {
 	// nctx / ngl / compute already carry the resolved value (explicit request
 	// or the server default prefilled by the handler). Non-llama_cpp plugins
 	// (e.g. qairt) reject non-zero nctx, so zero it for them; the SDK does the
@@ -45,11 +89,19 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 		slog.Warn("compute unit coerced", "warning", resolved.Warning)
 	}
 
-	return types.ModelParam{
+	mp := types.ModelParam{
 		NCtx:       nctx,
 		NGpuLayers: resolved.Ngl,
 		DeviceID:   resolved.DeviceID,
-	}, nil
+	}
+	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
+		mp.SpecType = spec.Type
+		mp.SpecDraftModel = spec.DraftModel
+		mp.SpecNMax = spec.NMax
+		mp.SpecNMin = spec.NMin
+		mp.SpecPMin = spec.PMin
+	}
+	return mp, nil
 }
 
 // KeepAliveGet retrieves a model from the keepalive cache or creates it if not found
@@ -168,13 +220,26 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 	var e error
 	switch reflect.TypeFor[T]() {
 	case reflect.TypeFor[geniex_sdk.LLM]():
+		draftPath := ""
+		if param.SpecType != "" && param.SpecDraftModel != "" {
+			p, perr := resolveDraftModelPath(param.SpecDraftModel)
+			if perr != nil {
+				return nil, perr
+			}
+			draftPath = p
+		}
 		t, e = geniex_sdk.NewLLM(geniex_sdk.LlmCreateInput{
 			ModelName: paths.ModelName,
 			ModelPath: modelfile,
 			DeviceID:  param.DeviceID,
 			Config: geniex_sdk.ModelConfig{
-				NCtx:       param.NCtx,
-				NGpuLayers: param.NGpuLayers,
+				NCtx:           param.NCtx,
+				NGpuLayers:     param.NGpuLayers,
+				SpecType:       param.SpecType,
+				SpecDraftModel: draftPath,
+				SpecNMax:       param.SpecNMax,
+				SpecNMin:       param.SpecNMin,
+				SpecPMin:       param.SpecPMin,
 			},
 			RuntimeID: paths.RuntimeID,
 		})

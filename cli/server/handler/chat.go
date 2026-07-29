@@ -50,6 +50,12 @@ type ChatCompletionRequest struct {
 	GrammarPath       string  `json:"grammar_path"`
 	GrammarString     string  `json:"grammar_string"`
 	EnableJson        bool    `json:"enable_json"`
+
+	SpecType       string  `json:"spec_type"`
+	SpecDraftModel string  `json:"spec_draft_model"`
+	SpecNMax       int32   `json:"spec_n_max"`
+	SpecNMin       int32   `json:"spec_n_min"`
+	SpecPMin       float32 `json:"spec_p_min"`
 }
 
 func defaultChatCompletionRequest() ChatCompletionRequest {
@@ -117,7 +123,13 @@ func ChatCompletions(c *gin.Context) {
 	// Fill unset request knobs from the server-wide defaults and resolve the
 	// compute unit. Done before the MaxCompletionTokens floor so a body that
 	// omits nctx picks up the server default, not the floor.
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute)
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute, service.SpecParam{
+		Type:       param.SpecType,
+		DraftModel: param.SpecDraftModel,
+		NMax:       param.SpecNMax,
+		NMin:       param.SpecNMin,
+		PMin:       param.SpecPMin,
+	})
 	if err != nil {
 		slog.Error("Failed to resolve model params", "model", param.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
