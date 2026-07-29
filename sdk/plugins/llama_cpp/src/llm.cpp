@@ -44,8 +44,10 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
     // FIX: HTP backend patch — only reacquire HTP sessions when we're actually
     // going to use them (npu / hybrid). CPU and GPU targets shouldn't be gated
     // on the ADSP domain's health.
-    if (device == Device::NPU) {
-        htp::reacquire_before_load();
+    {
+        if (device == Device::NPU) {
+            htp::reacquire_before_load();
+        }
     }
 
     // FIX: gpt oss offload patch
@@ -68,6 +70,8 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
         }
     }
 
+    // Resolve the compute-unit alias to a devices[] list for llama.cpp; must
+    // outlive mpar (mpar.devices points into selection's buffer).
     auto selection = resolve_devices(input->device_id);
     if (!selection) {
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
