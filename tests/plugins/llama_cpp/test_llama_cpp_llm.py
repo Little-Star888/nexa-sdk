@@ -121,9 +121,9 @@ def test_multi_turn_recalls_prior_turn(llama_cpp_llm_paths, device_map):
         device_map=device_map,
     ) as llm:
         replies = _run_multi_turn(llm)
-    assert 'alice' in replies[-1].lower(), (
-        f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
-    )
+    assert (
+        'alice' in replies[-1].lower()
+    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
 
 
 @pytest.mark.parametrize('device_map', ['cpu', 'npu', 'gpu'])
@@ -139,9 +139,9 @@ def test_multi_turn_with_ngram_simple(llama_cpp_llm_paths, device_map):
         spec_n_max=3,
     ) as llm:
         replies = _run_multi_turn(llm)
-    assert 'alice' in replies[-1].lower(), (
-        f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
-    )
+    assert (
+        'alice' in replies[-1].lower()
+    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
 
 
 @pytest.mark.parametrize('device_map', ['npu'])
@@ -160,6 +160,6 @@ def test_multi_turn_with_draft_mtp(llama_cpp_mtp_paths, device_map):
     ) as llm:
         assert isinstance(llm, geniex.GenieXLLM)
         replies = _run_multi_turn(llm)
-    assert 'alice' in replies[-1].lower(), (
-        f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
-    )
+    assert (
+        'alice' in replies[-1].lower()
+    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
