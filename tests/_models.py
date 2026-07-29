@@ -30,5 +30,15 @@ LLAMA_CPP_LLM_MODEL = 'unsloth/Qwen3-4B-GGUF'
 LLAMA_CPP_LLM_PRECISION = 'Q4_0'
 LLAMA_CPP_VLM_MODEL = 'unsloth/Qwen2.5-VL-7B-Instruct-GGUF'
 
+# MTP target + assistant draft pair. gemma-4 is the only publicly published
+# family that ships MTP heads in a llama.cpp-compatible GGUF today; the A4B
+# variant is the smallest for which a matching assistant draft repo exists
+# (RachidAR/*assistant is trained against A4B, so pairing it with the smaller
+# E2B target fails the graph shape check).
+LLAMA_CPP_MTP_TARGET_MODEL = 'google/gemma-4-26B-A4B-it-qat-q4_0-gguf'
+LLAMA_CPP_MTP_TARGET_PRECISION = 'Q4_0'
+LLAMA_CPP_MTP_DRAFT_MODEL = 'RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf'
+LLAMA_CPP_MTP_DRAFT_PRECISION = 'Q4_0'
+
 QAIRT_LLM_MODEL = os.environ.get('GENIEX_QAIRT_MODEL', 'qualcomm/Qwen3-4B')
 QAIRT_VLM_MODEL = os.environ.get('GENIEX_QAIRT_VLM_MODEL', 'qualcomm/Qwen2.5-VL-7B-Instruct')

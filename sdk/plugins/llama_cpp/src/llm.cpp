@@ -490,7 +490,8 @@ int32_t LlamaLlm::decode_speculative(const geniex_GenerationConfig& cfg, const s
     const std::function<bool(llama_token)>& emit, const std::function<int()>& n_generated, common::Profiler& profiler) {
     const llama_seq_id seq_id  = 0;
     auto*              mem_tgt = llama_get_memory(this->ctx);
-    auto*              mem_dft = llama_get_memory(this->draft_ctx);
+    // ngram-* types are self-speculative and leave draft_ctx null.
+    auto* mem_dft = this->draft_ctx ? llama_get_memory(this->draft_ctx) : nullptr;
 
     // Local view of the committed tokens the drafter reads; grows as we accept.
     std::vector<llama_token> prompt = prompt_ids;
@@ -569,7 +570,9 @@ int32_t LlamaLlm::decode_speculative(const geniex_GenerationConfig& cfg, const s
 
         // Drop any rejected draft tail from both KV caches.
         llama_memory_seq_rm(mem_tgt, seq_id, this->n_past, -1);
-        llama_memory_seq_rm(mem_dft, seq_id, this->n_past, -1);
+        if (mem_dft) {
+            llama_memory_seq_rm(mem_dft, seq_id, this->n_past, -1);
+        }
 
         id_last = ids.back();
     }
