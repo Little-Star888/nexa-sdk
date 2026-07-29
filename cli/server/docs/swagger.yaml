@@ -183,6 +183,27 @@ components:
         image_max_length:
           type: integer
           description: Maximum length for image processing (VLM only)
+        spec_type:
+          type: string
+          enum: [draft-mtp, draft-eagle3, draft-simple, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod, ngram-cache]
+          description: Speculative decoding type (llama_cpp only). Omit or set to empty to disable. `draft-*` variants require `spec_draft_model`; `ngram-*` variants are self-speculative.
+        spec_draft_model:
+          type: string
+          description: Draft/MTP model for `draft-*` spec types (llama_cpp only). Catalogue name `org/repo[:precision]` (must be pulled via `geniex pull` beforehand — the server does NOT auto-download) or absolute path to a local GGUF file.
+        spec_n_max:
+          type: integer
+          minimum: 1
+          description: Max draft tokens per verification step (llama_cpp only). Default 3 when omitted.
+        spec_n_min:
+          type: integer
+          minimum: 0
+          description: Min draft tokens per verification step (llama_cpp only). 0 = llama.cpp default.
+        spec_p_min:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Min greedy draft probability (llama_cpp only). 0 = llama.cpp default.
 
     ChatMessage:
       type: object
