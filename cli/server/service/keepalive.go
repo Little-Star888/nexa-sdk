@@ -35,8 +35,10 @@ type SpecParam struct {
 
 // resolveDraftModelPath maps a request's spec_draft_model value to an absolute
 // GGUF path. An existing filesystem path is returned as-is; anything else is
-// treated as a catalogue name (optionally suffixed with :precision) and pulled
-// through the model manager on first use.
+// treated as a catalogue name (optionally suffixed with :precision) and looked
+// up in the local cache. A missing cache entry returns an error - the caller
+// is expected to `geniex pull` the draft model beforehand, matching how the
+// target model is handled (server never auto-pulls; it consumes what's cached).
 func resolveDraftModelPath(draft string) (string, error) {
 	if draft == "" {
 		return "", nil
@@ -50,16 +52,6 @@ func resolveDraftModelPath(draft string) (string, error) {
 		key = name + ":" + precision
 	}
 	paths, err := geniex_sdk.ModelGetPaths(key)
-	if geniex_sdk.IsModelNotFound(err) {
-		if err := geniex_sdk.ModelPull(geniex_sdk.ModelPullInput{
-			ModelName: name,
-			Precision: precision,
-			Hub:       geniex_sdk.HubAuto,
-		}); err != nil {
-			return "", fmt.Errorf("pull draft model %q: %w", draft, err)
-		}
-		paths, err = geniex_sdk.ModelGetPaths(key)
-	}
 	if err != nil {
 		return "", fmt.Errorf("resolve draft model %q: %w", draft, err)
 	}
