@@ -23,6 +23,10 @@ from geniex import model_manager as _mm
 from _models import (
     LLAMA_CPP_LLM_MODEL,
     LLAMA_CPP_LLM_PRECISION,
+    LLAMA_CPP_MTP_DRAFT_MODEL,
+    LLAMA_CPP_MTP_DRAFT_PRECISION,
+    LLAMA_CPP_MTP_TARGET_MODEL,
+    LLAMA_CPP_MTP_TARGET_PRECISION,
     LLAMA_CPP_VLM_MODEL,
     QAIRT_LLM_MODEL,
     QAIRT_VLM_MODEL,
@@ -109,6 +113,16 @@ def llama_cpp_llm_paths(geniex_session):
         return _mm.ensure_cached(LLAMA_CPP_LLM_MODEL, precision=LLAMA_CPP_LLM_PRECISION, hub='hf')
     except geniex.GenieXError as e:
         pytest.skip(f'could not pull {LLAMA_CPP_LLM_MODEL}: {e}')
+
+
+@pytest.fixture(scope='session')
+def llama_cpp_mtp_paths(geniex_session):
+    try:
+        target = _mm.ensure_cached(LLAMA_CPP_MTP_TARGET_MODEL, precision=LLAMA_CPP_MTP_TARGET_PRECISION, hub='hf')
+        draft = _mm.ensure_cached(LLAMA_CPP_MTP_DRAFT_MODEL, precision=LLAMA_CPP_MTP_DRAFT_PRECISION, hub='hf')
+    except geniex.GenieXError as e:
+        pytest.skip(f'could not pull MTP target/draft: {e}')
+    return {'target': target, 'draft': draft}
 
 
 @pytest.fixture(scope='session')

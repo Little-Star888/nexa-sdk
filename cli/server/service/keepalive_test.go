@@ -16,7 +16,7 @@ import (
 // TestResolveModelParam_PassesLlamaCppValuesThrough verifies that nctx / ngl are
 // forwarded verbatim for llama_cpp and the compute alias resolves to a device.
 func TestResolveModelParam_PassesLlamaCppValuesThrough(t *testing.T) {
-	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 2048, 10, "gpu")
+	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 2048, 10, "gpu", SpecParam{})
 	if err != nil {
 		t.Fatalf("ResolveModelParam: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestResolveModelParam_PassesLlamaCppValuesThrough(t *testing.T) {
 // TestResolveModelParam_NpuAliasResolvesDevice verifies the npu alias pins HTP0
 // and passes ngl through (-1 = all layers).
 func TestResolveModelParam_NpuAliasResolvesDevice(t *testing.T) {
-	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 4096, -1, "npu")
+	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 4096, -1, "npu", SpecParam{})
 	if err != nil {
 		t.Fatalf("ResolveModelParam: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestResolveModelParam_NpuAliasResolvesDevice(t *testing.T) {
 // TestResolveModelParam_CpuAliasZeroesGpuLayers verifies ngl 0 (pure CPU) is a
 // valid value that survives resolution.
 func TestResolveModelParam_CpuAliasZeroesGpuLayers(t *testing.T) {
-	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 4096, 0, "cpu")
+	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 4096, 0, "cpu", SpecParam{})
 	if err != nil {
 		t.Fatalf("ResolveModelParam: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestResolveModelParam_CpuAliasZeroesGpuLayers(t *testing.T) {
 // runtimes NCtx is zeroed so the plugin's param-guard is not tripped, even when
 // the caller passes a non-zero value.
 func TestResolveModelParam_NonLlamaCppZeroesNCtx(t *testing.T) {
-	got, err := ResolveModelParam(geniex_sdk.RuntimeQairt, "some-model", 8192, 42, "")
+	got, err := ResolveModelParam(geniex_sdk.RuntimeQairt, "some-model", 8192, 42, "", SpecParam{})
 	if err != nil {
 		t.Fatalf("ResolveModelParam: %v", err)
 	}

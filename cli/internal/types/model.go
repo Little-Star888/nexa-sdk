@@ -10,4 +10,10 @@ type ModelParam struct {
 	NCtx       int32
 	NGpuLayers int32
 	DeviceID   string
+
+	SpecType       string
+	SpecDraftModel string
+	SpecNMax       int32
+	SpecNMin       int32
+	SpecPMin       float32
 }

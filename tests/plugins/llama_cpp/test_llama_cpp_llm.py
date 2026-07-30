@@ -82,3 +82,84 @@ def test_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected):
         assert matched, (
             f'prompt={prompt!r} expected_substring={expected!r} ' f'device_map={device_map!r} got={out.text!r}'
         )
+
+
+def _run_multi_turn(llm) -> list[str]:
+    # Two-turn conversation: turn 1 introduces "Alice", turn 2 asks the model to
+    # recall the name. Because the tokenizer/chat-template path is applied on
+    # every turn against the growing history, this exercises the plugin's
+    # prefix-match + KV-cache rollback, the sampler carrying across turns, and
+    # (when spec is enabled) the speculative context tracking the target's
+    # per-turn n_past.
+    history: list[dict] = [{'role': 'system', 'content': 'Answer in one short sentence.'}]
+    replies: list[str] = []
+    for user in [
+        'My name is Alice and I am 30 years old. Just acknowledge.',
+        'What is my name?',
+    ]:
+        history.append({'role': 'user', 'content': user})
+        prompt = llm.tokenizer.apply_chat_template(
+            history,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        out = llm.generate(prompt, max_new_tokens=64, temperature=0.0, seed=42)
+        assert isinstance(out, geniex.GenerateOutput)
+        assert out.text, f'empty completion at turn {len(replies) + 1}'
+        assert out.profile.generated_tokens > 0
+        replies.append(out.text)
+        history.append({'role': 'assistant', 'content': out.text})
+    return replies
+
+
+@pytest.mark.parametrize('device_map', ['cpu', 'npu', 'gpu'])
+def test_multi_turn_recalls_prior_turn(llama_cpp_llm_paths, device_map):
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+    ) as llm:
+        replies = _run_multi_turn(llm)
+    assert (
+        'alice' in replies[-1].lower()
+    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+
+
+@pytest.mark.parametrize('device_map', ['cpu', 'npu', 'gpu'])
+def test_multi_turn_with_ngram_simple(llama_cpp_llm_paths, device_map):
+    # ngram-simple is self-speculative (no draft model), so it can reuse the
+    # LLM fixture and works with any target. Exercises the setup_speculative /
+    # decode_speculative code paths without needing an MTP-trained model.
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+        spec_type='ngram-simple',
+        spec_n_max=3,
+    ) as llm:
+        replies = _run_multi_turn(llm)
+    assert (
+        'alice' in replies[-1].lower()
+    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+
+
+@pytest.mark.parametrize('device_map', ['npu'])
+def test_multi_turn_with_draft_mtp(llama_cpp_mtp_paths, device_map):
+    # draft-mtp needs a target that ships MTP heads plus a matching assistant
+    # draft; today only gemma-4 A4B fits, so this is NPU-only (the target is
+    # ~15GB and only worth loading on the HTP backend). Loads via absolute
+    # paths from the fixture to keep the AutoModelForCausalLM factory out of
+    # the VLM branch that catalogue-stored mmproj would otherwise trigger.
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        llama_cpp_mtp_paths['target'].model_path,
+        device_map=f'llama_cpp:{device_map}',
+        spec_type='draft-mtp',
+        spec_draft_model=llama_cpp_mtp_paths['draft'].model_path,
+        spec_n_max=3,
+    ) as llm:
+        assert isinstance(llm, geniex.GenieXLLM)
+        replies = _run_multi_turn(llm)
+    assert (
+        'alice' in replies[-1].lower()
+    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
