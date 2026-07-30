@@ -63,24 +63,24 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
 
     QnnRuntimeConfig runtime_cfg = qairt::runtime::make_qnn_runtime_config(model_dir);
 
-    // Discover .bin model shards
-    auto bin_shards = qairt::runtime::collect_bin_files(model_dir);
-    if (bin_shards.empty()) {
-        GENIEX_LOG_ERROR("No .bin model shards found in: {}", model_dir.string());
+    // Bundle layout comes from the QAIRT core: `modelConfigFromDirectory` reads
+    // genie_config.json's `dialog.engine.model.binary.ctx-bins` and takes only
+    // those files, in order, as context-binary shards. Do not glob `*.bin` —
+    // bundles also ship CPU-side payloads as `.bin` (e.g. Gemma4's embedding
+    // LUTs), which QNN cannot deserialize as context binaries.
+    ModelConfig model_cfg{};
+    try {
+        model_cfg = modelConfigFromDirectory(model_dir);
+    } catch (const std::exception& e) {
+        GENIEX_LOG_ERROR("Failed to resolve QAIRT bundle layout in {}: {}", model_dir.string(), e.what());
         return GENIEX_ERROR_COMMON_FILE_NOT_FOUND;
     }
 
-    GENIEX_LOG_DEBUG("Found {} model shards in {}", bin_shards.size(), model_dir.string());
+    GENIEX_LOG_DEBUG("Found {} model shards in {}", model_cfg.model_paths.size(), model_dir.string());
 
-    // Build ModelConfig
-    ModelConfig model_cfg{};
-    model_cfg.model_paths = std::move(bin_shards);
-
-    // Tokenizer path
+    // Tokenizer path: an explicit caller override wins over the bundle's own.
     if (input->tokenizer_path && input->tokenizer_path[0] != '\0') {
         model_cfg.tokenizer_path = input->tokenizer_path;
-    } else {
-        model_cfg.tokenizer_path = qairt::runtime::find_optional_file(model_dir, "tokenizer.json").value_or("");
     }
     if (model_cfg.tokenizer_path.empty()) {
         GENIEX_LOG_ERROR("tokenizer.json not found in: {}", model_dir.string());
@@ -92,10 +92,6 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
     if (!model_cfg.embedding_path) {
         model_cfg.embedding_path = qairt::runtime::find_optional_file(model_dir, "embed_tokens.npy");
     }
-
-    // HTP backend config
-    model_cfg.htp_config_path =
-        qairt::runtime::find_optional_file(model_dir, "htp_backend_ext_config.json").value_or("");
 
     // Forecast-prefix KV cache only needed for SSD models; non-SSD models leave this nullopt.
     model_cfg.forecast_prefix_path =
