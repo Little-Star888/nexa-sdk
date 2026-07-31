@@ -104,6 +104,12 @@ typedef struct {
     int32_t repeat;
     bool    reset_between_runs; /* true => geniex_llm_reset() before each run, freeing KV */
     bool    accuracy;           /* true => single run (warmup=0, repeat=1), print generated text */
+
+    /* Prefill-only raw-logits mode (--logits): one forward pass over the prompt,
+     * no decode loop. Bypasses the timing/warmup/repeat machinery entirely. */
+    bool    logits_mode;
+    bool    logits_last_only; /* default: every position; set to emit only the last token's row */
+    int32_t logits_top_n;     /* per row, emit only the top-N (token_id, logit) pairs */
     int32_t n_ctx;
     int32_t n_threads;
     int32_t ngl_override; /* -1 = use resolved alias default; >=0 overrides */
@@ -259,6 +265,21 @@ static void usage(const char* argv0) {
         "                         speed. Overrides --warmup / --repetitions. Pair\n"
         "                         with --prompt-file for a real prompt; the default\n"
         "                         random-ids prefill produces meaningless text.\n"
+        "  --logits               prefill-only raw-logits mode: run one forward pass\n"
+        "                         (geniex_llm_forward_logits, no decode loop) over N\n"
+        "                         random token ids (-p N, like the timing default) and\n"
+        "                         write every position's logits row ([n_tokens, vocab])\n"
+        "                         to the JSON report, for on-target accuracy metrics\n"
+        "                         (perplexity/MMLU/MMMU). Bypasses timing; --warmup/-r/-n\n"
+        "                         are ignored. Input is random ids only (the\n"
+        "                         forward-logits API takes input_ids, and the bench tool\n"
+        "                         has no tokenizer): --prompt-file is rejected with\n"
+        "                         --logits.\n"
+        "  --logits-last-only     with --logits, emit only the last token's logits row\n"
+        "                         instead of every position (next-token / MMLU scoring).\n"
+        "  --logits-top-n N       with --logits, emit only the top-N (token_id, logit)\n"
+        "                         pairs per row (default 20) to keep the JSON small;\n"
+        "                         the report records this truncation.\n"
         "\n"
         "Optional (multimodal):\n"
         "  --tokenizer-path PATH  explicit tokenizer file\n"
@@ -648,6 +669,9 @@ static void parse_args(int argc, char** argv, options_t* o) {
     o->repeat             = 5;
     o->reset_between_runs = true;
     o->accuracy           = false;
+    o->logits_mode        = false;
+    o->logits_last_only   = false;
+    o->logits_top_n       = 20;
     o->n_ctx              = 0;
     o->n_threads          = 0;
     o->ngl_override       = -1;
@@ -716,6 +740,13 @@ static void parse_args(int argc, char** argv, options_t* o) {
             o->reset_between_runs = false;
         } else if (strcmp(a, "--accuracy") == 0) {
             o->accuracy = true;
+        } else if (strcmp(a, "--logits") == 0) {
+            o->logits_mode = true;
+        } else if (strcmp(a, "--logits-last-only") == 0) {
+            o->logits_mode      = true;
+            o->logits_last_only = true;
+        } else if (strcmp(a, "--logits-top-n") == 0) {
+            o->logits_top_n = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-c") == 0 || strcmp(a, "--ctx-size") == 0) {
             o->n_ctx = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-t") == 0 || strcmp(a, "--threads") == 0) {
@@ -762,6 +793,17 @@ static void parse_args(int argc, char** argv, options_t* o) {
     if (o->accuracy) {
         o->warmup = 0;
         o->repeat = 1;
+    }
+
+    if (o->logits_mode) {
+        if (o->prompt_buf) {
+            fprintf(stderr, "ERROR: --logits uses random token ids; --prompt-file is not supported with it\n");
+            exit(2);
+        }
+        if (o->logits_top_n < 1) {
+            fprintf(stderr, "ERROR: --logits-top-n must be >=1\n");
+            exit(2);
+        }
     }
 
     if (o->matrix_file) {
@@ -1496,6 +1538,56 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
     (void)json_field_dbl;
 }
 
+/* Write one row of the SDK's top-N output as a JSON array of [token_id, logit]
+ * pairs. The SDK already selected and sorted the top-N (descending logit), so
+ * this just formats row_width pairs. */
+static void write_top_n_row(FILE* f, const int32_t* ids, const float* logits, int32_t row_width) {
+    fputc('[', f);
+    for (int32_t k = 0; k < row_width; ++k) {
+        fprintf(f, "%s[%d, %.6f]", k ? ", " : "", ids[k], logits[k]);
+    }
+    fputc(']', f);
+}
+
+/* Write the prefill-only logits report for --logits. Emits shape metadata plus,
+ * per row, the top-N [token_id, logit] pairs. Records the top-N truncation
+ * explicitly so a consumer never mistakes it for the full vocabulary. */
+static void write_logits_json(const options_t* o, const char* device_id, int32_t ngl,
+    const geniex_LlmForwardLogitsInput* fin, const geniex_LlmForwardLogitsOutput* fout) {
+    FILE* f = fopen(o->output_json, "w");
+    if (!f) {
+        fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
+        exit(1);
+    }
+    const bool truncated = fout->row_width < fout->vocab_size;
+
+    fprintf(f, "{\n");
+    json_field_str(f, "schema_version", "logits-1", false);
+    json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
+    json_field_str(f, "plugin", o->plugin, false);
+    json_field_str(f, "device", o->device, false);
+    json_field_str(f, "device_id", device_id, false);
+    json_field_str(f, "model_path", o->model_path, false);
+    json_field_i64(f, "n_gpu_layers", ngl, false);
+    json_field_i64(f, "n_prompt", fin->input_ids_count, false);
+    fprintf(f, "    \"all_positions\": %s,\n", fin->all_positions ? "true" : "false");
+    json_field_i64(f, "n_rows", fout->n_rows, false);
+    json_field_i64(f, "vocab_size", fout->vocab_size, false);
+    json_field_i64(f, "top_n", fout->row_width, false);
+    fprintf(f, "    \"truncated_to_top_n\": %s,\n", truncated ? "true" : "false");
+
+    fprintf(f, "    \"rows\": [\n");
+    for (int32_t r = 0; r < fout->n_rows; ++r) {
+        const size_t off = (size_t)r * fout->row_width;
+        fprintf(f, "      ");
+        write_top_n_row(f, fout->token_ids + off, fout->logits + off, fout->row_width);
+        fprintf(f, r + 1 < fout->n_rows ? ",\n" : "\n");
+    }
+    fprintf(f, "    ]\n");
+    fprintf(f, "}\n");
+    fclose(f);
+}
+
 /* Trim the `-{plugin}-{device}[-c{N}]` tail from a cell_id; falls back to the
  * raw id when the suffix isn't present. Caller frees. */
 static char* model_label(const char* cell_id, const char* plugin, const char* device) {
@@ -1591,6 +1683,93 @@ static void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_byt
     fclose(f);
 }
 
+/* --logits mode: prefill-only raw logits, no timing. Runs one forward pass over
+ * `o->n_prompt` random token ids and writes the top-N (token_id, logit) pairs
+ * per row to `o->output_json`. Bypasses run_llm's warmup/repeat/aggregate path.
+ * The forward-logits API takes input_ids only, so this is random-ids input
+ * (bench has no tokenizer). */
+static void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
+    geniex_LlmCreateInput cin;
+    memset(&cin, 0, sizeof(cin));
+    cin.model_name     = "benchmark";
+    cin.model_path     = o->model_path;
+    cin.tokenizer_path = o->tokenizer_path; /* may be NULL */
+    cin.plugin_id      = o->plugin;
+    cin.device_id      = device_id; /* may be NULL */
+    fill_model_config(&cin.config, o, ngl);
+
+    geniex_LLM* llm = NULL;
+    check(geniex_llm_create(&cin, &llm), "geniex_llm_create");
+
+    geniex_LlmModelInfo info;
+    int32_t             rc_info = geniex_llm_get_model_info(llm, &info);
+    if (rc_info != GENIEX_SUCCESS || info.vocab_size <= 0) {
+        const char* msg = geniex_get_error_message((geniex_ErrorCode)rc_info);
+        fprintf(stderr,
+            "ERROR: %s plugin does not support random-ids prefill required by --logits "
+            "(geniex_llm_get_model_info: %s, code=%d).\n",
+            o->plugin,
+            msg ? msg : "?",
+            rc_info);
+        geniex_llm_destroy(llm);
+        exit(1);
+    }
+
+    int32_t* tokens = (int32_t*)malloc((size_t)o->n_prompt * sizeof(int32_t));
+    if (!tokens) {
+        fprintf(stderr, "ERROR: oom allocating %d prompt tokens\n", o->n_prompt);
+        geniex_llm_destroy(llm);
+        exit(1);
+    }
+    srand((unsigned)o->seed);
+    for (int32_t k = 0; k < o->n_prompt; ++k) {
+        tokens[k] = (int32_t)(rand() % info.vocab_size);
+    }
+    if (info.add_bos && info.bos_token >= 0 && o->n_prompt > 0) {
+        tokens[0] = info.bos_token;
+    }
+
+    geniex_LlmForwardLogitsInput  fin;
+    geniex_LlmForwardLogitsOutput fout;
+    memset(&fin, 0, sizeof(fin));
+    memset(&fout, 0, sizeof(fout));
+    fin.input_ids       = tokens;
+    fin.input_ids_count = o->n_prompt;
+    fin.all_positions   = !o->logits_last_only;
+    fin.top_n           = o->logits_top_n;
+
+    int32_t rc = geniex_llm_forward_logits(llm, &fin, &fout);
+    if (rc != GENIEX_SUCCESS) {
+        const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
+        fprintf(stderr, "ERROR: geniex_llm_forward_logits failed: %s (%d)\n", msg ? msg : "?", rc);
+        free(tokens);
+        geniex_llm_destroy(llm);
+        exit(1);
+    }
+
+    fprintf(stdout,
+        "[ok  ] %s  plugin=%s device=%s ngl=%d logits n_rows=%d vocab=%d top_n=%d%s\n",
+        o->cell_id ? o->cell_id : "cell",
+        o->plugin,
+        o->device,
+        ngl,
+        fout.n_rows,
+        fout.vocab_size,
+        fout.row_width,
+        fout.row_width < fout.vocab_size ? " (rows truncated to top_n)" : "");
+
+    if (o->output_json) {
+        write_logits_json(o, device_id, ngl, &fin, &fout);
+    } else {
+        fprintf(stderr, "[warn] --logits without --output-json: logits computed but not written\n");
+    }
+
+    geniex_free(fout.logits);
+    geniex_free(fout.token_ids);
+    free(tokens);
+    geniex_llm_destroy(llm);
+}
+
 /* ----------------------------- main ----------------------------- */
 
 /* Run one (plugin, device, model) cell using the already-`geniex_init`'d
@@ -1652,6 +1831,37 @@ static int run_one_cell(options_t* o) {
         o->n_ctx = 0;
     }
 
+    bool is_vlm = (o->mmproj_path != NULL) || o->force_vlm;
+
+    /* --logits is a prefill-only forward pass, not a timing run: it skips the
+     * warmup/repeat/aggregate machinery and writes its own report. LLM only. */
+    if (o->logits_mode) {
+        if (is_vlm) {
+            fprintf(stderr, "ERROR: --logits is not supported for VLM models\n");
+            if (anchored) free(anchored);
+            if (rout.device_id) geniex_free(rout.device_id);
+            if (rout.warning) geniex_free(rout.warning);
+            return 1;
+        }
+        run_logits(o, device_id, ngl);
+        if (anchored) free(anchored);
+        if (rout.device_id) geniex_free(rout.device_id);
+        if (rout.warning) geniex_free(rout.warning);
+        if (o->mm_model_path) {
+            geniex_free(o->mm_model_path);
+            o->mm_model_path = NULL;
+        }
+        if (o->mm_mmproj) {
+            geniex_free(o->mm_mmproj);
+            o->mm_mmproj = NULL;
+        }
+        if (o->mm_tokenizer) {
+            geniex_free(o->mm_tokenizer);
+            o->mm_tokenizer = NULL;
+        }
+        return 0;
+    }
+
     run_result_t* runs = (run_result_t*)calloc((size_t)o->repeat, sizeof(run_result_t));
     if (!runs) {
         fprintf(stderr, "ERROR: oom\n");
@@ -1661,7 +1871,6 @@ static int run_one_cell(options_t* o) {
         return 1;
     }
 
-    bool is_vlm = (o->mmproj_path != NULL) || o->force_vlm;
     if (is_vlm) {
         run_vlm(o, device_id, ngl, runs);
     } else {

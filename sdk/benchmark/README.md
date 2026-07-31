@@ -122,6 +122,15 @@ geniex-bench \
   --plugin llama_cpp --device hybrid \
   -m .../Qwen3-1.7B-Q4_0.gguf \
   --accuracy --prompt-file prompt.txt -n 128
+
+# Logits mode: one prefill-only forward pass (no decode loop), write every
+# position's top-N logits to JSON for on-target accuracy metrics (perplexity,
+# MMLU, MMMU). Input is random ids only (-p N); add --logits-last-only for just
+# the last token's row.
+geniex-bench \
+  --plugin llama_cpp --device npu \
+  -m .../Qwen3-1.7B-Q4_0.gguf \
+  --logits -p 128 --logits-top-n 20 --output-json logits.json
 ```
 
 On Windows the same invocations work with `.exe` and backslash paths, e.g.:
@@ -142,6 +151,11 @@ Run `geniex-bench --help` for the full flag list.
   text to stdout (`[gen ] ...`); use it to sanity-check output quality rather
   than timing. Pair with `--prompt-file`, since the default random-ids prefill
   yields meaningless text.
+- `--logits` runs one prefill-only forward pass (no decode loop, no timing) over
+  `-p N` random ids and writes every position's top-N logits to `--output-json`
+  (`--logits-top-n`, default 20; `--logits-last-only` for the last row only).
+  Both llama_cpp and qairt support it; `--prompt-file` is rejected since the
+  forward-logits API takes `input_ids` and the tool has no tokenizer.
 - llama_cpp gets a `[warmup=i]` / `[run=i]` suffix appended to the prompt
   so the KV cache is busted between runs
 - for `--plugin qairt`, `prompt_tokens` and `prefill_tps` are reported over the
@@ -169,6 +183,44 @@ Run `geniex-bench --help` for the full flag list.
     "gen_tokens":  {"median": 128},
     "prompt_tokens":{"median": 42}
   }
+}
+```
+
+## Accuracy mode output
+
+`--accuracy` prints the generated text to stdout, one `[gen ]`-prefixed line
+per output line, then the usual `[ok  ]` summary line:
+
+```
+[gen ] The capital of France is Paris.
+[gen ] Answer: Paris
+[ok  ] cell  plugin=llama_cpp device=cpu ngl=0 ttft=475.6ms prefill=25.3tps decode=18.2tps gen=24 tok
+```
+
+## Logits mode JSON shape
+
+`--logits` writes its own report (`schema_version` `logits-1`): shape metadata
+plus `rows`, one row per emitted position, each a top-N array of
+`[token_id, logit]` pairs sorted by descending logit.
+
+```json
+{
+  "schema_version": "logits-1",
+  "cell_id": "cell",
+  "plugin": "llama_cpp",
+  "device": "npu",
+  "model_path": ".../Qwen3-1.7B-Q4_0.gguf",
+  "n_gpu_layers": 999,
+  "n_prompt": 128,
+  "all_positions": true,
+  "n_rows": 128,
+  "vocab_size": 151936,
+  "top_n": 20,
+  "truncated_to_top_n": true,
+  "rows": [
+    [[9, 6.950917], [1479, 6.472050], ...],
+    ...
+  ]
 }
 ```
 
