@@ -5,7 +5,9 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -13,6 +15,23 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/render"
 	"github.com/qualcomm/GenieX/cli/server/service"
 )
+
+// hostBindingHint suggests --host 0.0.0.0 when bound to loopback, else "".
+// Malformed hosts are treated as non-loopback — better silent than misleading.
+func hostBindingHint(host string) string {
+	h, port, err := net.SplitHostPort(host)
+	if err != nil {
+		return ""
+	}
+	loopback := strings.EqualFold(h, "localhost")
+	if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+		loopback = true
+	}
+	if !loopback {
+		return ""
+	}
+	return fmt.Sprintf("Bound to loopback only. To expose on your network, restart with --host 0.0.0.0:%s", port)
+}
 
 // @Title		GenieX Server
 // @Version	0.0.0
@@ -48,9 +67,15 @@ func Serve() {
 
 		fmt.Println(render.GetTheme().Info.Sprintf("HTTPS enabled: cert=%s key=%s", certFile, keyFile))
 		fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on https://%s/", cfg.Host))
+		if hint := hostBindingHint(cfg.Host); hint != "" {
+			fmt.Println(render.GetTheme().Info.Sprint(hint))
+		}
 		err = engine.RunTLS(cfg.Host, certFile, keyFile)
 	} else {
 		fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on http://%s/", cfg.Host))
+		if hint := hostBindingHint(cfg.Host); hint != "" {
+			fmt.Println(render.GetTheme().Info.Sprint(hint))
+		}
 		err = engine.Run(cfg.Host)
 	}
 
