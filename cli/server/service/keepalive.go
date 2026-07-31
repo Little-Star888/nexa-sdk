@@ -13,6 +13,7 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
+	"github.com/qualcomm/GenieX/cli/internal/render"
 	"github.com/qualcomm/GenieX/cli/internal/types"
 )
 
@@ -22,7 +23,8 @@ import (
 // --compute defaults). NCtx / NGpuLayers are meaningful only for llama_cpp; for
 // other plugins (e.g. qairt) NCtx is zeroed here and the SDK zeroes ngl so the
 // plugin's param-guard is not tripped. Compute is resolved to a concrete
-// DeviceID by the SDK (sdk/src/device.cpp); coercion warnings are logged.
+// DeviceID by the SDK (sdk/src/device.cpp); any coercion warning is logged and
+// printed to stdout.
 // SpecParam bundles the speculative-decoding knobs sourced from a request; all
 // zero-values mean "spec disabled". Only llama_cpp consumes these fields.
 type SpecParam struct {
@@ -79,6 +81,7 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 	}
 	if resolved.Warning != "" {
 		slog.Warn("compute unit coerced", "warning", resolved.Warning)
+		fmt.Println(render.GetTheme().Warning.Sprintf("Warning: %s", resolved.Warning))
 	}
 
 	mp := types.ModelParam{
