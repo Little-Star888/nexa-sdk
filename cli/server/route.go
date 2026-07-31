@@ -43,6 +43,9 @@ func RegisterAPIv1(r *gin.Engine) {
 	// ==== openai compatible ====
 	g.POST("/chat/completions", handler.ChatCompletions)
 
+	// ==== raw logits (prefill-only forward pass; not OpenAI generative logprobs) ====
+	g.POST("/logits", handler.ForwardLogits)
+
 	// ==== model management ====
 	g.GET("/models/*model", handler.RetrieveModel)
 	g.GET("/models", handler.ListModels)

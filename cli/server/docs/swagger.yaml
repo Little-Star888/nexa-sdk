@@ -25,6 +25,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatCompletionResponse"
 
+  /v1/logits:
+    post:
+      summary: Raw logits from a single prefill-only forward pass
+      description: |
+        Runs one non-autoregressive forward pass over pre-tokenized input and
+        returns the raw LM-head logits. This is NOT the OpenAI generative
+        logprobs semantics — no sampling or decode loop runs. Intended for
+        on-target accuracy metrics (perplexity, MMLU, MMMU). Input is
+        pre-tokenized (`input_ids`); the server does not tokenize text here.
+      operationId: PostV1Logits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForwardLogitsRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForwardLogitsResponse"
+
   /v1/models:
     get:
       summary: Lists the currently available models
@@ -66,6 +90,64 @@ paths:
 
 components:
   schemas:
+    # ---------- Logits ----------
+    ForwardLogitsRequest:
+      type: object
+      required: [model, input_ids]
+      example:
+        model: "qualcomm/Qwen3-4B-Instruct-2507"
+        input_ids: [1, 2, 3, 4]
+        last_only: false
+        top_n: 20
+      properties:
+        model:
+          type: string
+        input_ids:
+          type: array
+          items:
+            type: integer
+          description: Pre-tokenized token ids; the caller owns any special tokens.
+        last_only:
+          type: boolean
+          description: "false (default): every position. true: last token's row only."
+        top_n:
+          type: integer
+          description: "Keep only the top-N logits per row (default 20). 0 returns the full vocabulary per row."
+        nctx:
+          type: integer
+        ngl:
+          type: integer
+        compute:
+          type: string
+    ForwardLogitsResponse:
+      type: object
+      properties:
+        model:
+          type: string
+        n_rows:
+          type: integer
+        vocab_size:
+          type: integer
+        top_n:
+          type: integer
+          description: Effective top-N used (0 means full vocabulary per row).
+        rows:
+          type: array
+          description: One entry per emitted position.
+          items:
+            type: object
+            properties:
+              token_ids:
+                type: array
+                items:
+                  type: integer
+                description: Token id per logit; omitted when top_n is 0 (column index is the token id).
+              logits:
+                type: array
+                items:
+                  type: number
+                description: top_n > 0 — top logits sorted descending; top_n == 0 — full vocab in token-id order.
+
     # ---------- Chat ----------
     ChatCompletionRequest:
       type: object
