@@ -21,6 +21,8 @@ from ._types import (
     geniex_LlmApplyChatTemplateInput,
     geniex_LlmApplyChatTemplateOutput,
     geniex_LlmCreateInput,
+    geniex_LlmForwardLogitsInput,
+    geniex_LlmForwardLogitsOutput,
     geniex_LlmGenerateInput,
     geniex_LlmGenerateOutput,
     geniex_LlmModelInfo,
@@ -183,6 +185,13 @@ def _bind_all() -> None:
 
     lib.geniex_llm_get_model_info.argtypes = [c_void_p, POINTER(geniex_LlmModelInfo)]
     lib.geniex_llm_get_model_info.restype = c_int32
+
+    lib.geniex_llm_forward_logits.argtypes = [
+        c_void_p,
+        POINTER(geniex_LlmForwardLogitsInput),
+        POINTER(geniex_LlmForwardLogitsOutput),
+    ]
+    lib.geniex_llm_forward_logits.restype = c_int32
 
     lib.geniex_llm_apply_chat_template.argtypes = [
         c_void_p,
