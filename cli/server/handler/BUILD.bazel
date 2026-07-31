@@ -5,6 +5,7 @@ go_library(
     name = "handler",
     srcs = [
         "chat.go",
+        "logits.go",
         "model.go",
     ],
     importpath = "github.com/qualcomm/GenieX/cli/server/handler",

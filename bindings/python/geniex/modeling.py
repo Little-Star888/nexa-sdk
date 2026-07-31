@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import os
-from ctypes import POINTER, byref, c_char_p, c_void_p, cast, pointer, string_at
+from ctypes import POINTER, byref, c_char_p, c_int32, c_void_p, cast, pointer, string_at
 
 from ._ffi._api import GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH, _check, _str_list_to_c, load_library
 from ._ffi._types import (
@@ -16,6 +16,8 @@ from ._ffi._types import (
     geniex_LlmApplyChatTemplateInput,
     geniex_LlmApplyChatTemplateOutput,
     geniex_LlmChatMessage,
+    geniex_LlmForwardLogitsInput,
+    geniex_LlmForwardLogitsOutput,
     geniex_LlmGenerateInput,
     geniex_LlmGenerateOutput,
     geniex_SamplerConfig,
@@ -292,6 +294,52 @@ class GenieXLLM:
         """Clear KV cache and reset sampler state."""
         lib = load_library()
         _check(lib.geniex_llm_reset(self._handle))
+
+    def forward_logits(
+        self, input_ids: list[int], *, all_positions: bool = False, top_n: int = 0
+    ) -> list[list[float]] | list[list[tuple[int, float]]]:
+        """Run a single forward pass over ``input_ids`` and return raw logits.
+
+        With ``all_positions=False`` (default) there is one row (the last
+        token's logits); with ``all_positions=True`` there is one row per input
+        token. ``top_n=0`` (default) returns each row as ``vocab_size`` floats
+        (column index is the token id). ``top_n>0`` returns each row as a list
+        of ``(token_id, logit)`` pairs sorted by descending logit. The caller
+        owns any special tokens; none are added. Intended for on-target accuracy
+        metrics (perplexity, MMLU, MMMU).
+        """
+        if not input_ids:
+            raise ValueError('input_ids must be non-empty')
+        if top_n < 0:
+            raise ValueError('top_n must be >= 0')
+        lib = load_library()
+
+        n = len(input_ids)
+        IdArray = c_int32 * n
+        ids = IdArray(*[int(t) for t in input_ids])
+        inp = geniex_LlmForwardLogitsInput(
+            input_ids=cast(ids, POINTER(c_int32)),
+            input_ids_count=n,
+            all_positions=all_positions,
+            top_n=top_n,
+        )
+        out = geniex_LlmForwardLogitsOutput()
+        _check(lib.geniex_llm_forward_logits(self._handle, byref(inp), byref(out)))
+
+        n_rows = int(out.n_rows)
+        row_width = int(out.row_width)
+        try:
+            flat = out.logits[: n_rows * row_width]
+            rows_logits = [flat[r * row_width : (r + 1) * row_width] for r in range(n_rows)]
+            if not out.token_ids:
+                return rows_logits
+            flat_ids = out.token_ids[: n_rows * row_width]
+            return [list(zip(flat_ids[r * row_width : (r + 1) * row_width], rows_logits[r])) for r in range(n_rows)]
+        finally:
+            if out.logits:
+                lib.geniex_free(cast(out.logits, c_void_p))
+            if out.token_ids:
+                lib.geniex_free(cast(out.token_ids, c_void_p))
 
     def save_kv_cache(self, path: str) -> None:
         """Save the current KV cache to ``path``."""

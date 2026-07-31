@@ -3,9 +3,11 @@
 
 #include "llm.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -298,6 +300,38 @@ int32_t QairtLlm::get_model_info(geniex_LlmModelInfo* output) {
     output->vocab_size = static_cast<int32_t>(vocab_size);
     output->bos_token  = pipeline_->bosTokenId();
     output->add_bos    = output->bos_token >= 0 ? 1 : 0;
+    return GENIEX_SUCCESS;
+}
+
+int32_t QairtLlm::forward_logits(const geniex_LlmForwardLogitsInput* input, geniex_LlmForwardLogitsOutput* output) {
+    if (!pipeline_) return GENIEX_ERROR_COMMON_NOT_INITIALIZED;
+    if (!input || !output) return GENIEX_ERROR_COMMON_INVALID_INPUT;
+    if (!input->input_ids || input->input_ids_count <= 0) return GENIEX_ERROR_COMMON_INVALID_INPUT;
+
+    std::vector<int32_t> input_ids(input->input_ids, input->input_ids + input->input_ids_count);
+
+    std::vector<float> logits;
+    try {
+        logits = pipeline_->forwardLogits(input_ids, input->all_positions);
+    } catch (const ContextLengthExceededError& e) {
+        GENIEX_LOG_WARN("QAIRT forward_logits: context length exceeded: {}", e.what());
+        return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+    } catch (const std::invalid_argument& e) {
+        GENIEX_LOG_ERROR("QAIRT forward_logits: invalid input: {}", e.what());
+        return GENIEX_ERROR_COMMON_INVALID_INPUT;
+    }
+
+    const size_t vocab_size = pipeline_->vocabSize();
+    if (vocab_size == 0 || logits.empty()) return GENIEX_ERROR_LLM_GENERATION_FAILED;
+
+    // malloc so the caller can release with geniex_free() (which calls free()).
+    float* buf = static_cast<float*>(std::malloc(logits.size() * sizeof(float)));
+    if (!buf) return GENIEX_ERROR_COMMON_MEMORY_ALLOCATION;
+    std::memcpy(buf, logits.data(), logits.size() * sizeof(float));
+
+    output->logits     = buf;
+    output->vocab_size = static_cast<int32_t>(vocab_size);
+    output->n_rows     = static_cast<int32_t>(logits.size() / vocab_size);
     return GENIEX_SUCCESS;
 }
 

@@ -183,6 +183,25 @@ class geniex_LlmModelInfo(Structure):
     ]
 
 
+class geniex_LlmForwardLogitsInput(Structure):
+    _fields_ = [
+        ('input_ids', POINTER(c_int32)),
+        ('input_ids_count', c_int32),
+        ('all_positions', c_bool),
+        ('top_n', c_int32),  # 0: full vocab per row. >0: keep only the top-N logits per row.
+    ]
+
+
+class geniex_LlmForwardLogitsOutput(Structure):
+    _fields_ = [
+        ('logits', POINTER(c_float)),  # caller frees with geniex_free
+        ('token_ids', POINTER(c_int32)),  # NULL when top_n == 0; else [n_rows, row_width]; caller frees
+        ('n_rows', c_int32),
+        ('row_width', c_int32),  # top_n > 0 ? min(top_n, vocab_size) : vocab_size
+        ('vocab_size', c_int32),
+    ]
+
+
 class geniex_LlmChatMessage(Structure):
     _fields_ = [
         ('role', c_char_p),

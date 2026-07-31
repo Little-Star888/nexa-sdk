@@ -4,6 +4,8 @@
 #include "llm.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -466,6 +468,87 @@ int32_t LlamaLlm::get_model_info(geniex_LlmModelInfo* output) {
     const llama_token bos    = llama_vocab_bos(vocab);
     output->bos_token        = (bos == LLAMA_TOKEN_NULL) ? -1 : static_cast<int32_t>(bos);
     output->add_bos          = llama_vocab_get_add_bos(vocab) ? 1 : 0;
+    return GENIEX_SUCCESS;
+}
+
+int32_t LlamaLlm::forward_logits(const geniex_LlmForwardLogitsInput* input, geniex_LlmForwardLogitsOutput* output) {
+    if (!this->ctx || !this->model) return GENIEX_ERROR_COMMON_NOT_INITIALIZED;
+    if (!input || !output) return GENIEX_ERROR_COMMON_INVALID_INPUT;
+    if (!input->input_ids || input->input_ids_count <= 0) return GENIEX_ERROR_COMMON_INVALID_INPUT;
+
+    const llama_vocab* vocab   = llama_model_get_vocab(this->model);
+    const int          n_vocab = llama_vocab_n_tokens(vocab);
+    const int          n_ctx   = llama_n_ctx(this->ctx);
+    const int          n_batch = llama_n_batch(this->ctx);
+    const int          n_tok   = input->input_ids_count;
+
+    for (int i = 0; i < n_tok; i++) {
+        if (input->input_ids[i] < 0 || input->input_ids[i] >= n_vocab) {
+            GENIEX_LOG_ERROR("forward_logits: token ID out of range: {}", input->input_ids[i]);
+            return GENIEX_ERROR_COMMON_INVALID_INPUT;
+        }
+    }
+    if (n_tok > n_ctx) {
+        GENIEX_LOG_WARN("forward_logits: input ({}) exceeds context length ({})", n_tok, n_ctx);
+        return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+    }
+
+    // Fresh KV in, clean KV out: result depends only on input_ids and
+    // generate()'s prefix-cache/KV state is left undisturbed.
+    this->reset();
+
+    const bool         all_positions = input->all_positions;
+    std::vector<float> all_logits;
+    all_logits.reserve(static_cast<size_t>(all_positions ? n_tok : 1) * n_vocab);
+
+    int32_t     rc    = GENIEX_SUCCESS;
+    llama_batch batch = llama_batch_init(n_batch, 0, 1);
+    for (int start = 0; start < n_tok; start += n_batch) {
+        const int n    = std::min(n_batch, n_tok - start);
+        batch.n_tokens = n;
+        for (int j = 0; j < n; j++) {
+            const int abs_pos  = start + j;
+            batch.token[j]     = input->input_ids[abs_pos];
+            batch.pos[j]       = abs_pos;
+            batch.n_seq_id[j]  = 1;
+            batch.seq_id[j][0] = 0;
+            // Always emit the last token's row; emit every position when requested.
+            batch.logits[j] = (all_positions || abs_pos == n_tok - 1) ? 1 : 0;
+        }
+
+        if (llama_decode(this->ctx, batch) != 0) {
+            GENIEX_LOG_ERROR("forward_logits: llama_decode failed");
+            rc = GENIEX_ERROR_LLM_GENERATION_FAILED;
+            break;
+        }
+
+        // Extract logits for this chunk before the next decode overwrites them.
+        for (int j = 0; j < n; j++) {
+            if (!batch.logits[j]) continue;
+            const float* row = llama_get_logits_ith(this->ctx, j);
+            if (!row) {
+                rc = GENIEX_ERROR_LLM_GENERATION_FAILED;
+                break;
+            }
+            all_logits.insert(all_logits.end(), row, row + n_vocab);
+        }
+        if (rc != GENIEX_SUCCESS) break;
+    }
+    llama_batch_free(batch);
+
+    // Leave the KV cache clean regardless of outcome.
+    this->reset();
+
+    if (rc != GENIEX_SUCCESS) return rc;
+
+    // malloc so the caller can release with geniex_free() (which calls free()).
+    float* buf = static_cast<float*>(malloc(all_logits.size() * sizeof(float)));
+    if (!buf) return GENIEX_ERROR_COMMON_MEMORY_ALLOCATION;
+    memcpy(buf, all_logits.data(), all_logits.size() * sizeof(float));
+
+    output->logits     = buf;
+    output->vocab_size = n_vocab;
+    output->n_rows     = all_positions ? n_tok : 1;
     return GENIEX_SUCCESS;
 }
 }  // namespace geniex

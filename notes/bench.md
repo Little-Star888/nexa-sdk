@@ -117,3 +117,43 @@ Expand-Archive bench.zip -DestinationPath .
 
 Each archive contains `bin/geniex-bench` (or `.exe`) plus `lib/` with all
 required runtime shared libraries (libgeniex, llama_cpp plugin, qairt plugin).
+
+### Raw logits mode (`--logits`)
+
+For on-target accuracy metrics (perplexity, MMLU, MMMU), `--logits` runs a
+single prefill-only forward pass (`geniex_llm_forward_logits`, no decode loop)
+over `-p N` random token ids and writes every position's logits row
+(`[n_tokens, vocab]`) to the JSON report. Bypasses the timing machinery
+entirely (`--warmup` / `-r` / `-n` are ignored).
+
+```bash
+geniex-bench --plugin llama_cpp --device npu -m <model> --logits -p 128 \
+  --logits-top-n 20 --output-json logits.json
+```
+
+The report keeps only the top-N `[token_id, logit]` pairs per row
+(`--logits-top-n`, default 20) so the all-positions output stays small; the JSON
+records `top_n` and `truncated_to_top_n` so a consumer never mistakes it for
+the full vocabulary. Input is random ids only — the forward-logits API takes
+`input_ids` and the bench tool has no tokenizer, so `--prompt-file` is rejected
+with `--logits`. Both `llama_cpp` and `qairt` backends support it.
+
+The JSON report (`schema_version` `logits-1`) carries shape metadata plus
+`rows`, one row per emitted position, each a top-N array of `[token_id, logit]`
+pairs sorted by descending logit:
+
+```json
+{
+  "schema_version": "logits-1",
+  "n_prompt": 128,
+  "all_positions": true,
+  "n_rows": 128,
+  "vocab_size": 151936,
+  "top_n": 20,
+  "truncated_to_top_n": true,
+  "rows": [
+    [[9, 6.950917], [1479, 6.472050], ...],
+    ...
+  ]
+}
+```

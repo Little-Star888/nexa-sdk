@@ -58,6 +58,8 @@ class LlamaLlm : public ILlm {
 
     virtual int32_t get_model_info(geniex_LlmModelInfo*) override;
 
+    virtual int32_t forward_logits(const geniex_LlmForwardLogitsInput*, geniex_LlmForwardLogitsOutput*) override;
+
    private:
     void set_sampler(const geniex_SamplerConfig* cfg);
 

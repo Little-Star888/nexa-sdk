@@ -35,6 +35,16 @@ class ILlm {
      * information keep building. Plugins able to report it MUST override.
      */
     virtual int32_t get_model_info(geniex_LlmModelInfo*) { return GENIEX_ERROR_COMMON_PARAM_NOT_SUPPORTED; }
+
+    /**
+     * @brief Run a single forward pass and return raw logits (no sampling/decode).
+     *
+     * Default returns PARAM_NOT_SUPPORTED so plugins that cannot expose logits
+     * keep building. Plugins able to produce them MUST override.
+     */
+    virtual int32_t forward_logits(const geniex_LlmForwardLogitsInput*, geniex_LlmForwardLogitsOutput*) {
+        return GENIEX_ERROR_COMMON_PARAM_NOT_SUPPORTED;
+    }
 };
 
 }  // namespace geniex
