@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -204,6 +205,8 @@ func list() *cobra.Command {
 		case "csv":
 			return printListCSV(models)
 		}
+		fmt.Println(render.GetTheme().Info.Sprintf("Models cached in %s", filepath.Join(store.Get().DataPath(), "models")))
+		fmt.Println()
 		printListTable(models, verbose)
 		return nil
 	}
