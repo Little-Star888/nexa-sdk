@@ -11,9 +11,13 @@ package geniex_sdk
 
 #if defined(_WIN32)
 __declspec(dllexport) void go_log_wrap(geniex_LogLevel level, char *msg);
+__declspec(dllexport) void go_dump_current(void);
 #else
 extern void go_log_wrap(geniex_LogLevel level, char *msg);
+extern void go_dump_current(void);
 #endif
+
+void geniex_install_crash_handler(void);
 */
 import "C"
 
@@ -21,6 +25,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"runtime"
 	"unsafe"
 )
 
@@ -57,6 +63,7 @@ var (
 
 // Init must be called before any other SDK function.
 func Init() error {
+	C.geniex_install_crash_handler()
 	res := C.geniex_init()
 	if res < 0 {
 		return SDKError(res)
@@ -206,6 +213,13 @@ func go_log_wrap(level C.geniex_LogLevel, msg *C.char) {
 	default:
 		slog.Debug(msgStr)
 	}
+}
+
+//export go_dump_current
+func go_dump_current() {
+	buf := make([]byte, 8192)
+	n := runtime.Stack(buf, false)
+	os.Stderr.Write(buf[:n])
 }
 
 // LCOV_EXCL_STOP
