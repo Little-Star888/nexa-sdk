@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -474,6 +475,25 @@ func pullModel(ctx context.Context, name string, quant string) error {
 	}
 
 	fmt.Println(render.GetTheme().Success.Sprint("✔  Download success"))
+
+	key := name
+	if quant != "" {
+		key = name + ":" + quant
+	}
+	if models, err := geniex_sdk.ModelListDetailed(); err == nil {
+		for _, m := range models {
+			if m.Name == name && m.TotalSize > 0 {
+				fmt.Println(render.GetTheme().Info.Sprintf("   Size:      %s", humanize.IBytes(uint64(m.TotalSize))))
+				break
+			}
+		}
+	}
+	if paths, err := geniex_sdk.ModelGetPaths(key); err == nil && paths.ModelPath != "" {
+		fmt.Println(render.GetTheme().Info.Sprintf("   Location:  %s", filepath.Dir(paths.ModelPath)))
+	}
+	if quant != "" {
+		fmt.Println(render.GetTheme().Info.Sprintf("   Precision: %s", quant))
+	}
 	return nil
 }
 
