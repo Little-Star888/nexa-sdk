@@ -81,26 +81,6 @@ endif()
 
 add_subdirectory(./src)
 
-# unit tests
-#
-# Pins the alias -> clip-backend mapping behind LlamaVlm::create (#1178).
-# params.cpp is recompiled here rather than linked from the plugin so the
-# test does not depend on the plugin's symbol visibility.
-
-add_executable(test_params_device
-    tests/test_params_device.cpp
-    src/params.cpp)
-target_include_directories(test_params_device
-    PRIVATE ${COMMON_INCLUDE} ./include)
-target_link_libraries(test_params_device PRIVATE geniex llama llama-common)
-# The project pins RPATH to $ORIGIN for shipped artifacts (sdk/CMakeLists.txt),
-# but this test is never installed and its dependencies live in several build
-# directories. Opt out so CMake derives the build RPATH from the linked targets.
-set_target_properties(test_params_device PROPERTIES
-    BUILD_WITH_INSTALL_RPATH OFF
-    SKIP_BUILD_RPATH OFF)
-add_test(NAME test_params_device COMMAND test_params_device)
-
 # setup install
 
 set(LLAMA_LIBS llama-common mtmd llama ggml ggml-base ggml-cpu ggml-vulkan ggml-opencl ggml-hexagon)

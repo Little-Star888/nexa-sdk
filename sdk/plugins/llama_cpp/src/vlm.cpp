@@ -82,12 +82,9 @@ int32_t LlamaVlm::create(const geniex_VlmCreateInput* input) {
     // Initialize vision context if mmproj_path provided
     if (input->mmproj_path) {
         mtmd_context_params mparams = mtmd_context_params_default();
-        // Clip must follow the *resolved device*, not n_gpu_layers: npu/hybrid
-        // carry the default ngl = -1, and using ngl here drags the Adreno OpenCL
-        // backend into an NPU run (#1178). Only an explicit GPU device may use it.
-        mparams.use_gpu       = device == Device::GPU;
-        mparams.print_timings = false;
-        mparams.n_threads     = 4;
+        mparams.use_gpu             = device == Device::GPU;
+        mparams.print_timings       = false;
+        mparams.n_threads           = 4;
         // Zack TODO: elegant fix this error:  no member named 'verbosity' in 'mtmd_context_params'
         // mparams.verbosity           = GGML_LOG_LEVEL_ERROR;
 
