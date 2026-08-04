@@ -38,8 +38,6 @@ func RootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			cmd.SilenceErrors = true
-
 			subCmd := cmd.CalledAs()
 
 			// Skip ModelInit for commands that don't touch the model manager
