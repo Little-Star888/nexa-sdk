@@ -31,6 +31,15 @@ import Feedback from "/snippets/page-feedback.mdx";
   <Accordion title="`--compute cpu` or `--compute gpu` errors with a Qualcomm AI Hub Model">
     Qualcomm AI Engine Direct is NPU-only. Use `--compute npu` (or omit the flag — `npu` is the default for `qairt`). To run on CPU/GPU, switch to a GGUF model on the [llama.cpp runtime](/en/get-started/platforms#llamacpp).
   </Accordion>
+
+  <Accordion title="`Context length exceeded` during a long chat">
+    The conversation outgrew the context window (`--nctx`, default 4096).
+
+    - **llama.cpp (GGUF):** raise it at runtime, e.g. `geniex infer <model> --nctx 8192`, up to the model's trained maximum. A larger window uses more memory.
+    - **Qualcomm AI Engine Direct (NPU):** the window is fixed in the compiled bundle and `--nctx` has no effect. Add `--sliding-window` to keep chatting (evicts the oldest context), or pull a bundle built for a longer context.
+
+    See [Increasing the context length](/en/run/cli/reference#increasing-the-context-length).
+  </Accordion>
 </AccordionGroup>
 
 ## **Server**

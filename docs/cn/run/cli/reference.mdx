@@ -132,6 +132,20 @@ geniex serve
 | `-s`, `--system-prompt` | string | — | 设置模型行为的系统提示。 |
 | `--sliding-window` | — | `false` | （仅 `qairt`）当上下文长度超限时，驱逐锚定前缀之外最旧的上下文，而不是报错，从而让对话继续。 |
 
+### 增大上下文长度
+
+上下文窗口（`--nctx`）是模型一次能容纳的内容上限。当对话增长超过该上限时会报 *context length exceeded* 错误。如何增大取决于运行时：
+
+- **llama.cpp (GGUF)：** `--nctx <N>` 可在运行时抬升窗口，上限为模型训练时的最大值。窗口越大，占用的 KV 缓存内存越多。
+
+  ```bash
+  geniex infer unsloth/Qwen3-8B-GGUF --nctx 8192
+  ```
+
+- **Qualcomm AI Engine Direct (NPU)：** 上下文长度**固化在编译好的模型包中**，运行时无法抬升——`--nctx` 不生效。可改用：
+  - 加 `--sliding-window` 以在超限后继续对话：驱逐锚定前缀之外最旧的上下文，而不是报错。
+  - 如需真正更大的窗口，请从 [Qualcomm AI Hub](https://aihub.qualcomm.com/models/) 获取按更长上下文编译的模型包。参见 [Qualcomm AI Engine Direct 运行环境限制](/cn/get-started/platforms#运行环境限制)。
+
 ## **实用命令**
 
 | 命令 | 说明 | 示例 |
