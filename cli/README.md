@@ -8,16 +8,22 @@ Command-line interface for running AI models locally on **Qualcomm** chipsets. I
 
 | Value   | Emits                                    |
 |---------|------------------------------------------|
-| `none`  | nothing                                  |
+| `none`  | nothing (**CLI default**)                |
 | `error` | errors only                              |
 | `warn`  | warnings + errors                        |
-| `info`  | info + warnings + errors (**default**)   |
+| `info`  | info + warnings + errors                 |
 | `debug` | debug + info + warnings + errors         |
-| `trace` | everything (requires a debug build)      |
+| `trace` | everything                               |
 
 ```bash
 export GENIEX_LOG="debug"          # bash / zsh
 $env:GENIEX_LOG="debug"            # PowerShell
+```
+
+The `--log` flag is equivalent and takes precedence over `GENIEX_LOG` when both are set:
+
+```bash
+geniex --log debug list
 ```
 
 `NO_COLOR=1` disables ANSI colors.

@@ -8,16 +8,22 @@
 
 | 取值    | 输出内容                                 |
 |---------|------------------------------------------|
-| `none`  | 无输出                                   |
+| `none`  | 无输出（**CLI 默认**）                   |
 | `error` | 仅错误                                   |
 | `warn`  | 警告 + 错误                              |
-| `info`  | 信息 + 警告 + 错误（**默认**）           |
+| `info`  | 信息 + 警告 + 错误                       |
 | `debug` | 调试 + 信息 + 警告 + 错误                |
-| `trace` | 全部输出（需要 debug 构建）              |
+| `trace` | 全部输出                                 |
 
 ```bash
 export GENIEX_LOG="debug"          # bash / zsh
 $env:GENIEX_LOG="debug"            # PowerShell
+```
+
+`--log` 参数与之等效，且当二者同时设置时优先于 `GENIEX_LOG`：
+
+```bash
+geniex --log debug list
 ```
 
 设置 `NO_COLOR=1` 可关闭 ANSI 颜色。
