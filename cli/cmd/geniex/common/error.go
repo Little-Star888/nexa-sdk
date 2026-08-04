@@ -47,7 +47,12 @@ const (
 - This model may not be compatible with your system. Try another model.
 - See help in our discord or slack.`
 
-	hintContextLength = `Context length exceeded, please start a new conversation.`
+	hintContextLength = `⚠️ Context length exceeded — the conversation outgrew the context window.
+
+👉 Try these:
+- llama_cpp: raise the window with '--nctx <N>' (default 4096), up to the model's trained max. Larger windows use more memory.
+- qairt: the window is fixed at compile time and can't be raised at runtime. Add '--sliding-window' to keep chatting by evicting the oldest context, or pull a bundle built for a longer context.
+- Or start a new conversation to clear the history.`
 
 	hintHubUnreachable = `⚠️ Unable to reach the model hub while resolving metadata.
 

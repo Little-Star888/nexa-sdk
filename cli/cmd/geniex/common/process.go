@@ -128,7 +128,8 @@ func (p *Processor) Process() error {
 					return resetErr
 				}
 			}
-			fmt.Println(render.GetTheme().Error.Sprintf("Model context length exceeded; conversation is reset"))
+			fmt.Println(render.GetTheme().Error.Sprintf("Model context length exceeded; conversation is reset."))
+			fmt.Println(render.GetTheme().Error.Sprintf("Raise it with --nctx <N> (llama_cpp; larger uses more memory), or add --sliding-window (qairt)."))
 			fmt.Println()
 		default:
 			return err

@@ -132,6 +132,20 @@ Control model loading, context, and generation limits.
 | `-s`, `--system-prompt` | string | — | System prompt to set model behavior. |
 | `--sliding-window` | — | `false` | (`qairt` only) Evict the oldest context above a small anchored prefix instead of erroring when the context length is exceeded, letting the conversation continue. |
 
+### Increasing the context length
+
+The context window (`--nctx`) is how much the model can hold at once. When a conversation grows past it you get a *context length exceeded* error. How to raise it depends on the runtime:
+
+- **llama.cpp (GGUF):** `--nctx <N>` raises the window at runtime, up to the model's trained maximum. A larger window uses more KV-cache memory.
+
+  ```bash
+  geniex infer unsloth/Qwen3-8B-GGUF --nctx 8192
+  ```
+
+- **Qualcomm AI Engine Direct (NPU):** the context length is **baked into the compiled bundle** and cannot be raised at runtime — `--nctx` has no effect. Instead:
+  - Add `--sliding-window` to keep chatting past the limit: the oldest context above a small anchored prefix is evicted instead of erroring.
+  - For a genuinely larger window, pull a bundle compiled for a longer context from [Qualcomm AI Hub](https://aihub.qualcomm.com/models/). See [Qualcomm AI Engine Direct runtime constraints](/en/get-started/platforms#runtime-constraints).
+
 ## **Utility commands**
 
 | Command | Description | Example |

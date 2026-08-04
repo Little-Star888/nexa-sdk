@@ -31,6 +31,15 @@ import Feedback from "/snippets/page-feedback.mdx";
   <Accordion title="`--compute cpu` 或 `--compute gpu` 在 Qualcomm AI Hub 模型上报错">
     Qualcomm AI Engine Direct 仅支持 NPU。请使用 `--compute npu`（或省略该标志——`npu` 是 `qairt` 的默认值）。如需在 CPU/GPU 上运行，改用 [llama.cpp 运行环境](/cn/get-started/platforms#llamacpp)的 GGUF 模型。
   </Accordion>
+
+  <Accordion title="长对话中出现 `Context length exceeded`">
+    对话增长超过了上下文窗口（`--nctx`，默认 4096）。
+
+    - **llama.cpp (GGUF)：** 可在运行时抬升，例如 `geniex infer <model> --nctx 8192`，上限为模型训练时的最大值。窗口越大占用内存越多。
+    - **Qualcomm AI Engine Direct (NPU)：** 窗口固化在编译好的模型包中，`--nctx` 不生效。加 `--sliding-window` 以继续对话（驱逐最旧的上下文），或获取按更长上下文编译的模型包。
+
+    参见[增大上下文长度](/cn/run/cli/reference#增大上下文长度)。
+  </Accordion>
 </AccordionGroup>
 
 ## **服务器**
