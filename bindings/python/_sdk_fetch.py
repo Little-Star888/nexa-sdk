@@ -120,7 +120,7 @@ def _download_with_progress(url: str, label: str) -> bytes | None:
                     unit='B',
                     unit_scale=True,
                     desc=f'[geniex] {label}',
-                    file=sys.stderr,
+                    file=_tty(),
                 ) as bar:
                     for chunk in iter(lambda: resp.read(65536), b''):
                         data.extend(chunk)
@@ -136,21 +136,35 @@ def _download_with_progress(url: str, label: str) -> bytes | None:
                             f'\r[geniex] {label}: {downloaded / 1048576:.1f}/{total / 1048576:.1f} MB ({pct}%)',
                             end='',
                             flush=True,
-                            file=sys.stderr,
+                            file=_tty(),
                         )
                     else:
                         print(
                             f'\r[geniex] {label}: {downloaded / 1048576:.1f} MB',
                             end='',
                             flush=True,
-                            file=sys.stderr,
+                            file=_tty(),
                         )
                 if downloaded:
-                    print(file=sys.stderr)
+                    print(file=_tty())
             return bytes(data)
     except (urllib.error.URLError, TimeoutError) as exc:
         print(f'[geniex] source unavailable: {url} ({exc})', file=sys.stderr)
         return None
+
+
+_tty_out = None
+
+
+def _tty():
+    global _tty_out
+    if _tty_out is None:
+        try:
+            name = 'CONOUT$' if sys.platform == 'win32' else '/dev/tty'
+            _tty_out = open(name, 'w', encoding='utf-8', errors='replace', buffering=1)
+        except OSError:
+            _tty_out = sys.stderr
+    return _tty_out
 
 
 def _file_url_to_path(url: str) -> Path:
@@ -347,7 +361,7 @@ def _range_fetch(zip_url: str, lib_dir: Path, backends: frozenset[Backend]) -> i
     n = len(to_extract)
     found_core = False
     for i, (entry, rel) in enumerate(to_extract, 1):
-        print(f'[geniex] ({i}/{n}) {rel}')
+        print(f'[geniex] ({i}/{n}) {rel}', file=_tty())
         if rel in _CORE_LIB_NAMES:
             found_core = True
         _extract_entry(zip_url, entry, lib_dir / rel)
@@ -397,10 +411,10 @@ def fetch(
     """
     lib_dir = pkg_dir / 'lib'
     if lib_dir.exists() and any(lib_dir.iterdir()):
-        print(f'[geniex] {lib_dir} already populated, skipping SDK download.')
+        print(f'[geniex] {lib_dir} already populated, skipping SDK download.', file=_tty())
         return
     if os.environ.get('GENIEX_SKIP_SDK_DOWNLOAD'):
-        print('[geniex] GENIEX_SKIP_SDK_DOWNLOAD set, skipping SDK download.')
+        print('[geniex] GENIEX_SKIP_SDK_DOWNLOAD set, skipping SDK download.', file=_tty())
         return
 
     backend_set = frozenset(backends)
@@ -446,7 +460,7 @@ def _try_one_source(
     successfully populating ``lib_dir``.
     """
     sha_url = f'{zip_url}.sha256'
-    print(f'[geniex] Trying {name}: {zip_url}')
+    print(f'[geniex] Trying {name}: {zip_url}', file=_tty())
 
     sha_bytes = _try_download(sha_url)
     # GENIEX_SDK_DOWNLOAD_URL is an explicit user opt-in to a specific source
@@ -471,7 +485,7 @@ def _try_one_source(
     try:
         count = _range_fetch(zip_url, lib_dir, backends)
     except (_RangeNotSupported, _ZIP64NotSupported) as exc:
-        print(f'[geniex] Range fetch unavailable on {name} ({exc}); falling back to full download.')
+        print(f'[geniex] Range fetch unavailable on {name} ({exc}); falling back to full download.', file=_tty())
         shutil.rmtree(lib_dir, ignore_errors=True)
         lib_dir.mkdir(parents=True, exist_ok=True)
     except (urllib.error.URLError, TimeoutError, RuntimeError) as exc:
@@ -479,8 +493,8 @@ def _try_one_source(
         shutil.rmtree(lib_dir, ignore_errors=True)
         return False
     else:
-        print(f'[geniex] Range-fetched {count} entries from {name}: {zip_url}')
-        print(f'[geniex] SDK libs installed at {lib_dir}')
+        print(f'[geniex] Range-fetched {count} entries from {name}: {zip_url}', file=_tty())
+        print(f'[geniex] SDK libs installed at {lib_dir}', file=_tty())
         return True
 
     label = zip_url.rsplit('/', 1)[-1]
@@ -499,6 +513,6 @@ def _try_one_source(
         errors.append(f'{zip_url} (full): {exc}')
         shutil.rmtree(lib_dir, ignore_errors=True)
         return False
-    print(f'[geniex] Full-zip extracted {count} entries from {name}: {zip_url}')
-    print(f'[geniex] SDK libs installed at {lib_dir}')
+    print(f'[geniex] Full-zip extracted {count} entries from {name}: {zip_url}', file=_tty())
+    print(f'[geniex] SDK libs installed at {lib_dir}', file=_tty())
     return True
