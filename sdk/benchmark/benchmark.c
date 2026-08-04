@@ -53,9 +53,11 @@
 #include <dirent.h>
 #endif
 
-/* Fixed VLM prompt. Multimodal cells still go through the bundle's chat
- * template (which needs real text), so the LLM/VLM paths are intentionally
- * asymmetric: LLM prefills random ids; VLM keeps a one-line text payload. */
+/* Default VLM prompt used when no --prompt-file is supplied. Throughput
+ * benchmarking only needs a representative fixed text; the chat template
+ * (which needs real text to place image tokens) is applied by build_vlm_prompt.
+ * When --prompt-file IS supplied the file content is used verbatim as the
+ * prompt_utf8, bypassing this default and build_vlm_prompt entirely. */
 static const char* const VLM_DEFAULT_PROMPT = "Describe the image.";
 
 #define MAX_PATHS 16
@@ -1285,74 +1287,129 @@ static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_
     fill_sampler(&sampler, o);
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/true);
 
+    const char** prompts   = NULL;
+    int32_t      n_prompts = 1;
+    if (o->prompt_buf) {
+        /* --prompt-file: feed the file content verbatim, same as the LLM loop.
+         * Supports "---"-delimited segments. */
+        int32_t cap = 1;
+        for (char* p = o->prompt_buf; *p; ++p)
+            if (*p == '\n') cap++;
+        prompts   = (const char**)malloc((size_t)cap * sizeof(char*));
+        n_prompts = 0;
+
+        char* seg = o->prompt_buf;
+        for (char* line = o->prompt_buf; line;) {
+            char* nl = strchr(line, '\n');
+            if (nl) *nl = '\0';
+            char* t = line;
+            while (*t == ' ' || *t == '\t' || *t == '\r') t++;
+            rstrip(t);
+            bool is_sep = (strcmp(t, "---") == 0);
+            if (is_sep) {
+                if (line > seg)
+                    line[-1] = '\0';
+                else if (seg)
+                    *seg = '\0';
+                append_prompt_if_nonempty(prompts, &n_prompts, seg);
+                seg = nl ? nl + 1 : NULL;
+            } else if (nl) {
+                *nl = '\n';
+            }
+            line = nl ? nl + 1 : NULL;
+        }
+        append_prompt_if_nonempty(prompts, &n_prompts, seg);
+        if (n_prompts == 0) {
+            fprintf(stderr, "ERROR: --prompt-file has no non-empty prompts\n");
+            free(prompts);
+            geniex_vlm_destroy(vlm);
+            exit(1);
+        }
+    } else {
+        prompts    = (const char**)malloc(sizeof(char*));
+        prompts[0] = NULL; /* no --prompt-file: build_vlm_prompt uses VLM_DEFAULT_PROMPT */
+    }
+
     int32_t total = o->warmup + o->repeat;
-    for (int32_t i = 0; i < total; ++i) {
-        bool    is_warmup = (i < o->warmup);
-        int32_t run_idx   = is_warmup ? i : (i - o->warmup);
-        /* VLM generate() takes a fully-templated prompt; run a fixed base
-         * text + media through the bundle's chat template so the image
-         * tokens land right. The LLM path uses random-ids and skips the
-         * tokenizer; the VLM path can't because the chat template needs
-         * real text plus typed content parts. */
-        char* prompt = build_vlm_prompt(vlm, o, VLM_DEFAULT_PROMPT);
-        if (!prompt) {
-            geniex_vlm_destroy(vlm);
-            exit(1);
+    for (int32_t pi = 0; pi < n_prompts; ++pi) {
+        const char* cur_prompt = prompts[pi];
+        if (n_prompts > 1) {
+            fprintf(stdout, "[sep ] prompt %d/%d\n", pi + 1, n_prompts);
         }
+        for (int32_t i = 0; i < total; ++i) {
+            bool    is_warmup = (i < o->warmup);
+            int32_t run_idx   = is_warmup ? i : (i - o->warmup);
 
-        if (o->reset_between_runs) {
-            check(geniex_vlm_reset(vlm), "geniex_vlm_reset");
-        }
+            /* Build the templated prompt once per run.  When --prompt-file
+             * supplies a pre-templated string, use it directly; otherwise run
+             * the fixed default text through the bundle's chat template so the
+             * image tokens are placed correctly. */
+            char*       built_prompt = NULL;
+            const char* final_prompt;
+            if (cur_prompt) {
+                final_prompt = cur_prompt;
+            } else {
+                built_prompt = build_vlm_prompt(vlm, o, VLM_DEFAULT_PROMPT);
+                if (!built_prompt) {
+                    free(prompts);
+                    geniex_vlm_destroy(vlm);
+                    exit(1);
+                }
+                final_prompt = built_prompt;
+            }
 
-        geniex_VlmGenerateInput  gin;
-        geniex_VlmGenerateOutput gout;
-        memset(&gin, 0, sizeof(gin));
-        memset(&gout, 0, sizeof(gout));
-        gin.prompt_utf8 = prompt;
-        gin.config      = &gconfig;
-        gin.on_token    = on_token;
+            /* VLM must reset between runs: the image is consumed into the KV
+             * cache on the first generate() call, so a second call re-sends an
+             * already-processed prompt and generates nothing. */
+            if (o->reset_between_runs) {
+                check(geniex_vlm_reset(vlm), "geniex_vlm_reset");
+            }
 
-        int32_t rc = geniex_vlm_generate(vlm, &gin, &gout);
-        if (rc != GENIEX_SUCCESS) {
-            const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
-            fprintf(stderr, "ERROR: geniex_vlm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
-            geniex_free(prompt);
-            geniex_vlm_destroy(vlm);
-            exit(1);
-        }
+            geniex_VlmGenerateInput  gin;
+            geniex_VlmGenerateOutput gout;
+            memset(&gin, 0, sizeof(gin));
+            memset(&gout, 0, sizeof(gout));
+            gin.prompt_utf8 = final_prompt;
+            gin.config      = &gconfig;
+            gin.on_token    = on_token;
 
-        if (!is_warmup) {
-            run_result_t* r = &out[run_idx];
-            memset(r, 0, sizeof(*r));
-            r->run_idx        = run_idx;
-            r->ttft_us        = gout.profile_data.ttft;
-            r->prompt_time_us = gout.profile_data.prompt_time;
-            r->decode_time_us = gout.profile_data.decode_time;
-            r->prompt_tokens  = gout.profile_data.prompt_tokens;
-            r->gen_tokens     = gout.profile_data.generated_tokens;
-            r->prefill_tps    = gout.profile_data.prefill_speed;
-            r->decode_tps     = gout.profile_data.decoding_speed;
-            r->stop_reason    = gout.profile_data.stop_reason;
-            r->status         = 0;
-            normalize_prefill_metrics(r, o->plugin);
-        }
+            int32_t rc = geniex_vlm_generate(vlm, &gin, &gout);
+            if (rc != GENIEX_SUCCESS) {
+                const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
+                fprintf(stderr, "ERROR: geniex_vlm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
+                if (built_prompt) geniex_free(built_prompt);
+                free(prompts);
+                geniex_vlm_destroy(vlm);
+                exit(1);
+            }
 
-        if (!is_warmup && o->accuracy && gout.full_text) {
-            print_gen_text(gout.full_text);
-        }
-        if (gout.full_text) {
-            geniex_free(gout.full_text);
-        }
-        geniex_free(prompt);
-        /* Unlike the LLM loop, VLM must reset between runs: the image is
-         * attached to the first message and consumed into the KV cache, so a
-         * second run with the same history re-sends an already-processed
-         * prompt and generates nothing (prompt_tokens=0, immediate eos). */
-        if (i + 1 < total) {
-            check(geniex_vlm_reset(vlm), "geniex_vlm_reset");
+            if (!is_warmup) {
+                run_result_t* r = &out[run_idx];
+                memset(r, 0, sizeof(*r));
+                r->run_idx        = run_idx;
+                r->ttft_us        = gout.profile_data.ttft;
+                r->prompt_time_us = gout.profile_data.prompt_time;
+                r->decode_time_us = gout.profile_data.decode_time;
+                r->prompt_tokens  = gout.profile_data.prompt_tokens;
+                r->gen_tokens     = gout.profile_data.generated_tokens;
+                r->prefill_tps    = gout.profile_data.prefill_speed;
+                r->decode_tps     = gout.profile_data.decoding_speed;
+                r->stop_reason    = gout.profile_data.stop_reason;
+                r->status         = 0;
+                normalize_prefill_metrics(r, o->plugin);
+            }
+
+            if (!is_warmup && o->accuracy && gout.full_text) {
+                print_gen_text(gout.full_text);
+            }
+            if (gout.full_text) {
+                geniex_free(gout.full_text);
+            }
+            if (built_prompt) geniex_free(built_prompt);
         }
     }
 
+    free(prompts);
     check(geniex_vlm_destroy(vlm), "geniex_vlm_destroy");
 }
 
