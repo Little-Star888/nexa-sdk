@@ -95,6 +95,23 @@ Start the OpenAI-compatible local server. See [Local server](/en/run/cli/local-s
 geniex serve
 ```
 
+## **Logging**
+
+`--log` is a global flag controlling the CLI's log output. It is equivalent to the `GENIEX_LOG` environment variable and takes precedence over it when both are set.
+
+```bash
+geniex --log debug list
+```
+
+| Value | Emits |
+|---|---|
+| `none` | nothing (**CLI default**) |
+| `error` | errors only |
+| `warn` | warnings + errors |
+| `info` | info + warnings + errors |
+| `debug` | debug + info + warnings + errors |
+| `trace` | everything |
+
 ## **Configuration flags**
 
 These flags can be passed to `geniex infer` to control model loading and generation.

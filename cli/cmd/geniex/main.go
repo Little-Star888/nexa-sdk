@@ -38,6 +38,10 @@ func RootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Re-apply now that flags are parsed so --log takes effect; the
+			// call in main() runs before parsing and only sees GENIEX_LOG.
+			common.ApplyLogLevel()
+
 			subCmd := cmd.CalledAs()
 
 			// Skip ModelInit for commands that don't touch the model manager
@@ -80,6 +84,8 @@ func RootCmd() *cobra.Command {
 	}
 	rootCmd.PersistentFlags().StringVarP(&dataDir, "data-dir", "", "", "Custom data directory (env: GENIEX_DATADIR)")
 	viper.BindPFlag("datadir", rootCmd.PersistentFlags().Lookup("data-dir"))
+	rootCmd.PersistentFlags().String("log", "none", "Log level: none, error, warn, info, debug, trace (env: GENIEX_LOG)")
+	viper.BindPFlag("log", rootCmd.PersistentFlags().Lookup("log"))
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "", false, "Enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&skipUpdate, "skip-update", "", false, "Skip checking for updates")
 	rootCmd.PersistentFlags().BoolVarP(&testMode, "test-mode", "", false, "Enable test mode")
