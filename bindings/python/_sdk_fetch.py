@@ -106,6 +106,53 @@ def _try_download(url: str) -> bytes | None:
         return None
 
 
+def _download_with_progress(url: str, label: str) -> bytes | None:
+    """Stream ``url`` with a progress display; returns bytes or None on failure."""
+    try:
+        with urllib.request.urlopen(url) as resp:
+            total = int(resp.headers.get('Content-Length') or 0)
+            data = bytearray()
+            try:
+                from tqdm import tqdm
+
+                with tqdm(
+                    total=total or None,
+                    unit='B',
+                    unit_scale=True,
+                    desc=f'[geniex] {label}',
+                    file=sys.stderr,
+                ) as bar:
+                    for chunk in iter(lambda: resp.read(65536), b''):
+                        data.extend(chunk)
+                        bar.update(len(chunk))
+            except ImportError:
+                downloaded = 0
+                for chunk in iter(lambda: resp.read(65536), b''):
+                    data.extend(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = downloaded * 100 // total
+                        print(
+                            f'\r[geniex] {label}: {downloaded / 1048576:.1f}/{total / 1048576:.1f} MB ({pct}%)',
+                            end='',
+                            flush=True,
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(
+                            f'\r[geniex] {label}: {downloaded / 1048576:.1f} MB',
+                            end='',
+                            flush=True,
+                            file=sys.stderr,
+                        )
+                if downloaded:
+                    print(file=sys.stderr)
+            return bytes(data)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        print(f'[geniex] source unavailable: {url} ({exc})', file=sys.stderr)
+        return None
+
+
 def _file_url_to_path(url: str) -> Path:
     parsed = urllib.parse.urlparse(url)
     return Path(urllib.request.url2pathname(parsed.path))
@@ -292,19 +339,21 @@ def _range_fetch(zip_url: str, lib_dir: Path, backends: frozenset[Backend]) -> i
     cd_bytes = _fetch_range(zip_url, cd_offset, cd_offset + cd_size - 1)
     entries = _parse_central_directory(cd_bytes)
 
-    extracted = 0
-    found_core = False
+    to_extract = []
     for entry in entries:
         rel = _classify_entry(entry.filename, backends)
-        if rel is None:
-            continue
+        if rel is not None:
+            to_extract.append((entry, rel))
+    n = len(to_extract)
+    found_core = False
+    for i, (entry, rel) in enumerate(to_extract, 1):
+        print(f'[geniex] ({i}/{n}) {rel}')
         if rel in _CORE_LIB_NAMES:
             found_core = True
         _extract_entry(zip_url, entry, lib_dir / rel)
-        extracted += 1
     if not found_core:
         raise RuntimeError(f'{zip_url}: no core libgeniex/geniex.dll entry in central directory')
-    return extracted
+    return n
 
 
 def _full_extract(zip_bytes: bytes, lib_dir: Path, backends: frozenset[Backend]) -> int:
@@ -434,7 +483,8 @@ def _try_one_source(
         print(f'[geniex] SDK libs installed at {lib_dir}')
         return True
 
-    zip_bytes = _try_download(zip_url)
+    label = zip_url.rsplit('/', 1)[-1]
+    zip_bytes = _download_with_progress(zip_url, label)
     if zip_bytes is None:
         errors.append(f'{zip_url}: download failed')
         return False
