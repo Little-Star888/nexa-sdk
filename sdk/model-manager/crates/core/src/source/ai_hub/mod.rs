@@ -92,13 +92,60 @@ async fn fetch_platform_info(
     parse_manifest("platform.json", &platform_bytes)
 }
 
-/// List every chipset AI Hub publishes assets for, with its canonical
-/// name and aliases. Sourced from `platform.json`. Sorted by the name
-/// callers display (reference device, falling back to the canonical id)
-/// so the FFI list is stable regardless of bucket ordering.
+/// The `os.ostype` values this build runs on; `None` means "don't filter".
+fn host_ostypes() -> Option<&'static [&'static str]> {
+    #[cfg(target_os = "windows")]
+    {
+        Some(&["OPERATING_SYSTEM_TYPE_WINDOWS"])
+    }
+    #[cfg(target_os = "android")]
+    {
+        Some(&["OPERATING_SYSTEM_TYPE_ANDROID"])
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Some(&[
+            "OPERATING_SYSTEM_TYPE_LINUX",
+            "OPERATING_SYSTEM_TYPE_QC_LINUX",
+        ])
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
+    {
+        None
+    }
+}
+
+/// Drop chipsets that don't run on any `allowed` OS. A chipset with no
+/// device entry is kept, so a payload lacking `devices` stays unfiltered.
+fn filter_chipsets_for_host(plat: &PlatformInfo, allowed: &[&str]) -> Vec<ChipsetInfo> {
+    plat.chipsets
+        .iter()
+        .filter(|c| {
+            let mut has_os = false;
+            for d in &plat.devices {
+                if d.chipset != c.name {
+                    continue;
+                }
+                has_os = true;
+                if allowed.contains(&d.os.ostype.as_str()) {
+                    return true;
+                }
+            }
+            !has_os
+        })
+        .cloned()
+        .collect()
+}
+
+/// List the chipsets AI Hub supports on the host OS, sorted by display name
+/// (reference device, else canonical id) for a stable FFI order.
 pub async fn list_supported_chipsets(cfg: &AiHubConfig) -> Result<Vec<ChipsetInfo>> {
     let transport: Arc<dyn HttpTransport> = Arc::new(ReqwestTransport::new()?);
-    let mut chipsets = fetch_platform_info(cfg, &transport).await?.chipsets;
+    let plat = fetch_platform_info(cfg, &transport).await?;
+    let mut chipsets = match host_ostypes() {
+        Some(allowed) => filter_chipsets_for_host(&plat, allowed),
+        None => plat.chipsets,
+    };
     chipsets.sort_by(|a, b| {
         let an = if a.reference_device.is_empty() {
             &a.name
@@ -662,5 +709,104 @@ mod tests {
         write_cache(&platform, br#"{"aihm_version":"0.52.0"}"#);
         assert!(read_cache(&platform, "v0.58.0", CACHE_TTL).is_none());
         assert!(read_cache(&platform, "v0.52.0", CACHE_TTL).is_some());
+    }
+
+    fn chipset(name: &str) -> ChipsetInfo {
+        ChipsetInfo {
+            name: name.to_string(),
+            reference_device: String::new(),
+            aliases: Vec::new(),
+        }
+    }
+
+    fn device(chipset: &str, ostype: &str) -> dto::DeviceInfo {
+        dto::DeviceInfo {
+            chipset: chipset.to_string(),
+            os: dto::DeviceOs {
+                ostype: ostype.to_string(),
+            },
+        }
+    }
+
+    fn sample_platform() -> PlatformInfo {
+        PlatformInfo {
+            chipsets: vec![
+                chipset("qualcomm-snapdragon-x-elite"),
+                chipset("qualcomm-qcs9075"),
+                chipset("qualcomm-qcs8275"),
+                chipset("qualcomm-snapdragon-8gen3"),
+            ],
+            devices: vec![
+                device(
+                    "qualcomm-snapdragon-x-elite",
+                    "OPERATING_SYSTEM_TYPE_WINDOWS",
+                ),
+                device("qualcomm-qcs9075", "OPERATING_SYSTEM_TYPE_QC_LINUX"),
+                device("qualcomm-qcs8275", "OPERATING_SYSTEM_TYPE_LINUX"),
+                device("qualcomm-snapdragon-8gen3", "OPERATING_SYSTEM_TYPE_ANDROID"),
+            ],
+        }
+    }
+
+    fn names(chipsets: &[ChipsetInfo]) -> Vec<&str> {
+        chipsets.iter().map(|c| c.name.as_str()).collect()
+    }
+
+    #[test]
+    fn filter_keeps_only_linux_chipsets() {
+        let out = filter_chipsets_for_host(
+            &sample_platform(),
+            &[
+                "OPERATING_SYSTEM_TYPE_LINUX",
+                "OPERATING_SYSTEM_TYPE_QC_LINUX",
+            ],
+        );
+        assert_eq!(names(&out), vec!["qualcomm-qcs9075", "qualcomm-qcs8275"]);
+    }
+
+    #[test]
+    fn filter_keeps_only_windows_chipset() {
+        let out = filter_chipsets_for_host(&sample_platform(), &["OPERATING_SYSTEM_TYPE_WINDOWS"]);
+        assert_eq!(names(&out), vec!["qualcomm-snapdragon-x-elite"]);
+    }
+
+    #[test]
+    fn filter_keeps_only_android_chipset() {
+        let out = filter_chipsets_for_host(&sample_platform(), &["OPERATING_SYSTEM_TYPE_ANDROID"]);
+        assert_eq!(names(&out), vec!["qualcomm-snapdragon-8gen3"]);
+    }
+
+    #[test]
+    fn filter_keeps_chipset_without_device_entry() {
+        let plat = PlatformInfo {
+            chipsets: vec![
+                chipset("qualcomm-qcs9075"),
+                chipset("qualcomm-snapdragon-8gen3"),
+            ],
+            devices: Vec::new(),
+        };
+        let out = filter_chipsets_for_host(&plat, &["OPERATING_SYSTEM_TYPE_WINDOWS"]);
+        assert_eq!(
+            names(&out),
+            vec!["qualcomm-qcs9075", "qualcomm-snapdragon-8gen3"]
+        );
+    }
+
+    #[test]
+    fn filter_keeps_multi_os_chipset_when_any_matches() {
+        let plat = PlatformInfo {
+            chipsets: vec![chipset("dual")],
+            devices: vec![
+                device("dual", "OPERATING_SYSTEM_TYPE_ANDROID"),
+                device("dual", "OPERATING_SYSTEM_TYPE_LINUX"),
+            ],
+        };
+        assert_eq!(
+            names(&filter_chipsets_for_host(
+                &plat,
+                &["OPERATING_SYSTEM_TYPE_LINUX"]
+            )),
+            vec!["dual"]
+        );
     }
 }

@@ -174,6 +174,7 @@ mod tests {
                     aliases: aliases.iter().map(|a| (*a).to_string()).collect(),
                 })
                 .collect(),
+            devices: Vec::new(),
         }
     }
 
@@ -185,6 +186,7 @@ mod tests {
                 reference_device: "Snapdragon X Elite CRD".to_string(),
                 aliases: vec![],
             }],
+            devices: Vec::new(),
         };
         assert_eq!(
             resolve_chipset(&plat, "snapdragon x elite crd").unwrap(),
@@ -210,6 +212,7 @@ mod tests {
                 reference_device: "Snapdragon X Elite CRD".to_string(),
                 aliases: vec!["x1e80100".to_string()],
             }],
+            devices: Vec::new(),
         };
         // canonical id, alias, and reference name all map to the reference name.
         for input in [
@@ -288,6 +291,7 @@ mod tests {
                 reference_device: "Snapdragon X Elite CRD".to_string(),
                 aliases: vec![],
             }],
+            devices: Vec::new(),
         };
         let ra = ModelReleaseAssets {
             model_id: "m".into(),

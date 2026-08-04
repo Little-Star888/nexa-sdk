@@ -100,10 +100,28 @@ pub struct AssetDetails {
 
 /// `platform.json`: chipset catalogue with aliases used to canonicalize
 /// the user-supplied chipset string.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct PlatformInfo {
     #[serde(default)]
     pub chipsets: Vec<ChipsetInfo>,
+    #[serde(default)]
+    pub devices: Vec<DeviceInfo>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct DeviceInfo {
+    #[serde(default)]
+    pub chipset: String,
+    #[serde(default)]
+    pub os: DeviceOs,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct DeviceOs {
+    #[serde(default)]
+    pub ostype: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
