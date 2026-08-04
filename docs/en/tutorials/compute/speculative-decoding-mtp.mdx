@@ -1,0 +1,178 @@
+---
+title: "Speculative decoding with MTP"
+description: "Accelerate Gemma-4-26B decoding on Snapdragon with a Multi-Token Prediction draft model, in geniex infer and the local server."
+---
+
+import Feedback from "/snippets/page-feedback.mdx";
+
+Speculative decoding speeds up a large model without changing what it produces. A cheap **draft** proposes several tokens ahead, the large **target** verifies them all in one forward pass, and the accepted prefix is committed at once. Because verification costs one pass no matter how many tokens it checks, accepted tokens after the first are nearly free — and the output is identical to what the target would have generated alone.
+
+**MTP (Multi-Token Prediction)** is the strongest variant of this. Rather than a separately-trained small model whose guesses drift from the target's, MTP uses prediction heads trained *alongside* the target that read its own hidden states — so proposals come from the same distribution the target samples from.
+
+This tutorial enables MTP for **Gemma-4-26B-A4B** on the Hexagon NPU, in `geniex infer` and then behind the local server.
+
+<Info>
+**Verified on:** Snapdragon X2 Elite, `llama_cpp` runtime, `--compute npu`, target + draft both `Q4_0`.
+</Info>
+
+<Note>Speculative decoding is **`llama_cpp`-only**. On the `qairt` runtime these flags are ignored with a warning rather than an error — `qairt` "SSD" bundles carry their own NPU acceleration that GenieX applies automatically.</Note>
+
+## **Prerequisites**
+
+- The CLI installed — see [Install](/en/run/cli/install).
+- A Snapdragon X-series device.
+- **~20 GB free disk**, and enough free RAM to hold both models at once — the target alone is ~15 GB at `Q4_0`.
+
+## **Step 1: Pull the model pair**
+
+MTP requires a draft trained against **the exact target** you're running. GenieX builds the draft context wired into the live target context (`LLAMA_CONTEXT_TYPE_MTP`), so an arbitrary small GGUF cannot be substituted — a mismatched pair fails the graph shape check at load time rather than silently degrading.
+
+| Role | Model | Precision |
+|---|---|---|
+| **Target** | `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` | `Q4_0` |
+| **Draft** | `RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf` | `Q4_0` |
+
+```powershell
+geniex pull google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0
+geniex pull RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0
+```
+
+Why this pair: Gemma-4 is the only publicly published family shipping MTP heads in a llama.cpp-compatible GGUF today, and `A4B` is the smallest target with a matching published draft — the `RachidAR/*-assistant` draft is trained against `A4B`, so pairing it with the smaller `E2B` target fails. `Q4_0` on both sides has the best [Hexagon NPU support](/en/models/supported#precisions-quantizations-supported).
+
+<Tip>`geniex infer` auto-pulls a missing draft, but pulling explicitly gives you a progress bar instead of a silent stall — and the server path (Step 3) **requires** it.</Tip>
+
+## **Step 2: Run it in `geniex infer`**
+
+Take a baseline first, so you have a number to compare against:
+
+```powershell
+geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu
+```
+
+Then enable MTP:
+
+```powershell
+geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu ^
+    --spec-type draft-mtp ^
+    --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0 ^
+    --draft-tokens 3
+```
+
+Add `-p "your prompt"` for a one-shot run instead of an interactive session.
+
+### **Reading the acceptance rate**
+
+With speculation active, the profiling block gains a `draft accept` line — accepted draft tokens over total proposed:
+
+```
+decode speed:   56.4 tok/s
+stop reason:    eos
+draft accept:   14/75 (18.7%)
+```
+
+This is the number that tells you whether speculation is paying off, and **you have to compare decode speed against your baseline to know.** Acceptance varies sharply by workload: predictable, structured output (code, JSON, formulaic prose) accepts far more than open-ended prose. Benchmark on prompts resembling your real traffic.
+
+<Warning>
+Acceptance for this published Gemma-4 pair measured **low (single-digit to ~20%)** during validation. MTP's ceiling is high in principle, but a publicly available assistant draft is not the same as one tuned for your target — if speculation doesn't beat your baseline decode speed, that's a real result, not a misconfiguration. Verify against the baseline before adopting it.
+</Warning>
+
+### **Tuning**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--draft-tokens` | `3` | Max draft tokens per verification step. |
+| `--draft-min` | `0` | Min draft tokens per step. `0` = llama.cpp default. |
+| `--draft-p-min` | `0` | Draft stops proposing below this confidence. `0` = llama.cpp default. |
+
+Start at `3`. Raise it only if acceptance is high — with mediocre acceptance a longer window makes things *worse*, since every rejected token was wasted target work. Lower it to `2` if acceptance is marginal.
+
+<Note>Raising `--draft-tokens` costs less memory than you'd expect: GenieX caps the draft context's batch at `max(64, draft-tokens)` instead of inheriting the target's, which otherwise allocates ~2.3 GiB of HTP scratch and OOMs.</Note>
+
+## **Step 3: Serve it over HTTP**
+
+<Warning>
+**The server never auto-downloads a draft model** — unlike `geniex infer`, it only consumes what's cached, so a missing draft errors mid-request. Complete [Step 1](#step-1-pull-the-model-pair) first.
+</Warning>
+
+`geniex serve` has no `--spec-type` flag; speculation is per-request. Either let `geniex run` forward the same flags you used above:
+
+```powershell
+geniex serve                      # terminal 1
+
+geniex run google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu ^
+    --spec-type draft-mtp ^
+    --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0 ^
+    --draft-tokens 3
+```
+
+…or send the fields directly on `POST /v1/chat/completions`:
+
+```bash
+curl http://127.0.0.1:18181/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0",
+    "messages": [{"role": "user", "content": "Explain speculative decoding briefly."}],
+    "compute": "npu",
+    "spec_type": "draft-mtp",
+    "spec_draft_model": "RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0",
+    "spec_n_max": 3
+  }'
+```
+
+| Field | Notes |
+|---|---|
+| `spec_type` | `draft-mtp`. Omit or leave empty to disable. |
+| `spec_draft_model` | Catalogue name `org/repo[:precision]` (**must be pulled**) or absolute GGUF path. |
+| `spec_n_max` | Max draft tokens per step. Default `3`. |
+| `spec_n_min` / `spec_p_min` | Match `--draft-min` / `--draft-p-min`. `0` = llama.cpp default. |
+
+<Note>**These fields are part of the model cache key.** Changing any of them rebuilds the model on the next request, so keep them stable across a benchmark run or you'll be measuring reload time. Full schema in the Swagger UI at `http://127.0.0.1:18181` — see [Local server](/en/run/cli/local-server).</Note>
+
+## **Troubleshooting**
+
+<AccordionGroup>
+  <Accordion title="No draft accept line in the output">
+    Speculation never ran. Setup failure is **non-fatal by design** — an unrecognized type or a draft context that won't build logs `speculative decoding setup failed; falling back to plain decoding` and continues at normal speed. Check the log for that line, and confirm the flag reached the process.
+  </Accordion>
+
+  <Accordion title="Load fails with a graph shape / tensor mismatch">
+    The draft doesn't match the target. The `RachidAR/*-assistant` draft is built for `gemma-4-26B-A4B` — not `E2B` or other sizes. Re-check both names and precisions against Step 1.
+  </Accordion>
+
+  <Accordion title="Server: resolve draft model ... error">
+    The server does not auto-pull. Run `geniex pull` for the draft repo with the same `:precision` suffix you're sending, then confirm with `geniex list`.
+  </Accordion>
+
+  <Accordion title="Out of memory on load">
+    Target + draft need substantial free RAM together. Close other models (the server's `--keepalive` may be holding one resident), lower `--nctx`, or switch to `ngram-mod`, which loads no second model.
+  </Accordion>
+
+  <Accordion title="Warning: speculative decoding is only supported by llama_cpp">
+    Your model resolved to the `qairt` runtime, which doesn't implement it — the flags are dropped and inference continues normally. Use a GGUF model for the `llama_cpp` runtime.
+  </Accordion>
+</AccordionGroup>
+
+## **Other speculative types**
+
+`--spec-type` forwards to llama.cpp's type parser, so it accepts more names than GenieX validates. One other is exercised on Snapdragon:
+
+- **`ngram-mod`** — self-speculative, no draft model, works with **any** GGUF. Verified on X Elite across CPU, GPU, and NPU. Weaker than a matched MTP pair on open-ended text, but useful on repetitive output, and free to try.
+
+```powershell
+geniex infer unsloth/Qwen3-0.6B-GGUF --compute gpu --spec-type ngram-mod -p "..."
+```
+
+<Warning>
+Treat anything outside `draft-mtp` and `ngram-mod` as **unsupported on Snapdragon**. `draft-eagle3` and `draft-simple` parse and load, but GenieX builds an MTP draft context for *every* draft-model type — they aren't wired to their own upstream paths. The remaining `ngram-*` variants have no Snapdragon validation.
+</Warning>
+
+## **Next steps**
+
+- [CLI reference](/en/run/cli/reference) — every `geniex infer` flag.
+- [Local server](/en/run/cli/local-server) — the full OpenAI-compatible API.
+- [Platforms & runtimes](/en/get-started/platforms) — compute units, and how `npu` differs from `hybrid`.
+
+<br />
+
+<Feedback />
