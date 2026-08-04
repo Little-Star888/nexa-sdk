@@ -93,6 +93,20 @@
             ]
           },
           {
+            "group": "Tutorials",
+            "icon": "graduation-cap",
+            "pages": [
+              "en/tutorials/overview",
+              {
+                "group": "Compute (Windows ARM64)",
+                "icon": "laptop",
+                "pages": [
+                  "en/tutorials/compute/speculative-decoding-mtp"
+                ]
+              }
+            ]
+          },
+          {
             "group": "Resources",
             "icon": "circle-question",
             "pages": [
