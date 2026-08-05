@@ -405,7 +405,7 @@ def _try_one_source(
     errors: list[str],
 ) -> bool:
     sha_url = f'{zip_url}.sha256'
-    print(f'[geniex] Trying {name}: {zip_url}', file=_tty())
+    print(f'\n[geniex] Trying {name}: {zip_url}', file=_tty())
 
     sha_bytes = _try_download(sha_url)
     # Public defaults hard-fail without sidecar so unattended installs never
