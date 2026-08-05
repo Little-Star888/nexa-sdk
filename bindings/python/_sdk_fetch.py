@@ -40,13 +40,9 @@ _EOCD_SIG = b'PK\x05\x06'
 _CD_SIG = b'PK\x01\x02'
 _LFH_SIG = b'PK\x03\x04'
 _EOCD_FIXED = 22
-_EOCD_MAX_COMMENT = 0xFFFF
-_CD_HDR_FIXED = 46
 _LFH_FIXED = 30
 _ZIP64_U16 = 0xFFFF
 _ZIP64_U32 = 0xFFFFFFFF
-# Suffix probe sized to typically capture EOCD + the whole central directory
-# in a single GET for a normal SDK zip (CD ≈ a few KB for ~20 entries).
 _SUFFIX_PROBE = 262144
 
 
@@ -159,13 +155,6 @@ def _fetch(
     exact: bool = True,
     label: str | None = None,
 ) -> tuple[bytes, int]:
-    """Range GET returning ``(data, total_resource_size)``.
-
-    ``end=None`` requests a suffix range (``bytes=-start``), i.e. the last
-    ``start`` bytes of the resource; otherwise fetches the inclusive range
-    ``[start, end]``. ``exact=True`` requires the response to match the
-    requested length exactly.
-    """
     if url.startswith('file://'):
         path = _file_url_to_path(url)
         total = path.stat().st_size
@@ -214,7 +203,6 @@ class _CDEntry:
 def _parse_central_directory(cd_bytes: bytes) -> list[_CDEntry]:
     fmt = '<4s6H3L5H2L'
     fixed = struct.calcsize(fmt)
-    assert fixed == _CD_HDR_FIXED
     entries: list[_CDEntry] = []
     pos = 0
     n = len(cd_bytes)
@@ -319,9 +307,6 @@ def _range_fetch(zip_url: str, lib_dir: Path, backends: frozenset[Backend], labe
 
     span_start = min(e.local_header_offset for e, _ in selected)
     last = max(selected, key=lambda p: p[0].local_header_offset)[0]
-    # Upper bound on the last selected entry's on-disk size: LFH + name + extra
-    # (each capped at 0xFFFF by the zip spec) + compressed payload. One
-    # coalesced GET across `[span_start, span_end]` replaces N per-entry GETs.
     span_end = min(
         last.local_header_offset + _LFH_FIXED + 2 * _ZIP64_U16 + last.compressed_size - 1,
         cd_offset - 1,
