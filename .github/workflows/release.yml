@@ -259,6 +259,10 @@ jobs:
           mv geniex-cli-setup.exe "geniex-cli-setup-windows-arm64-${RELEASE_TAG}.exe"
           mv geniex-android-aar.aar "geniex-android-aar-${RELEASE_TAG}.aar"
 
+          mv geniex-*.tar.gz "geniex-pysdist-${RELEASE_TAG}.tar.gz"
+          mv geniex_llama_cpp-*.tar.gz "geniex-pysdist-llama_cpp-${RELEASE_TAG}.tar.gz"
+          mv geniex_qairt-*.tar.gz "geniex-pysdist-qairt-${RELEASE_TAG}.tar.gz"
+
           staged="geniex-cli-linux-arm64-${RELEASE_TAG}"
           mkdir -p "${staged}"
           unzip -q cli-linux-arm64/artifact.zip -d "${staged}"
