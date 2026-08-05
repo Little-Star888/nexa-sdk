@@ -43,11 +43,12 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
     // MoE override + null terminator; must outlive the load_from_file call below.
     llama_model_tensor_buft_override tensor_overrides[2];
 
-    // FIX: HTP backend patch — only reacquire HTP sessions when we're actually
-    // going to use them (npu / hybrid). CPU and GPU targets shouldn't be gated
-    // on the ADSP domain's health.
+    // FIX: HTP backend patch — reacquire whenever the HTP backend is present
+    // in the ggml registry, regardless of the current target device. Any load
+    // walks the registry's device list, and a stale session pointer left from
+    // a prior release_sessions crashes the load even on cpu / gpu targets.
     {
-        if (device == Device::NPU) {
+        if (htp::htp_backend_present()) {
             htp::reacquire_before_load();
         }
     }
