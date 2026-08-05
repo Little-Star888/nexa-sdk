@@ -82,6 +82,7 @@ class _RangeAwareHandler(http.server.BaseHTTPRequestHandler):
 
     range_supported = True
     sha_available = True
+    get_log: list[tuple[str, str | None]] = []
 
     def log_message(self, *args, **kwargs):  # silence noisy stderr in tests
         return
@@ -99,6 +100,7 @@ class _RangeAwareHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 — http.server hook name
         body = self._resolve()
+        self.get_log.append((self.path, self.headers.get('Range')))
         if body is None:
             self.send_error(404)
             return
@@ -197,6 +199,26 @@ def test_range_fetch_both_backends(tmp_path, monkeypatch, http_server):
     assert (lib / 'libgeniex.so').read_bytes() == CORE_BODY
     assert (lib / 'llama_cpp' / 'ggml.so').exists()
     assert (lib / 'qairt' / 'libQnnHtp.so').exists()
+
+
+def test_range_fetch_coalesces_data_gets(tmp_path, monkeypatch, http_server):
+    """Range path issues one suffix probe + at most one CD read + one data GET.
+
+    Regression for #1366 — the old implementation ran one Range GET per
+    selected zip entry (~N sequential HTTP round-trips), which dominated
+    pip-install wall-clock over high-RTT links.
+    """
+    _patch_platform(monkeypatch)
+    _, base_url = http_server
+    _set_override(monkeypatch, base_url)
+    monkeypatch.setattr(_RangeAwareHandler, 'get_log', [])
+
+    sdk_fetch.fetch(tmp_path, RELEASE_TAG, backends=('llama-cpp', 'qairt'))
+
+    zip_gets = [(path, rng) for path, rng in _RangeAwareHandler.get_log if path == f'/{ASSET}']
+    assert 1 <= len(zip_gets) <= 3, f'expected ≤3 zip GETs on range path, got {zip_gets}'
+    # The suffix probe is the only zero-start range.
+    assert sum(1 for _, rng in zip_gets if rng and rng.startswith('bytes=-')) == 1
 
 
 def test_full_fallback_when_range_unsupported(tmp_path, monkeypatch, http_server):
