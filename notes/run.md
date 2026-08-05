@@ -204,13 +204,13 @@ Upstream background: `third-party/llama.cpp/docs/backend/snapdragon/windows.md`.
 
 ## Update checks
 
-Before `serve` / `run` / `infer` start, geniex consults a cached "latest release" entry and prints a one-line notice if a newer version exists, at most once per 8 h. The cache is refreshed in the background every 24 h.
+geniex consults a cached "latest release" entry and prints a one-line notice if a newer version exists, at most once per 8 h. A background refresh re-fetches at most every 24 h.
 
-Because the release repo (`qualcomm/GenieX`) is private, the background refresh needs a GitHub PAT with `repo:read`. Supply it via either env var — `GENIEX_GITHUB_TOKEN` wins if both are set:
+The version data comes from a public S3 index (`qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-geniex/index.json`). Failures are silent (logged at debug only, no stdout spam).
 
-```bash
-export GENIEX_GITHUB_TOKEN=ghp_…   # geniex-specific
-export GITHUB_TOKEN=ghp_…          # same convention as `gh` / CI
-```
+Run `geniex update` to upgrade:
 
-Without a token the probe silently no-ops (no stdout spam). Pass `--skip-update` on any command to skip the probe entirely for that invocation.
+- **Windows** — downloads and launches the signed installer once it's published; otherwise reports "up-to-date".
+- **Linux** — prints the install-script one-liner to re-run (`curl -fsSL … | bash`); auto-update is not wired up yet.
+
+Pass `--skip-update` on any command to skip the probe (and the notify banner) entirely for that invocation.
