@@ -51,7 +51,7 @@ $content | Set-Content $pth.FullName
 Get-Content $pth.FullName
 Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$ROOT\get-pip.py" -UseBasicParsing
 & "$PY_DIR\python.exe" "$ROOT\get-pip.py" --no-warn-script-location 2>&1
-& "$PY_DIR\python.exe" -m pip install --no-warn-script-location "pytest>=7.0" "tqdm>=4.65" 2>&1
+& "$PY_DIR\python.exe" -m pip install --no-warn-script-location "pytest>=7.0" "pytest-reportlog>=0.4" "tqdm>=4.65" 2>&1
 & "$PY_DIR\python.exe" --version
 & "$PY_DIR\python.exe" -m pytest --version
 
@@ -80,9 +80,14 @@ Write-Output "=== pytest ==="
 # substituted by run_qdc_pytest.py — one job per plugin so neither matrix
 # leg hits the QDC POWERSHELL framework's 60-min device timeout (full
 # 26-cell run took ~62 min and was cut at the last QAIRT VLM cell).
+# --report-log writes one NDJSON line per test as it completes and flushes
+# after each write, so a mid-run process abort still leaves a readable record
+# of every test that had already finished. --junitxml only flushes at the end
+# of the session, so it's empty whenever pytest doesn't exit cleanly.
 & "$PY_DIR\python.exe" -m pytest . -v `
     --tb=short `
     --junitxml="$LOG\device-results.xml" `
+    --report-log="$LOG\device-report.log" `
     -m "{MARKER}" 2>&1
 $rc = $LASTEXITCODE
 Write-Output "=== pytest exit $rc ==="

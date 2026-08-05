@@ -23,6 +23,7 @@ The QDC submit/poll/collect plumbing is shared with Geniex Bench via
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import shutil
@@ -83,22 +84,14 @@ def build_windows_artifact(pkg_dir: Path, marker: str, tmp: Path) -> Path:
     return Path(shutil.make_archive(str(tmp / 'artifact'), 'zip', stage))
 
 
-def summarise(xml: bytes, plugin: str = '') -> tuple[int, str]:
-    """Parse JUnit XML; return (exit_code, markdown). Non-zero on any failure.
+Row = tuple[str, str, str, str]  # (status, name, message, body)
 
-    Lists every cell with its status (like pytest's own per-test output) so it's
-    clear which ran vs skipped, and folds each failure's traceback / each skip's
-    reason in so the device-side detail is visible without re-running on QDC.
-    """
+
+def _rows_from_junit(xml: bytes) -> list[Row]:
     root = ElementTree.fromstring(xml)
     suites = root.iter('testsuite') if root.tag != 'testsuite' else [root]
-    total = failed = errored = skipped = 0
-    rows: list[tuple[str, str, str, str]] = []  # (status, name, message, body)
+    rows: list[Row] = []
     for s in suites:
-        total += int(s.get('tests', 0))
-        failed += int(s.get('failures', 0))
-        errored += int(s.get('errors', 0))
-        skipped += int(s.get('skipped', 0))
         for case in s.iter('testcase'):
             name = f'{case.get("classname", "")}::{case.get("name", "")}'
             fail = case.find('failure')
@@ -111,15 +104,94 @@ def summarise(xml: bytes, plugin: str = '') -> tuple[int, str]:
                 rows.append(('SKIP', name, skip.get('message', ''), ''))
             else:
                 rows.append(('PASS', name, '', ''))
+    return rows
 
-    passed = total - failed - errored - skipped
-    verdict = 'PASS' if failed == 0 and errored == 0 else 'FAIL'
+
+def _longrepr_text(longrepr: object) -> str:
+    """Flatten pytest-reportlog's structured longrepr into printable text.
+
+    pytest-reportlog serialises tracebacks as nested dicts (ReprEntry /
+    ReprTraceback / …). JUnit's <failure> body is already a plain string, so
+    normalise the reportlog form to the same shape before rendering.
+    """
+    if not longrepr:
+        return ''
+    if isinstance(longrepr, str):
+        return longrepr
+    if isinstance(longrepr, dict):
+        parts: list[str] = []
+        tb = longrepr.get('reprtraceback') or {}
+        for entry in tb.get('reprentries') or []:
+            data = entry.get('data') or {}
+            for ln in data.get('lines') or []:
+                parts.append(ln)
+            loc = data.get('reprfileloc') or {}
+            if loc:
+                path = loc.get('path', '')
+                lineno = loc.get('lineno', '')
+                msg = loc.get('message', '')
+                parts.append(f'{path}:{lineno}: {msg}'.strip())
+        crash = longrepr.get('reprcrash') or {}
+        if crash and not parts:
+            parts.append(f'{crash.get("path", "")}:{crash.get("lineno", "")}: {crash.get("message", "")}')
+        return '\n'.join(parts).strip()
+    return str(longrepr)
+
+
+def _rows_from_reportlog(data: bytes) -> tuple[list[Row], set[str]]:
+    """Parse pytest-reportlog NDJSON into rows. Also returns the set of nodeids
+    that started but never produced a call-phase report (i.e. the process died
+    mid-test); those need to be surfaced as errored cells.
+    """
+    outcomes: dict[str, Row] = {}
+    started: set[str] = set()
+    for line in data.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get('$report_type') != 'TestReport':
+            continue
+        nodeid = rec.get('nodeid') or ''
+        when = rec.get('when')
+        outcome = rec.get('outcome', '')
+        if when == 'setup':
+            started.add(nodeid)
+        if when == 'call' or (when == 'setup' and outcome != 'passed'):
+            body = _longrepr_text(rec.get('longrepr'))
+            msg = ''
+            crash = (rec.get('longrepr') or {}).get('reprcrash') if isinstance(rec.get('longrepr'), dict) else None
+            if crash:
+                msg = crash.get('message', '')
+            if outcome == 'passed':
+                outcomes[nodeid] = ('PASS', nodeid, '', '')
+            elif outcome == 'skipped':
+                outcomes[nodeid] = ('SKIP', nodeid, msg or body, '')
+            else:  # 'failed' / 'error'
+                outcomes[nodeid] = ('FAIL', nodeid, msg, body)
+    incomplete = started - set(outcomes.keys())
+    return list(outcomes.values()), incomplete
+
+
+def _render_summary(rows: list[Row], plugin: str, incomplete: set[str] | None = None) -> tuple[int, str]:
+    """Turn a (status, name, message, body) row list into the CI markdown."""
+    incomplete = incomplete or set()
+    for nodeid in sorted(incomplete):
+        rows.append(('FAIL', nodeid, 'process aborted before test completed', ''))
+    passed = sum(1 for r in rows if r[0] == 'PASS')
+    failed = sum(1 for r in rows if r[0] == 'FAIL')
+    skipped = sum(1 for r in rows if r[0] == 'SKIP')
+    total = passed + failed + skipped
+    verdict = 'PASS' if failed == 0 else 'FAIL'
     icon = {'PASS': '✅', 'SKIP': '⏭️', 'FAIL': '❌'}
     title_suffix = f' — {plugin}' if plugin else ''
     lines = [
         f'## QDC pytest — X Elite Windows{title_suffix}',
         '',
-        f'**{verdict}** — {passed} passed, {failed} failed, {errored} errored, {skipped} skipped (of {total})',
+        f'**{verdict}** — {passed} passed, {failed} failed, 0 errored, {skipped} skipped (of {total})',
         '',
     ]
     fails: list[tuple[str, str, str]] = []
@@ -152,6 +224,29 @@ def summarise(xml: bytes, plugin: str = '') -> tuple[int, str]:
                 '',
             ]
     return (0 if verdict == 'PASS' else 1), '\n'.join(lines) + '\n'
+
+
+def summarise(xml: bytes, plugin: str = '') -> tuple[int, str]:
+    """Parse JUnit XML; return (exit_code, markdown). Non-zero on any failure.
+
+    Lists every cell with its status (like pytest's own per-test output) so it's
+    clear which ran vs skipped, and folds each failure's traceback / each skip's
+    reason in so the device-side detail is visible without re-running on QDC.
+    """
+    return _render_summary(_rows_from_junit(xml), plugin)
+
+
+def summarise_reportlog(data: bytes, plugin: str = '') -> tuple[int, str]:
+    """Parse pytest-reportlog NDJSON; return (exit_code, markdown).
+
+    The JUnit path is preferred when pytest exits cleanly, but --junitxml only
+    flushes at session end — so a native abort (Fatal Python error / Windows
+    fatal exception) leaves the XML empty. --report-log flushes after every
+    test, so the same rows are reconstructable from its NDJSON as long as the
+    log survived the crash.
+    """
+    rows, incomplete = _rows_from_reportlog(data)
+    return _render_summary(rows, plugin, incomplete)
 
 
 def write_summary(text: str) -> None:
@@ -200,7 +295,11 @@ def main() -> int:
             timeout=args.job_timeout,
         )
 
-        members = _qdc.download_log_members(client, job_id, tmp, lambda n: n == 'device-results.xml')
+        # JUnit is the clean-exit source of truth; --report-log NDJSON is the
+        # abort-tolerant fallback (see summarise_reportlog).
+        results = _qdc.download_log_members(
+            client, job_id, tmp, lambda n: n in ('device-results.xml', 'device-report.log')
+        )
         # Always pull the device-side logs so the on-device run is visible in CI
         # regardless of pass/fail. test_dbg.stdout is QDC's full PowerShell
         # stdout / stderr capture — strictly more complete than our
@@ -216,13 +315,19 @@ def main() -> int:
     for name, data in diag:
         print(f'\n===== device log: {name} =====\n{data.decode("utf-8", "replace")}')
 
-    if not members:
-        log.error('no JUnit XML recovered (see device logs above)')
+    by_name = {name: data for name, data in results}
+    if b'</testsuite>' in by_name.get('device-results.xml', b''):
+        code, md = summarise(by_name['device-results.xml'], args.plugin)
+    elif by_name.get('device-report.log'):
+        log.warning('JUnit XML missing or incomplete; reconstructing summary from --report-log NDJSON')
+        code, md = summarise_reportlog(by_name['device-report.log'], args.plugin)
+    else:
+        log.error('no JUnit XML or report-log recovered (see device logs above)')
         write_summary(
-            f'## QDC pytest — X Elite Windows — {args.plugin}\n\n' 'No JUnit XML recovered (see device logs above).\n'
+            f'## QDC pytest — X Elite Windows — {args.plugin}\n\n'
+            'No JUnit XML or report-log recovered (see device logs above).\n'
         )
         return 1
-    code, md = summarise(members[0][1], args.plugin)
     write_summary(md)
     return code
 
