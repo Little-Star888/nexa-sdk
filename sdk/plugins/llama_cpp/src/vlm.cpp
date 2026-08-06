@@ -38,10 +38,10 @@ int32_t LlamaVlm::create(const geniex_VlmCreateInput* input) {
     const Device              device = classify_device(input->device_id, input->config.n_gpu_layers);
     const geniex_ModelConfig& config = input->config;
 
-    // See llm.cpp for the rationale behind the HTP session release/reacquire
-    // dance. Only reacquire when we're actually going to use HTP — CPU/GPU
-    // targets shouldn't touch the ADSP domain.
-    if (device == Device::NPU) {
+    // See llm.cpp: reacquire whenever the HTP backend is registered, since
+    // any llama.cpp load walks the registry's device list and a stale session
+    // pointer left from a prior release will crash the load on cpu / gpu too.
+    if (htp::htp_backend_present()) {
         htp::reacquire_before_load();
     }
 
