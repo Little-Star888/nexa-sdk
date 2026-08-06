@@ -293,11 +293,12 @@ func chatCompletionsLLM(c *gin.Context, param ChatCompletionRequest, modelParam 
 
 		wait := func() error { resWg.Wait(); return err }
 		usage := func() openai.CompletionUsage { return profile2Usage(res.ProfileData) }
+		finish := func() string { return mapFinishReason(res.ProfileData.StopReason) }
 		includeUsage := param.StreamOptions.IncludeUsage.Value
 		if !parseTool {
-			streamPlainText(c, dataCh, wait, includeUsage, usage)
+			streamPlainText(c, dataCh, wait, includeUsage, usage, finish)
 		} else {
-			streamToolCall(c, dataCh, wait, includeUsage, usage)
+			streamToolCall(c, dataCh, wait, includeUsage, usage, finish)
 		}
 
 		stopGen = true
@@ -528,11 +529,12 @@ func chatCompletionsVLM(c *gin.Context, param ChatCompletionRequest, modelParam 
 
 		wait := func() error { resWg.Wait(); return err }
 		usage := func() openai.CompletionUsage { return profile2Usage(res.ProfileData) }
+		finish := func() string { return mapFinishReason(res.ProfileData.StopReason) }
 		includeUsage := param.StreamOptions.IncludeUsage.Value
 		if !parseTool {
-			streamPlainText(c, dataCh, wait, includeUsage, usage)
+			streamPlainText(c, dataCh, wait, includeUsage, usage, finish)
 		} else {
-			streamToolCall(c, dataCh, wait, includeUsage, usage)
+			streamToolCall(c, dataCh, wait, includeUsage, usage, finish)
 		}
 
 		stopGen = true
@@ -668,31 +670,74 @@ func writeBlockingResponse(c *gin.Context, fullText string, profile geniex_sdk.P
 // generate result is a value or pointer.
 type streamUsage func() openai.CompletionUsage
 
-// streamPlainText drains dataCh as content chunks, then emits optional usage
-// and [DONE].
-func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, usage streamUsage) {
+// streamFinish is read once dataCh closes; it maps the generate result's
+// stop_reason to the OpenAI finish_reason vocabulary for the final chunk.
+type streamFinish func() string
+
+// The openai-go response structs marshal FinishReason as a plain string, so
+// every chunk carried `"finish_reason": ""` and no terminal chunk was sent.
+// The OpenAI streaming spec requires null on intermediate chunks and
+// "stop" / "length" / "tool_calls" on a final chunk with an empty delta —
+// without it, clients never detect completion (#1243). These local types
+// give the stream spec-compliant serialization.
+
+type streamDelta struct {
+	Role      string                                          `json:"role,omitempty"`
+	Content   string                                          `json:"content,omitempty"`
+	ToolCalls []openai.ChatCompletionChunkChoiceDeltaToolCall `json:"tool_calls,omitempty"`
+}
+
+type streamChoice struct {
+	Index        int64       `json:"index"`
+	Delta        streamDelta `json:"delta"`
+	FinishReason *string     `json:"finish_reason"` // null until the final chunk
+}
+
+type streamChunk struct {
+	Object  string                  `json:"object"`
+	Choices []streamChoice          `json:"choices"`
+	Usage   *openai.CompletionUsage `json:"usage,omitempty"`
+}
+
+const streamChunkObject = "chat.completion.chunk"
+
+func contentChunk(content string) streamChunk {
+	return streamChunk{
+		Object: streamChunkObject,
+		Choices: []streamChoice{{
+			Delta: streamDelta{Role: string(openai.MessageRoleAssistant), Content: content},
+		}},
+	}
+}
+
+// finishChunk is the terminal chunk: empty delta, non-null finish_reason.
+func finishChunk(reason string) streamChunk {
+	return streamChunk{
+		Object:  streamChunkObject,
+		Choices: []streamChoice{{FinishReason: &reason}},
+	}
+}
+
+func usageChunk(u openai.CompletionUsage) streamChunk {
+	return streamChunk{Object: streamChunkObject, Choices: []streamChoice{}, Usage: &u}
+}
+
+// streamPlainText drains dataCh as content chunks, then emits the finishing
+// chunk, optional usage and [DONE].
+func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, usage streamUsage, finish streamFinish) {
 	c.Stream(func(w io.Writer) bool {
 		r, ok := <-dataCh
 		if ok {
-			chunk := openai.ChatCompletionChunk{}
-			chunk.Choices = append(chunk.Choices, openai.ChatCompletionChunkChoice{
-				Delta: openai.ChatCompletionChunkChoiceDelta{
-					Content: r,
-					Role:    string(openai.MessageRoleAssistant),
-				},
-			})
-			c.SSEvent("", chunk)
+			c.SSEvent("", contentChunk(r))
 			return true
 		}
 		if err := wait(); err != nil {
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
+		c.SSEvent("", finishChunk(finish()))
 		if includeUsage {
-			c.SSEvent("", openai.ChatCompletionChunk{
-				Choices: []openai.ChatCompletionChunkChoice{},
-				Usage:   usage(),
-			})
+			c.SSEvent("", usageChunk(usage()))
 		}
 		c.SSEvent("", "[DONE]")
 		return false
@@ -700,8 +745,9 @@ func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, in
 }
 
 // streamToolCall buffers the stream and emits a tool-call chunk once dataCh
-// closes; falls back to a content chunk when parsing fails.
-func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, usage streamUsage) {
+// closes; falls back to a content chunk when parsing fails. Either way the
+// stream ends with a finishing chunk, optional usage and [DONE].
+func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, usage streamUsage, finish streamFinish) {
 	buffer := strings.Builder{}
 	c.Stream(func(w io.Writer) bool {
 		r, ok := <-dataCh
@@ -714,38 +760,32 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
+		finishReason := "tool_calls"
 		toolCall, err := parseToolCalls(buffer.String())
 		if err != nil {
 			slog.Warn("Tool call parse error, fallback to text", "error", err)
-			chunk := openai.ChatCompletionChunk{}
-			chunk.Choices = append(chunk.Choices, openai.ChatCompletionChunkChoice{
-				Delta: openai.ChatCompletionChunkChoiceDelta{
-					Content: buffer.String(),
-					Role:    string(openai.MessageRoleAssistant),
-				},
+			finishReason = finish()
+			c.SSEvent("", contentChunk(buffer.String()))
+		} else {
+			c.SSEvent("", streamChunk{
+				Object: streamChunkObject,
+				Choices: []streamChoice{{
+					Delta: streamDelta{
+						ToolCalls: []openai.ChatCompletionChunkChoiceDeltaToolCall{{
+							ID:   fmt.Sprintf("call_%d", rand.Uint32()),
+							Type: "function",
+							Function: openai.ChatCompletionChunkChoiceDeltaToolCallFunction{
+								Name:      toolCall.Name,
+								Arguments: toolCall.Arguments,
+							},
+						}},
+					},
+				}},
 			})
-			c.SSEvent("", chunk)
-			return false
 		}
-		c.SSEvent("", openai.ChatCompletionChunk{
-			Choices: []openai.ChatCompletionChunkChoice{{
-				Delta: openai.ChatCompletionChunkChoiceDelta{
-					ToolCalls: []openai.ChatCompletionChunkChoiceDeltaToolCall{{
-						ID:   fmt.Sprintf("call_%d", rand.Uint32()),
-						Type: "function",
-						Function: openai.ChatCompletionChunkChoiceDeltaToolCallFunction{
-							Name:      toolCall.Name,
-							Arguments: toolCall.Arguments,
-						},
-					}},
-				},
-			}},
-		})
+		c.SSEvent("", finishChunk(finishReason))
 		if includeUsage {
-			c.SSEvent("", openai.ChatCompletionChunk{
-				Choices: []openai.ChatCompletionChunkChoice{},
-				Usage:   usage(),
-			})
+			c.SSEvent("", usageChunk(usage()))
 		}
 		c.SSEvent("", "[DONE]")
 		return false
