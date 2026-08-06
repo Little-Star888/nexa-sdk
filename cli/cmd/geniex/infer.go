@@ -237,17 +237,17 @@ func loadStopSequences() ([]string, error) {
 	return stopSequences, nil
 }
 
-// modelLoadedLine summarizes the loaded session for --verbose. device echoes
+// modelLoadedLine summarizes the loaded session for --verbose. compute echoes
 // the user alias, not the SDK's device_id (cpu/hybrid resolve to an empty one).
 // Mirrors geniex_resolve_device: empty/"auto" and qairt → npu.
 func modelLoadedLine(runtimeID, computeUnit string, ngl, nctx int32) string {
-	device := strings.ToLower(strings.TrimSpace(computeUnit))
-	if runtimeID == geniex_sdk.RuntimeQairt || device == "" || device == "auto" {
-		device = geniex_sdk.ComputeUnitNPU
+	computeUnit = strings.ToLower(strings.TrimSpace(computeUnit))
+	if runtimeID == geniex_sdk.RuntimeQairt || computeUnit == "" || computeUnit == "auto" {
+		computeUnit = geniex_sdk.ComputeUnitNPU
 	}
 	parts := []string{
-		fmt.Sprintf("backend=%s", runtimeID),
-		fmt.Sprintf("device=%s", device),
+		fmt.Sprintf("runtime=%s", runtimeID),
+		fmt.Sprintf("compute=%s", computeUnit),
 	}
 	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
 		parts = append(parts,
