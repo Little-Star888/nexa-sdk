@@ -11,12 +11,10 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/bytedance/sonic"
-	"github.com/bytedance/sonic/ast"
 	"github.com/gin-gonic/gin"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -637,7 +635,7 @@ func writeContextLengthExceeded(c *gin.Context, fullText string, profile geniex_
 // when parseTool matches, content response otherwise (or on parse failure).
 func writeBlockingResponse(c *gin.Context, fullText string, profile geniex_sdk.ProfileData, parseTool bool) {
 	if parseTool {
-		toolCall, err := parseToolCalls(fullText)
+		toolCall, err := utils.ParseToolCalls(fullText)
 		if err == nil {
 			choice := openai.ChatCompletionChoice{}
 			choice.FinishReason = "tool_calls"
@@ -761,7 +759,7 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 			return false
 		}
 		finishReason := "tool_calls"
-		toolCall, err := parseToolCalls(buffer.String())
+		toolCall, err := utils.ParseToolCalls(buffer.String())
 		if err != nil {
 			slog.Warn("Tool call parse error, fallback to text", "error", err)
 			finishReason = finish()
@@ -815,48 +813,4 @@ func mapFinishReason(stopReason string) string {
 	default:
 		return "stop"
 	}
-}
-
-// =============== tool-call parsing ===============
-
-var toolCallRegex = regexp.MustCompile(`<tool_call>([\s\S]+)<\/tool_call>` + "|" + "```json([\\s\\S]+)```")
-
-func parseToolCalls(resp string) (openai.ChatCompletionMessageFunctionToolCallFunction, error) {
-	match := toolCallRegex.FindStringSubmatch(resp)
-	if len(match) <= 1 {
-		return openai.ChatCompletionMessageFunctionToolCallFunction{}, errors.New("tool call not match")
-	}
-	matched := match[1]
-	if matched == "" && len(match) > 2 {
-		matched = match[2]
-	}
-
-	slog.Debug("Tool call matched", "matched", matched)
-
-	name, err := sonic.GetFromString(matched, "name")
-	toolCall := openai.ChatCompletionMessageFunctionToolCallFunction{}
-	if err != nil {
-		return openai.ChatCompletionMessageFunctionToolCallFunction{}, err
-	}
-	toolCall.Name, err = name.String()
-	if err != nil {
-		return openai.ChatCompletionMessageFunctionToolCallFunction{}, err
-	}
-
-	arguments, err := sonic.GetFromString(matched, "arguments")
-	if err != nil {
-		return openai.ChatCompletionMessageFunctionToolCallFunction{}, err
-	}
-	switch arguments.TypeSafe() {
-	case ast.V_OBJECT:
-		toolCall.Arguments, _ = arguments.Raw()
-	case ast.V_STRING:
-		toolCall.Arguments, _ = arguments.String()
-	default:
-		return openai.ChatCompletionMessageFunctionToolCallFunction{}, errors.New("unknown arguments type")
-	}
-
-	slog.Debug("Parsed tool call", "tool_call", toolCall)
-
-	return toolCall, nil
 }
