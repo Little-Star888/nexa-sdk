@@ -17,6 +17,8 @@ This tutorial enables MTP for **Gemma-4-26B-A4B** on the Hexagon NPU, in `geniex
 
 <Note>Speculative decoding is **`llama_cpp`-only**. On the `qairt` runtime these flags are ignored with a warning rather than an error — `qairt` "SSD" bundles carry their own NPU acceleration that GenieX applies automatically.</Note>
 
+<Note>MTP is **text-only** — upstream llama.cpp's speculative path doesn't currently combine with image / audio inputs. If `--spec-type` is set on a model that GenieX classified as multimodal (mmproj sibling in the repo), GenieX runs the LLM path and drops any image / audio content with a warning; the model itself is unchanged and remains usable for multimodal inference without `--spec-type`.</Note>
+
 ## **Prerequisites**
 
 - The CLI installed — see [Install](/en/run/cli/install).
