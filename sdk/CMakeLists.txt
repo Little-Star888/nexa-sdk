@@ -139,27 +139,35 @@ enable_testing()
 #   the llama.cpp plugin to tear down HTP FastRPC channels on model unload so
 #   QAIRT's HTP re-init is not poisoned by stale sessions. See
 #   sdk/plugins/llama_cpp/src/llm.cpp for the caller.
+# * llama-opencl-adreno-cpy-constreg.patch works around an Adreno OpenCL
+#   compiler crash: kernel_cpy_f32_f32_pack's min(ne00, get_local_size(0))
+#   emits an IMINrr with two constant-class operands, which the driver's
+#   instruction validator rejects (NumConstRegsError). See GenieX #1250.
 if(GENIEX_PLUGIN_LLAMA_CPP)
     set(_LLAMA_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/../third-party/llama.cpp")
-    set(_LLAMA_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-hexagon-release-sessions.patch")
-    if(EXISTS "${_LLAMA_PATCH}")
-        find_package(Git QUIET REQUIRED)
-        execute_process(
-            COMMAND ${GIT_EXECUTABLE} -C "${_LLAMA_DIR}" apply --reverse --check "${_LLAMA_PATCH}"
-            RESULT_VARIABLE _reverse_check_rc
-            OUTPUT_QUIET ERROR_QUIET)
-        if(NOT _reverse_check_rc EQUAL 0)
-            message(STATUS "Applying llama.cpp patch: ${_LLAMA_PATCH}")
+    set(_LLAMA_PATCHES
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-hexagon-release-sessions.patch"
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-opencl-adreno-cpy-constreg.patch")
+    find_package(Git QUIET REQUIRED)
+    foreach(_LLAMA_PATCH ${_LLAMA_PATCHES})
+        if(EXISTS "${_LLAMA_PATCH}")
             execute_process(
-                COMMAND ${GIT_EXECUTABLE} -C "${_LLAMA_DIR}" apply "${_LLAMA_PATCH}"
-                RESULT_VARIABLE _apply_rc)
-            if(NOT _apply_rc EQUAL 0)
-                message(FATAL_ERROR
-                    "Failed to apply ${_LLAMA_PATCH} to ${_LLAMA_DIR}. "
-                    "If the submodule was bumped, refresh the patch against the new tip.")
+                COMMAND ${GIT_EXECUTABLE} -C "${_LLAMA_DIR}" apply --reverse --check "${_LLAMA_PATCH}"
+                RESULT_VARIABLE _reverse_check_rc
+                OUTPUT_QUIET ERROR_QUIET)
+            if(NOT _reverse_check_rc EQUAL 0)
+                message(STATUS "Applying llama.cpp patch: ${_LLAMA_PATCH}")
+                execute_process(
+                    COMMAND ${GIT_EXECUTABLE} -C "${_LLAMA_DIR}" apply "${_LLAMA_PATCH}"
+                    RESULT_VARIABLE _apply_rc)
+                if(NOT _apply_rc EQUAL 0)
+                    message(FATAL_ERROR
+                        "Failed to apply ${_LLAMA_PATCH} to ${_LLAMA_DIR}. "
+                        "If the submodule was bumped, refresh the patch against the new tip.")
+                endif()
             endif()
         endif()
-    endif()
+    endforeach()
 endif()
 
 # headers
