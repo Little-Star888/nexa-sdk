@@ -237,13 +237,17 @@ func loadStopSequences() ([]string, error) {
 	return stopSequences, nil
 }
 
-// modelLoadedLine formats a one-line summary of what the inference session
-// actually got, printed after the model is loaded when --verbose is set. It's
-// a pure helper so tests can pin the output without touching the SDK.
-func modelLoadedLine(runtimeID, deviceID string, ngl, nctx int32) string {
+// modelLoadedLine summarizes the loaded session for --verbose. device echoes
+// the user alias, not the SDK's device_id (cpu/hybrid resolve to an empty one).
+// Mirrors geniex_resolve_device: empty/"auto" and qairt → npu.
+func modelLoadedLine(runtimeID, computeUnit string, ngl, nctx int32) string {
+	device := strings.ToLower(strings.TrimSpace(computeUnit))
+	if runtimeID == geniex_sdk.RuntimeQairt || device == "" || device == "auto" {
+		device = geniex_sdk.ComputeUnitNPU
+	}
 	parts := []string{
 		fmt.Sprintf("backend=%s", runtimeID),
-		fmt.Sprintf("device=%s", deviceID),
+		fmt.Sprintf("device=%s", device),
 	}
 	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
 		parts = append(parts,
@@ -351,7 +355,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 	defer p.Destroy()
 
 	if verbose {
-		fmt.Println(render.GetTheme().Info.Sprint(modelLoadedLine(paths.RuntimeID, deviceID, nglResolved, nctxResolved)))
+		fmt.Println(render.GetTheme().Info.Sprint(modelLoadedLine(paths.RuntimeID, computeUnit, nglResolved, nctxResolved)))
 	}
 
 	var history []geniex_sdk.LlmChatMessage
@@ -511,7 +515,7 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 	defer p.Destroy()
 
 	if verbose {
-		fmt.Println(render.GetTheme().Info.Sprint(modelLoadedLine(paths.RuntimeID, deviceID, nglResolved, nctxResolved)))
+		fmt.Println(render.GetTheme().Info.Sprint(modelLoadedLine(paths.RuntimeID, computeUnit, nglResolved, nctxResolved)))
 	}
 
 	caps, _ := p.Capabilities()
