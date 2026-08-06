@@ -38,8 +38,7 @@ func RootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Re-apply now that flags are parsed so --log takes effect; the
-			// call in main() runs before parsing and only sees GENIEX_LOG.
+			// Re-apply now that --log is parsed; the main() call only saw GENIEX_LOG.
 			common.ApplyLogLevel()
 
 			subCmd := cmd.CalledAs()
@@ -130,8 +129,9 @@ func checkAudioDependency() {
 
 // main is the entry point that executes the root command.
 func main() {
-	// log
-	common.ApplyLogLevel()
+	// Honor GENIEX_LOG for early logs; the SDK callback is set later once --log
+	// is parsed. Setting it here (default "none") would null its built-in handler.
+	common.ApplySlog()
 	common.EnableUTF8Console()
 
 	cmd := RootCmd()
