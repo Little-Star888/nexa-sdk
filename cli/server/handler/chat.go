@@ -141,7 +141,14 @@ func ChatCompletions(c *gin.Context) {
 		modelParam.NCtx = int32(param.MaxCompletionTokens.Value)
 	}
 
-	switch modelType {
+	effectiveType := modelType
+	if effectiveType == geniex_sdk.ModelTypeVLM && param.SpecType != "" {
+		slog.Warn("spec_type set on VLM-classified model; running LLM path, image/audio content will be ignored",
+			"model", param.Model, "spec_type", param.SpecType)
+		effectiveType = geniex_sdk.ModelTypeLLM
+	}
+
+	switch effectiveType {
 	case geniex_sdk.ModelTypeLLM:
 		chatCompletionsLLM(c, param, modelParam)
 	case geniex_sdk.ModelTypeVLM:

@@ -138,7 +138,14 @@ func infer() *cobra.Command {
 			return err
 		}
 
-		switch paths.ModelType {
+		effectiveType := paths.ModelType
+		if effectiveType == geniex_sdk.ModelTypeVLM && specType != "" {
+			fmt.Println(render.GetTheme().Warning.Sprintf(
+				"Warning: --spec-type set on a VLM-classified model; running the LLM path, image / audio inputs will be ignored"))
+			effectiveType = geniex_sdk.ModelTypeLLM
+		}
+
+		switch effectiveType {
 		case geniex_sdk.ModelTypeLLM:
 			err = inferLLM(cmd.Context(), paths)
 		case geniex_sdk.ModelTypeVLM:
