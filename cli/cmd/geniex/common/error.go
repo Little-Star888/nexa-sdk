@@ -33,6 +33,7 @@ const (
 - Redownload the model.
 - Verify your system meets the model's requirements.
 - Check your NPU / GPU driver version and update it if it's out of date.
+- Re-run with '--log debug' (or higher) to see the underlying load failure.
 - See help in our discord or slack.`
 
 	hintPluginLoad = `⚠️ Oops. Runtime failed to load.
