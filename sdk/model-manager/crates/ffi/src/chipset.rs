@@ -5,7 +5,8 @@ use std::os::raw::c_char;
 
 use model_manager_core::config::StoreConfig;
 use model_manager_core::source::ai_hub::{
-    detect_host_chipset_reference, list_supported_chipsets, AiHubConfig,
+    detect::detect_host_chipset, detect_host_chipset_reference, list_supported_chipsets,
+    AiHubConfig,
 };
 
 use crate::init::{get_store, runtime_handle};
@@ -106,14 +107,19 @@ pub unsafe extern "C" fn geniex_model_list_chipsets_free(out: *mut GenieXChipset
 /* ---- geniex_model_detect_chipset ---- */
 
 #[no_mangle]
-pub extern "C" fn geniex_model_detect_chipset(out_chipset: *mut *mut c_char) -> i32 {
+pub extern "C" fn geniex_model_detect_chipset(offline: i32, out_chipset: *mut *mut c_char) -> i32 {
     ffi_guard(|| {
         if out_chipset.is_null() {
             return Err(GENIEX_ERROR_COMMON_INVALID_INPUT);
         }
-        let cfg = ai_hub_cfg_for_chipset_query(get_store()?);
-        let ptr = runtime_handle()
-            .block_on(detect_host_chipset_reference(&cfg))
+        // offline: local probe only; else translate online to the display name.
+        let detected = if offline != 0 {
+            detect_host_chipset()
+        } else {
+            let cfg = ai_hub_cfg_for_chipset_query(get_store()?);
+            runtime_handle().block_on(detect_host_chipset_reference(&cfg))
+        };
+        let ptr = detected
             .map(|s| str_to_cptr(&s))
             .unwrap_or(std::ptr::null_mut());
         unsafe { *out_chipset = ptr };

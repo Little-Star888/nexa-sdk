@@ -354,6 +354,7 @@ mod linux {
 
     const SOC_TO_CHIPSET: &[(&str, &str)] = &[
         ("qcs6490", "qualcomm-qcs6490"),
+        ("qcm6490", "qualcomm-qcs6490"),
         ("qcs9075", "qualcomm-qcs9075"),
     ];
 
@@ -407,8 +408,8 @@ mod linux {
         }
 
         #[test]
-        fn maps_qcs6490_rb3_gen2() {
-            let bytes = b"qcom,qcs6490-rb3gen2-vision-kit\0qcom,qcs6490\0";
+        fn maps_qcs6490_rb3_gen2_real_fixture() {
+            let bytes = b"qcom,qcs6490-addons-rb3gen2\0qcom,qcm6490\0";
             assert_eq!(map_compatible(bytes), Some("qualcomm-qcs6490"));
         }
 
