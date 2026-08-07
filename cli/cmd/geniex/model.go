@@ -312,7 +312,68 @@ func modelCmd() *cobra.Command {
 		Short:   "Manage cached models",
 		Long:    "Commands to manage cached models, including reconfiguring model-specific settings.",
 	}
-	cmd.AddCommand(setTypeCmd())
+	cmd.AddCommand(setTypeCmd(), listHubCmd())
+	return cmd
+}
+
+func printHubTable(models []geniex_sdk.HubModel, showChipsets bool) {
+	tw := table.NewWriter()
+	tw.SetOutputMirror(os.Stdout)
+	tw.SetStyle(table.StyleLight)
+	if showChipsets {
+		tw.AppendHeader(table.Row{"NAME", "TYPE", "CHIPSETS"})
+	} else {
+		tw.AppendHeader(table.Row{"NAME", "TYPE"})
+	}
+	for _, m := range models {
+		if showChipsets {
+			chips := make([]string, len(m.Chipsets))
+			for i, c := range m.Chipsets {
+				chips[i] = strings.TrimPrefix(strings.TrimPrefix(c, "qualcomm-"), "snapdragon-")
+			}
+			tw.AppendRow(table.Row{m.Name, m.ModelType, strings.Join(chips, ", ")})
+		} else {
+			tw.AppendRow(table.Row{m.Name, m.ModelType})
+		}
+	}
+	tw.Render()
+}
+
+func listHubCmd() *cobra.Command {
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List Qualcomm AI Hub models geniex can run",
+		Long: "List Qualcomm AI Hub models with a qairt (NPU) build.\n\n" +
+			"By default only models compatible with the current device are shown; " +
+			"pass --all to list every model. Names are ready to pull, e.g. " +
+			"'geniex pull qualcomm/Qwen3-4B'.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// "" lists every model; --all skips filtering entirely.
+			var chipset string
+			if !all {
+				c, err := ensureChipset()
+				if err != nil {
+					return err
+				}
+				chipset = c
+			}
+			models, err := geniex_sdk.ModelListHub(chipset)
+			if err != nil {
+				return err
+			}
+			if all {
+				fmt.Println(render.GetTheme().Info.Sprint("Qualcomm AI Hub models geniex can run:"))
+			} else {
+				fmt.Println(render.GetTheme().Info.Sprintf("Qualcomm AI Hub models for %s (use --all to see every model):", chipset))
+			}
+			fmt.Println()
+			// CHIPSETS column only with --all; filtered rows all share one chipset.
+			printHubTable(models, all)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "list every model, not just ones compatible with this device")
 	return cmd
 }
 
@@ -390,18 +451,9 @@ func pullModel(ctx context.Context, name string, quant string) error {
 		DisplayName: "",
 	}
 
-	// Resolve a chipset before the spinner (the picker can't share the terminal
-	// with one): configured value wins, then a host probe, then an interactive
-	// picker. The SDK decides whether the chipset is actually used for this pull.
-	if chipset, _, _ := store.Get().ConfigGet(store.ConfigKeyChipset); chipset != "" {
-		in.Chipset = chipset
-	} else if detected, _ := geniex_sdk.ModelDetectChipset(); detected != "" {
-		in.Chipset = detected
-	} else {
-		fmt.Println(render.GetTheme().Info.Sprint("No chipset configured. Please select your chipset first."))
-		if in.Chipset, err = pickChipset(); err != nil {
-			return err
-		}
+	// Resolve before the spinner — the picker can't share the terminal with one.
+	if in.Chipset, err = ensureChipset(); err != nil {
+		return err
 	}
 
 	// Validate --model-type early so we fail before downloading anything, and
