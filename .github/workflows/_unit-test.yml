@@ -165,7 +165,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/geniex
-          key: geniex-models-llama_cpp-${{ matrix.platform }}-v1-${{ hashFiles('tests/_models.py', 'bindings/python/tests/conftest.py') }}
+          key: geniex-models-llama_cpp-${{ matrix.platform }}-v1-${{ hashFiles('tests/models.json', 'tests/_models.py', 'bindings/python/tests/conftest.py') }}
           restore-keys: |
             geniex-models-llama_cpp-${{ matrix.platform }}-v1-
 

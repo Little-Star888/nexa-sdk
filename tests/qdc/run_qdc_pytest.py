@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 
 HERE = Path(__file__).parent
 REPO = HERE.parents[1]
+MODELS_MANIFEST = REPO / 'tests' / 'models.json'
 sys.path.insert(0, str(REPO / 'sdk' / 'benchmark' / 'qdc'))
 
 try:
@@ -154,6 +155,24 @@ def _rows_from_reportlog(data: bytes) -> tuple[list[Row], set[str]]:
     return list(outcomes.values()), incomplete
 
 
+def _model_lines() -> list[str]:
+    try:
+        with MODELS_MANIFEST.open(encoding='utf-8') as f:
+            models = json.load(f).get('models', {})
+    except (OSError, ValueError):
+        return []
+    if not models:
+        return []
+    lines = ['### Models', '', '| Slot | Model | Precision |', '|---|---|---|']
+    for slot, entry in models.items():
+        env = entry.get('env_override')
+        current_id = (env and os.environ.get(env)) or entry.get('id') or '—'
+        prec = entry.get('precision') or '—'
+        lines.append(f'| `{slot}` | `{current_id}` | `{prec}` |')
+    lines.append('')
+    return lines
+
+
 def _render_summary(rows: list[Row], label: str, incomplete: set[str] | None = None) -> tuple[int, str]:
     incomplete = incomplete or set()
     for nodeid in sorted(incomplete):
@@ -170,6 +189,7 @@ def _render_summary(rows: list[Row], label: str, incomplete: set[str] | None = N
         f'**{verdict}** — {passed} passed, {failed} failed, 0 errored, {skipped} skipped (of {total})',
         '',
     ]
+    lines += _model_lines()
     fails: list[tuple[str, str, str]] = []
     for status, name, msg, body in rows:
         if status == 'FAIL':
@@ -219,6 +239,12 @@ def main() -> int:
     p.add_argument('--platform', required=True, choices=sorted(BUILDERS))
     p.add_argument('--device', required=True, help='QDC device alias, e.g. QCS9075M / SC8480XP')
     p.add_argument('--job-timeout', type=int, default=10800)
+    p.add_argument(
+        '--logs-dir',
+        type=Path,
+        default=None,
+        help='Persist device log files here for upload as a CI artifact.',
+    )
     args = p.parse_args()
 
     if _qdc is None:
@@ -254,6 +280,11 @@ def main() -> int:
             tmp,
             lambda n: n in ('harness.log', 'test_dbg.stdout', 'test.stdout', 'script.log'),
         )
+
+    if args.logs_dir:
+        args.logs_dir.mkdir(parents=True, exist_ok=True)
+        for name, data in list(results) + list(diag):
+            (args.logs_dir / name).write_bytes(data)
 
     for name, data in diag:
         print(f'\n===== device log: {name} =====\n{data.decode("utf-8", "replace")}')
