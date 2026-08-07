@@ -21,6 +21,7 @@ from ._ffi._types import (
     GENIEX_MODEL_TYPE_VLM,
     geniex_ChipsetList,
     geniex_download_progress_cb,
+    geniex_HubModelList,
     geniex_ModelListDetailedOutput,
     geniex_ModelPaths,
     geniex_ModelPullInput,
@@ -51,6 +52,8 @@ __all__ = [
     'ChipsetInfo',
     'list_chipsets',
     'detect_chipset',
+    'HubModel',
+    'list_hub_models',
 ]
 
 
@@ -94,6 +97,15 @@ class ChipsetInfo:
 
     name: str
     aliases: list[str]
+
+
+@dataclass(frozen=True)
+class HubModel:
+    """One Qualcomm AI Hub model geniex can run (qairt / NPU)."""
+
+    name: str  # Pullable name, e.g. "qualcomm/Qwen3-4B".
+    model_type: str  # "llm" or "vlm"
+    chipsets: list[str]
 
 
 @dataclass(frozen=True)
@@ -501,6 +513,34 @@ def detect_chipset() -> str | None:
         return out.value.decode()
     finally:
         lib.geniex_free(out)
+
+
+def list_hub_models(chipset: str | None = None) -> list[HubModel]:
+    """List Qualcomm AI Hub models with a qairt (NPU) build, sorted by name.
+
+    ``chipset`` restricts results to a canonical chipset id; ``None`` lists
+    every model. Detecting the host chipset is the caller's job (see
+    :func:`detect_chipset`). Sourced from ``manifest.json`` (cached 24h); the
+    first call may hit the network.
+    """
+    _ensure_init()
+    lib = load_library()
+    out = geniex_HubModelList()
+    _check(lib.geniex_model_list_hub(chipset.encode() if chipset else None, byref(out)))
+    try:
+        models = []
+        for i in range(out.count):
+            m = out.models[i]
+            models.append(
+                HubModel(
+                    name=m.name.decode() if m.name else '',
+                    model_type=_type_str(m.model_type),
+                    chipsets=[m.chipsets[j].decode() for j in range(m.chipset_count)],
+                )
+            )
+        return models
+    finally:
+        lib.geniex_model_list_hub_free(byref(out))
 
 
 def ensure_cached(

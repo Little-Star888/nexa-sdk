@@ -565,3 +565,62 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_geniex_sdk_jni_ModelManager_detect
     geniex_free(out);
     return result;
 }
+
+jobject build_hub_model(JNIEnv* env, const geniex_HubModelInfo& m) {
+    jclass cls = env->FindClass("com/geniex/sdk/bean/HubModel");
+    if (!cls) return nullptr;
+    jmethodID ctor =
+        env->GetMethodID(cls, "<init>", "(Ljava/lang/String;Lcom/geniex/sdk/bean/ModelType;[Ljava/lang/String;)V");
+    if (!ctor) {
+        env->DeleteLocalRef(cls);
+        return nullptr;
+    }
+    jclass    modelTypeCls = env->FindClass("com/geniex/sdk/bean/ModelType");
+    jmethodID fromValueMid = env->GetStaticMethodID(modelTypeCls, "fromValue", "(I)Lcom/geniex/sdk/bean/ModelType;");
+    jobject   jModelType   = env->CallStaticObjectMethod(modelTypeCls, fromValueMid, static_cast<jint>(m.model_type));
+
+    jstring jName = env->NewStringUTF(m.name ? m.name : "");
+
+    jclass       stringCls = env->FindClass("java/lang/String");
+    jobjectArray jChipsets = env->NewObjectArray(m.chipset_count, stringCls, nullptr);
+    for (int32_t i = 0; i < m.chipset_count; ++i) {
+        jstring c = env->NewStringUTF(m.chipsets[i] ? m.chipsets[i] : "");
+        env->SetObjectArrayElement(jChipsets, i, c);
+        env->DeleteLocalRef(c);
+    }
+
+    jobject obj = env->NewObject(cls, ctor, jName, jModelType, jChipsets);
+
+    if (jModelType) env->DeleteLocalRef(jModelType);
+    env->DeleteLocalRef(jName);
+    env->DeleteLocalRef(jChipsets);
+    env->DeleteLocalRef(stringCls);
+    env->DeleteLocalRef(modelTypeCls);
+    env->DeleteLocalRef(cls);
+    return obj;
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_geniex_sdk_jni_ModelManager_listHubModels(
+    JNIEnv* env, jobject /*thiz*/, jstring jChipset) {
+    jclass hubModelCls = env->FindClass("com/geniex/sdk/bean/HubModel");
+
+    std::string         chipset = jstring2str(env, jChipset);
+    geniex_HubModelList out{};
+    int32_t             rc = geniex_model_list_hub(chipset.empty() ? nullptr : chipset.c_str(), &out);
+    if (rc != GENIEX_SUCCESS) {
+        LOGe("[ModelManager JNI] listHubModels() failed rc=%d", rc);
+        jobjectArray empty = env->NewObjectArray(0, hubModelCls, nullptr);
+        env->DeleteLocalRef(hubModelCls);
+        return empty;
+    }
+
+    jobjectArray arr = env->NewObjectArray(out.count, hubModelCls, nullptr);
+    for (int32_t i = 0; i < out.count; ++i) {
+        jobject item = build_hub_model(env, out.models[i]);
+        env->SetObjectArrayElement(arr, i, item);
+        if (item) env->DeleteLocalRef(item);
+    }
+    env->DeleteLocalRef(hubModelCls);
+    geniex_model_list_hub_free(&out);
+    return arr;
+}
