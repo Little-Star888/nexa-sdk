@@ -74,8 +74,8 @@ internal class ModelManager {
     /** Chipsets Qualcomm AI Hub supports, with aliases (sourced from platform.json). */
     external fun listChipsets(): Array<ChipsetInfo>
 
-    /** Detect the host chipset via a local probe. @return `null` if not probeable. */
-    external fun detectChipset(): String?
+    /** Detect the host chipset. [offline] stays local; else may hit the network. @return `null` if not probeable. */
+    external fun detectChipset(offline: Boolean): String?
 
     /**
      * AI Hub models with a qairt (NPU) build, sorted by name (from manifest.json).
