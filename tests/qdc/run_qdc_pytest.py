@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 
 HERE = Path(__file__).parent
 REPO = HERE.parents[1]
+MODELS_MANIFEST = REPO / 'tests' / 'models.json'
 sys.path.insert(0, str(REPO / 'sdk' / 'benchmark' / 'qdc'))
 
 try:
@@ -154,6 +155,24 @@ def _rows_from_reportlog(data: bytes) -> tuple[list[Row], set[str]]:
     return list(outcomes.values()), incomplete
 
 
+def _model_lines() -> list[str]:
+    try:
+        with MODELS_MANIFEST.open(encoding='utf-8') as f:
+            models = json.load(f).get('models', {})
+    except (OSError, ValueError):
+        return []
+    if not models:
+        return []
+    lines = ['### Models', '', '| Slot | Model | Precision |', '|---|---|---|']
+    for slot, entry in models.items():
+        env = entry.get('env_override')
+        current_id = (env and os.environ.get(env)) or entry.get('id') or '—'
+        prec = entry.get('precision') or '—'
+        lines.append(f'| `{slot}` | `{current_id}` | `{prec}` |')
+    lines.append('')
+    return lines
+
+
 def _render_summary(rows: list[Row], label: str, incomplete: set[str] | None = None) -> tuple[int, str]:
     incomplete = incomplete or set()
     for nodeid in sorted(incomplete):
@@ -170,6 +189,7 @@ def _render_summary(rows: list[Row], label: str, incomplete: set[str] | None = N
         f'**{verdict}** — {passed} passed, {failed} failed, 0 errored, {skipped} skipped (of {total})',
         '',
     ]
+    lines += _model_lines()
     fails: list[tuple[str, str, str]] = []
     for status, name, msg, body in rows:
         if status == 'FAIL':
