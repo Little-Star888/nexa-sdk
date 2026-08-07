@@ -219,6 +219,12 @@ def main() -> int:
     p.add_argument('--platform', required=True, choices=sorted(BUILDERS))
     p.add_argument('--device', required=True, help='QDC device alias, e.g. QCS9075M / SC8480XP')
     p.add_argument('--job-timeout', type=int, default=10800)
+    p.add_argument(
+        '--logs-dir',
+        type=Path,
+        default=None,
+        help='Persist device log files here for upload as a CI artifact.',
+    )
     args = p.parse_args()
 
     if _qdc is None:
@@ -254,6 +260,11 @@ def main() -> int:
             tmp,
             lambda n: n in ('harness.log', 'test_dbg.stdout', 'test.stdout', 'script.log'),
         )
+
+    if args.logs_dir:
+        args.logs_dir.mkdir(parents=True, exist_ok=True)
+        for name, data in list(results) + list(diag):
+            (args.logs_dir / name).write_bytes(data)
 
     for name, data in diag:
         print(f'\n===== device log: {name} =====\n{data.decode("utf-8", "replace")}')

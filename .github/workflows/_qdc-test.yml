@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   qdc:
-    name: ${{ matrix.platform }}
+    name: ${{ matrix.platform }} (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:
@@ -83,3 +83,13 @@ jobs:
           --pkg-dir pkg-geniex
           --platform "${{ matrix.platform }}"
           --device "${{ matrix.device }}"
+          --logs-dir qdc-logs
+
+      - name: Upload QDC device logs
+        if: always() && steps.skip.outputs.skip != 'true' && hashFiles('qdc-logs/**') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: qdc-logs-${{ matrix.platform }}-${{ matrix.device }}
+          path: qdc-logs/
+          retention-days: 7
+          if-no-files-found: ignore
