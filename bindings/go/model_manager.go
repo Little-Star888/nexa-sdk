@@ -294,6 +294,41 @@ func ModelDetectChipset() (string, error) {
 	return C.GoString(out), nil
 }
 
+// HubModel is one Qualcomm AI Hub model geniex can run (qairt / NPU).
+type HubModel struct {
+	Name      string // Pullable name, e.g. "qualcomm/Qwen3-4B".
+	ModelType ModelType
+	Chipsets  []string
+}
+
+// ModelListHub lists Qualcomm AI Hub models with a qairt asset, sorted by name.
+// chipset restricts results to a canonical chipset id; "" lists every model.
+// Detecting the host chipset is the caller's job (see ModelDetectChipset).
+func ModelListHub(chipset string) ([]HubModel, error) {
+	cChipset := cStringIfSet(chipset)
+	defer cFreeIfSet(unsafe.Pointer(cChipset))
+
+	var out C.geniex_HubModelList
+	if res := C.geniex_model_list_hub(cChipset, &out); res != C.GENIEX_SUCCESS {
+		return nil, modelError(res)
+	}
+	defer C.geniex_model_list_hub_free(&out)
+
+	if out.models == nil || out.count == 0 {
+		return nil, nil
+	}
+	models := unsafe.Slice(out.models, int(out.count))
+	result := make([]HubModel, out.count)
+	for i, m := range models {
+		result[i] = HubModel{
+			Name:      C.GoString(m.name),
+			ModelType: ModelType(m.model_type),
+			Chipsets:  cCharArrayToSlice(m.chipsets, m.chipset_count),
+		}
+	}
+	return result, nil
+}
+
 // ModelRemove deletes a cached model ("org/repo" or "org/repo:precision").
 func ModelRemove(name string) error {
 	cName := C.CString(name)

@@ -14,6 +14,7 @@ from ._types import (
     geniex_GetDeviceListInput,
     geniex_GetDeviceListOutput,
     geniex_GetPluginListOutput,
+    geniex_HubModelList,
     geniex_KvCacheLoadInput,
     geniex_KvCacheLoadOutput,
     geniex_KvCacheSaveInput,
@@ -297,6 +298,12 @@ def _bind_all() -> None:
 
     lib.geniex_model_detect_chipset.argtypes = [POINTER(c_char_p)]
     lib.geniex_model_detect_chipset.restype = c_int32
+
+    lib.geniex_model_list_hub.argtypes = [c_char_p, POINTER(geniex_HubModelList)]
+    lib.geniex_model_list_hub.restype = c_int32
+
+    lib.geniex_model_list_hub_free.argtypes = [POINTER(geniex_HubModelList)]
+    lib.geniex_model_list_hub_free.restype = None
 
 
 _bound = False

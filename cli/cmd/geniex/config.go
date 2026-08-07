@@ -125,6 +125,19 @@ func resolveChipset() string {
 	return detected
 }
 
+// ensureChipset resolves a chipset: configured value, then host probe, then an
+// interactive picker (which persists the choice).
+func ensureChipset() (string, error) {
+	if c, _, _ := store.Get().ConfigGet(store.ConfigKeyChipset); c != "" {
+		return c, nil
+	}
+	if detected, _ := geniex_sdk.ModelDetectChipset(); detected != "" {
+		return detected, nil
+	}
+	fmt.Println(render.GetTheme().Info.Sprint("No chipset configured. Please select your chipset first."))
+	return pickChipset()
+}
+
 // pickChipset lists the chipsets Qualcomm AI Hub supports and lets the user
 // select one interactively, defaulting to the host's detected chipset when it
 // can be probed. The chosen chipset name is persisted under the "chipset" key

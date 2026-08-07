@@ -1,6 +1,7 @@
 package com.geniex.sdk.jni
 
 import com.geniex.sdk.bean.ChipsetInfo
+import com.geniex.sdk.bean.HubModel
 import com.geniex.sdk.bean.ModelDetail
 import com.geniex.sdk.bean.ModelPaths
 import com.geniex.sdk.bean.ModelPullInput
@@ -75,4 +76,10 @@ internal class ModelManager {
 
     /** Detect the host chipset via a local probe. @return `null` if not probeable. */
     external fun detectChipset(): String?
+
+    /**
+     * AI Hub models with a qairt (NPU) build, sorted by name (from manifest.json).
+     * @param chipset canonical chipset id to filter by, or null to list every model.
+     */
+    external fun listHubModels(chipset: String?): Array<HubModel>
 }

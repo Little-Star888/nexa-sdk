@@ -445,3 +445,19 @@ class geniex_ChipsetList(Structure):
         ('chipsets', POINTER(geniex_ChipsetInfo)),
         ('count', c_int32),
     ]
+
+
+class geniex_HubModelInfo(Structure):
+    _fields_ = [
+        ('name', c_char_p),
+        ('model_type', c_int32),
+        ('chipsets', POINTER(c_char_p)),
+        ('chipset_count', c_int32),
+    ]
+
+
+class geniex_HubModelList(Structure):
+    _fields_ = [
+        ('models', POINTER(geniex_HubModelInfo)),
+        ('count', c_int32),
+    ]

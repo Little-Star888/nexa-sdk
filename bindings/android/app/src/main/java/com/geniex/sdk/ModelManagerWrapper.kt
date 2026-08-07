@@ -2,6 +2,7 @@ package com.geniex.sdk
 
 import com.geniex.sdk.bean.ChipsetInfo
 import com.geniex.sdk.bean.FileProgress
+import com.geniex.sdk.bean.HubModel
 import com.geniex.sdk.bean.ModelPaths
 import com.geniex.sdk.bean.ModelPullInput
 import com.geniex.sdk.bean.ModelType
@@ -118,6 +119,10 @@ object ModelManagerWrapper {
 
     suspend fun detectChipset(): String? = withContext(Dispatchers.IO) {
         native.detectChipset()
+    }
+
+    suspend fun listHubModels(chipset: String? = null): List<HubModel> = withContext(Dispatchers.IO) {
+        native.listHubModels(chipset).toList()
     }
 
     sealed class PullEvent {

@@ -38,6 +38,15 @@ pub struct ManifestModelEntry {
     pub domain: String,
     #[serde(default)]
     pub manifest_urls: ManifestUrls,
+    /// Runtimes the model publishes assets for, e.g. `RUNTIME_GENIEX_QAIRT`.
+    // Inlined into the manifest since v0.58.0; `default` for older caches.
+    #[serde(default)]
+    pub supported_runtimes: Vec<String>,
+    /// Canonical chipset ids, same domain as [`detect::detect_host_chipset`].
+    #[serde(default)]
+    pub supported_chipsets: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
