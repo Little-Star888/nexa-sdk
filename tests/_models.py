@@ -1,13 +1,7 @@
 # Copyright 2024-2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Test-model identifiers, loaded from ``tests/models.json``.
-
-Add or swap a model by editing the JSON manifest; the constants below are the
-public surface for the pytest suite. ``env_override`` entries let operators
-retarget a slot without editing the manifest — preserves the previous
-``GENIEX_QAIRT_MODEL`` / ``GENIEX_QAIRT_VLM_MODEL`` behaviour.
-"""
+"""Test-model identifiers, loaded from ``tests/models.json``."""
 
 from __future__ import annotations
 
@@ -34,6 +28,7 @@ with _MANIFEST_PATH.open(encoding='utf-8') as _f:
 LLAMA_CPP_LLM_MODEL = _pick(_MODELS['llama_cpp_llm'])
 LLAMA_CPP_LLM_PRECISION = _pick(_MODELS['llama_cpp_llm'], 'precision')
 LLAMA_CPP_VLM_MODEL = _pick(_MODELS['llama_cpp_vlm'])
+LLAMA_CPP_VLM_PRECISION = _pick(_MODELS['llama_cpp_vlm'], 'precision')
 LLAMA_CPP_MTP_TARGET_MODEL = _pick(_MODELS['llama_cpp_mtp_target'])
 LLAMA_CPP_MTP_TARGET_PRECISION = _pick(_MODELS['llama_cpp_mtp_target'], 'precision')
 LLAMA_CPP_MTP_DRAFT_MODEL = _pick(_MODELS['llama_cpp_mtp_draft'])

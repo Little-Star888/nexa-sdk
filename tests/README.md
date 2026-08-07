@@ -76,7 +76,7 @@ this file to swap or add models); loader: `tests/_models.py`.
 | Modality | llama_cpp (HF GGUF) | QAIRT (AI Hub) |
 |----------|---------------------|----------------|
 | LLM      | `unsloth/Qwen3-4B-GGUF` Q4_0 | `qualcomm/Qwen3-4B` |
-| VLM      | `unsloth/Qwen2.5-VL-7B-Instruct-GGUF` Q4_0 + mmproj-F16 | `qualcomm/Qwen2.5-VL-7B-Instruct` |
+| VLM      | `unsloth/gemma-4-E2B-it-GGUF` Q4_0 + mmproj-F16 | `qualcomm/Qwen2.5-VL-7B-Instruct` |
 | MTP      | `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` + `RachidAR/gemma-4-...-assistant-q4_0-gguf` | — (llama_cpp only) |
 
 The LLM is Qwen3-4B **base**, not Instruct-2507: Instruct-2507 emits a long

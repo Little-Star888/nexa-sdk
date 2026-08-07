@@ -15,6 +15,7 @@ from _models import (
     LLAMA_CPP_LLM_PRECISION,
     LLAMA_CPP_MTP_TARGET_MODEL,
     LLAMA_CPP_VLM_MODEL,
+    LLAMA_CPP_VLM_PRECISION,
 )
 from _quality_data import (
     LLM_QUALITY_MAX_NEW_TOKENS,
@@ -82,6 +83,7 @@ def test_llm_multi_turn(llama_cpp_llm_paths, device_map):
 def test_vlm_multi_turn(llama_cpp_vlm_paths, test_image):
     with geniex.AutoModelForVision2Seq.from_pretrained(
         LLAMA_CPP_VLM_MODEL,
+        precision=LLAMA_CPP_VLM_PRECISION,
         device_map='cpu',
     ) as vlm:
         history = [
@@ -157,6 +159,7 @@ def test_llm_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected)
 def test_vlm_quality_keywords(llama_cpp_vlm_paths, quality_image, device_map):
     with geniex.AutoModelForVision2Seq.from_pretrained(
         LLAMA_CPP_VLM_MODEL,
+        precision=LLAMA_CPP_VLM_PRECISION,
         device_map=device_map,
     ) as vlm:
         prompt = _vlm_prompt(vlm, quality_image, VLM_QUALITY_PROMPT)

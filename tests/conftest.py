@@ -22,6 +22,7 @@ from _models import (
     LLAMA_CPP_MTP_TARGET_MODEL,
     LLAMA_CPP_MTP_TARGET_PRECISION,
     LLAMA_CPP_VLM_MODEL,
+    LLAMA_CPP_VLM_PRECISION,
     QAIRT_LLM_MODEL,
     QAIRT_VLM_MODEL,
 )
@@ -112,7 +113,7 @@ def llama_cpp_mtp_paths(geniex_session):
 
 @pytest.fixture(scope='session')
 def llama_cpp_vlm_paths(geniex_session):
-    return _mm.ensure_cached(LLAMA_CPP_VLM_MODEL, hub='hf')
+    return _mm.ensure_cached(LLAMA_CPP_VLM_MODEL, precision=LLAMA_CPP_VLM_PRECISION, hub='hf')
 
 
 @pytest.fixture(scope='session')
