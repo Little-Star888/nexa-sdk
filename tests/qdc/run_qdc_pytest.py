@@ -1,15 +1,7 @@
 # Copyright 2024-2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Run the SDK pytest suite on a real QDC device.
-
-Two device families, two entry paths:
-- Linux (QCS9075M) / Windows (SC8480XP): QDC runs a plain shell / PowerShell
-  entry script from the artifact root.
-- Android (SM8850): QDC's APPIUM framework unlocks adb; the artifact ships a
-  host-side pytest harness that pushes a Termux-derived portable Python plus
-  pkg-geniex + tests/ + bindings to the phone via pure-Python adb.
-"""
+"""Run the SDK pytest suite on a real QDC device (Linux QCS9075M / Windows SC8480XP)."""
 
 from __future__ import annotations
 
@@ -39,9 +31,6 @@ log = logging.getLogger(__name__)
 # tests/conftest.py resolves this relative to the repo root, so preserve the path.
 TEST_IMAGE_REL = Path('cli/server/docs/ui/favicon-32x32.png')
 HTP_CERT_REL = Path('.github/certs/hexagon/ggml-htp-v1.cer')
-# libggml-cpu.so on Android needs libomp.so; the CLI pkg omits it but the
-# Android app extLibs ships it.
-ANDROID_OMP_REL = Path('bindings/android/app/extLibs/arm64-v8a/libomp.so')
 _IGNORE = shutil.ignore_patterns('__pycache__', '*.pyc', '.venv', '*.egg-info', 'models')
 
 
@@ -74,50 +63,13 @@ def _build_linux_artifact(pkg_dir: Path, tmp: Path) -> Path:
     return Path(shutil.make_archive(str(tmp / 'artifact'), 'zip', stage))
 
 
-def _build_android_artifact(pkg_dir: Path, tmp: Path) -> Path:
-    # QDC APPIUM runs `pytest tests` from the artifact root, so the host-side
-    # appium harness lives at stage/tests/. The mini-repo it pushes to the
-    # phone lives at stage/payload/ so the host collector never imports
-    # payload/tests/conftest.py (which imports geniex — absent on the host).
-    sys.path.insert(0, str(HERE / 'appium'))
-    import deploy  # noqa: PLC0415 — stdlib-only helper; sys.path insert above
-
-    stage = tmp / 'stage'
-    payload = stage / 'payload'
-    shutil.copytree(pkg_dir, payload / 'sdk' / 'pkg-geniex')
-    shutil.copy(REPO / ANDROID_OMP_REL, payload / 'sdk' / 'pkg-geniex' / 'lib' / 'llama_cpp' / 'libomp.so')
-    shutil.copytree(REPO / 'tests', payload / 'tests', ignore=_IGNORE)
-    shutil.copytree(REPO / 'bindings' / 'python', payload / 'bindings' / 'python', ignore=_IGNORE)
-
-    # Fetch Termux aarch64 packages here (runner has public internet; the QDC
-    # appium host is a sandboxed container that can't reach termux.dev).
-    deploy.fetch_termux_usr(payload / 'termux-usr')
-
-    img = payload / TEST_IMAGE_REL
-    img.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(REPO / TEST_IMAGE_REL, img)
-
-    host = stage / 'tests'
-    host.mkdir()
-    for name in ('conftest.py', 'test_run_suite.py', 'utils.py', 'deploy.py'):
-        shutil.copy(HERE / 'appium' / name, host / name)
-    (stage / 'requirements.txt').write_text((HERE / 'appium' / 'requirements.txt').read_text())
-    (stage / 'pytest.ini').write_text('[pytest]\naddopts = --junitxml=results.xml\n')
-
-    return Path(shutil.make_archive(str(tmp / 'artifact'), 'zip', stage))
-
-
 BUILDERS = {
     'linux': _build_linux_artifact,
     'windows': _build_windows_artifact,
-    'android': _build_android_artifact,
 }
-# APPIUM entry is discovered by the framework (`pytest tests` from artifact root),
-# so android's slot is None — passed through to _qdc.submit_and_wait.
 ENTRY = {
     'linux': '/bin/bash /data/local/tmp/TestContent/run_pytest.sh',
     'windows': 'C:\\Temp\\TestContent\\run_pytest.ps1',
-    'android': None,
 }
 
 
@@ -318,44 +270,31 @@ def main() -> int:
             timeout=args.job_timeout,
         )
 
-        # JUnit is the clean-exit source of truth; --report-log NDJSON survives
-        # aborts. QDC's log zip may nest results/ (android APPIUM writes
-        # results/device-results.xml); match by basename so both paths work.
-        def _base(n: str) -> str:
-            return n.replace('\\', '/').rsplit('/', 1)[-1]
-
+        # JUnit is the clean-exit source of truth; --report-log NDJSON survives aborts.
         results = _qdc.download_log_members(
-            client, job_id, tmp, lambda n: _base(n) in ('device-results.xml', 'device-report.log')
+            client, job_id, tmp, lambda n: n in ('device-results.xml', 'device-report.log')
         )
         diag = _qdc.download_log_members(
             client,
             job_id,
             tmp,
-            lambda n: _base(n)
-            in (
-                'harness.log',
-                'test_dbg.stdout',
-                'test.stdout',
-                'script.log',
-                'appium_tests_stdout.txt',
-                'install.txt',
-            ),
+            lambda n: n in ('harness.log', 'test_dbg.stdout', 'test.stdout', 'script.log'),
         )
 
     if args.logs_dir:
         args.logs_dir.mkdir(parents=True, exist_ok=True)
         for name, data in list(results) + list(diag):
-            (args.logs_dir / _base(name)).write_bytes(data)
+            (args.logs_dir / name).write_bytes(data)
 
     for name, data in diag:
         print(f'\n===== device log: {name} =====\n{data.decode("utf-8", "replace")}')
 
-    by_base = {_base(name): data for name, data in results}
-    if b'</testsuite>' in by_base.get('device-results.xml', b''):
-        code, md = summarise(by_base['device-results.xml'], label)
-    elif by_base.get('device-report.log'):
+    by_name = {name: data for name, data in results}
+    if b'</testsuite>' in by_name.get('device-results.xml', b''):
+        code, md = summarise(by_name['device-results.xml'], label)
+    elif by_name.get('device-report.log'):
         log.warning('JUnit XML missing or incomplete; reconstructing from --report-log NDJSON')
-        code, md = summarise_reportlog(by_base['device-report.log'], label)
+        code, md = summarise_reportlog(by_name['device-report.log'], label)
     else:
         log.error('no JUnit XML or report-log recovered (see device logs above)')
         write_summary(f'## QDC Test — {label}\n\nNo JUnit XML or report-log recovered.\n')
