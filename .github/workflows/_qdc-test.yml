@@ -32,6 +32,9 @@ jobs:
           - platform: windows
             device: SC8480XP
             artifact: sdk-windows-arm64
+          - platform: android
+            device: SM8850
+            artifact: sdk-android-arm64
     env:
       QDC_API_KEY: ${{ secrets.QDC_API_KEY }}
     steps:
