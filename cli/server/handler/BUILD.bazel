@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//bindings/go:geniex_sdk_go",
         "//cli/internal/config",
+        "//cli/internal/store",
         "//cli/internal/types",
         "//cli/server/service",
         "//cli/server/utils",

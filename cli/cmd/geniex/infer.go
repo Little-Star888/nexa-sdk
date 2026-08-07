@@ -20,8 +20,10 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/cmd/geniex/common"
+	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/internal/record"
 	"github.com/qualcomm/GenieX/cli/internal/render"
+	"github.com/qualcomm/GenieX/cli/internal/store"
 )
 
 var (
@@ -136,6 +138,13 @@ func infer() *cobra.Command {
 
 		if err := common.InitSDK(); err != nil {
 			return err
+		}
+
+		// Host-aware default (e.g. RB3 Gen 2 → cpu) before resolution, so the
+		// --verbose line and any server request see the same alias.
+		var overridden bool
+		if computeUnit, overridden = config.ComputeDefault(computeUnit, store.Get().ResolveChipset(true)); overridden {
+			fmt.Println(render.GetTheme().Info.Sprintf("Defaulting to --compute %s for this device; pass --compute to override.", computeUnit))
 		}
 
 		effectiveType := paths.ModelType
