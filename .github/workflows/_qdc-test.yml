@@ -78,11 +78,14 @@ jobs:
         if: steps.skip.outputs.skip != 'true'
 
       - if: steps.skip.outputs.skip != 'true'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          DEVICE: ${{ matrix.device }}
         run: >
           python tests/qdc/run_qdc_pytest.py
           --pkg-dir pkg-geniex
-          --platform "${{ matrix.platform }}"
-          --device "${{ matrix.device }}"
+          --platform "$PLATFORM"
+          --device "$DEVICE"
           --logs-dir qdc-logs
 
       - name: Upload QDC device logs
