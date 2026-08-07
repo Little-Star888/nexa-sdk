@@ -162,6 +162,88 @@ pub async fn list_supported_chipsets(cfg: &AiHubConfig) -> Result<Vec<ChipsetInf
     Ok(chipsets)
 }
 
+/// Runtime string the public bucket uses for geniex's qairt (NPU) assets.
+const RUNTIME_GENIEX_QAIRT: &str = "RUNTIME_GENIEX_QAIRT";
+
+/// One AI Hub model geniex can run.
+#[derive(Debug, Clone)]
+pub struct HubModel {
+    pub display_name: String,
+    pub id: String,
+    pub model_type: ModelType,
+    pub supported_chipsets: Vec<String>,
+}
+
+/// List AI Hub models with a `RUNTIME_GENIEX_QAIRT` asset, sorted by name.
+/// `chipset` restricts to models compatible with it (any alias / display name
+/// from `platform.json`); `None` lists every one. Host detection is the
+/// caller's job — pass the chipset you want to match.
+pub async fn list_hub_models(cfg: &AiHubConfig, chipset: Option<&str>) -> Result<Vec<HubModel>> {
+    let transport: Arc<dyn HttpTransport> = Arc::new(ReqwestTransport::new()?);
+
+    // `supported_chipsets` holds canonical ids, so map the caller's chipset
+    // (which may be an alias or reference-device name) through platform.json.
+    let canonical = match chipset {
+        Some(chip) => {
+            let plat = fetch_platform_info(cfg, &transport).await?;
+            Some(selector::resolve_chipset(&plat, chip)?)
+        }
+        None => None,
+    };
+
+    let manifest_url = format!(
+        "{}/releases/{}/{MANIFEST_FILENAME}",
+        cfg.endpoint, cfg.version
+    );
+    let manifest_cache = cfg.cache_dir.join(MANIFEST_FILENAME);
+    let manifest_bytes = fetch_with_cache(
+        &manifest_url,
+        &manifest_cache,
+        &cfg.version,
+        cfg.skip_cache,
+        &transport,
+    )
+    .await?;
+    let manifest: ReleaseManifest = parse_manifest("manifest.json", &manifest_bytes)?;
+
+    Ok(select_hub_models(manifest, canonical.as_deref()))
+}
+
+/// Pure filter/sort behind [`list_hub_models`], split out for testing.
+fn select_hub_models(manifest: ReleaseManifest, device_chipset: Option<&str>) -> Vec<HubModel> {
+    let mut models: Vec<HubModel> = manifest
+        .models
+        .into_iter()
+        .filter(|m| {
+            m.supported_runtimes
+                .iter()
+                .any(|r| r == RUNTIME_GENIEX_QAIRT)
+        })
+        .filter(|m| match device_chipset {
+            Some(chip) => m.supported_chipsets.iter().any(|c| c == chip),
+            None => true,
+        })
+        .map(|m| HubModel {
+            // MODEL_TAG_VLM marks VLMs even when domain is generic GENERATIVE_AI.
+            model_type: if m.tags.iter().any(|t| t == "MODEL_TAG_VLM") {
+                ModelType::Vlm
+            } else {
+                ModelType::Llm
+            },
+            display_name: m.display_name,
+            id: m.id,
+            supported_chipsets: m.supported_chipsets,
+        })
+        .collect();
+
+    models.sort_by(|a, b| {
+        a.display_name
+            .to_ascii_lowercase()
+            .cmp(&b.display_name.to_ascii_lowercase())
+    });
+    models
+}
+
 /// Detect the host chipset and resolve it to the reference device name AI
 /// Hub displays (e.g. `"Snapdragon X Elite CRD"`), the same name surfaced by
 /// [`list_supported_chipsets`]. Best-effort: returns `None` when the host
@@ -574,6 +656,9 @@ mod tests {
             display_name: id.to_string(),
             domain: domain.to_string(),
             manifest_urls: ManifestUrls::default(),
+            supported_runtimes: Vec::new(),
+            supported_chipsets: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
@@ -630,6 +715,107 @@ mod tests {
         // isn't a VLM signal) → LLM.
         let e = entry("mystery_model", "MODEL_DOMAIN_GENERATIVE_AI");
         assert_eq!(classify_ai_hub(None, &e), ModelType::Llm);
+    }
+
+    fn hub_entry(
+        id: &str,
+        runtimes: &[&str],
+        chipsets: &[&str],
+        tags: &[&str],
+    ) -> ManifestModelEntry {
+        ManifestModelEntry {
+            id: id.to_string(),
+            display_name: id.to_string(),
+            domain: "MODEL_DOMAIN_GENERATIVE_AI".to_string(),
+            manifest_urls: ManifestUrls::default(),
+            supported_runtimes: runtimes.iter().map(|s| s.to_string()).collect(),
+            supported_chipsets: chipsets.iter().map(|s| s.to_string()).collect(),
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn select_keeps_only_qairt_models() {
+        let manifest = ReleaseManifest {
+            platform_url: String::new(),
+            models: vec![
+                hub_entry("qairt_model", &["RUNTIME_GENIEX_QAIRT"], &["chipA"], &[]),
+                hub_entry(
+                    "llamacpp_only",
+                    &["RUNTIME_GENIEX_LLAMACPP"],
+                    &["chipA"],
+                    &[],
+                ),
+                hub_entry(
+                    "cv_model",
+                    &["RUNTIME_TFLITE", "RUNTIME_ONNX"],
+                    &["chipA"],
+                    &[],
+                ),
+            ],
+        };
+        let out = select_hub_models(manifest, None);
+        let ids: Vec<&str> = out.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["qairt_model"]);
+    }
+
+    #[test]
+    fn select_filters_by_device_chipset() {
+        let manifest = ReleaseManifest {
+            platform_url: String::new(),
+            models: vec![
+                hub_entry(
+                    "on_device",
+                    &["RUNTIME_GENIEX_QAIRT"],
+                    &["chipA", "chipB"],
+                    &[],
+                ),
+                hub_entry("off_device", &["RUNTIME_GENIEX_QAIRT"], &["chipB"], &[]),
+            ],
+        };
+        let out = select_hub_models(manifest, Some("chipA"));
+        let ids: Vec<&str> = out.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["on_device"]);
+    }
+
+    #[test]
+    fn select_unfiltered_when_no_device() {
+        let manifest = ReleaseManifest {
+            platform_url: String::new(),
+            models: vec![
+                hub_entry("b_model", &["RUNTIME_GENIEX_QAIRT"], &["chipA"], &[]),
+                hub_entry("a_model", &["RUNTIME_GENIEX_QAIRT"], &["chipB"], &[]),
+            ],
+        };
+        // None → no device filter; also asserts case-insensitive name sort.
+        let out = select_hub_models(manifest, None);
+        let ids: Vec<&str> = out.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["a_model", "b_model"]);
+    }
+
+    #[test]
+    fn select_classifies_vlm_from_tag() {
+        let manifest = ReleaseManifest {
+            platform_url: String::new(),
+            models: vec![
+                hub_entry(
+                    "vl_model",
+                    &["RUNTIME_GENIEX_QAIRT"],
+                    &["chipA"],
+                    &["MODEL_TAG_VLM"],
+                ),
+                hub_entry(
+                    "text_model",
+                    &["RUNTIME_GENIEX_QAIRT"],
+                    &["chipA"],
+                    &["MODEL_TAG_LLM"],
+                ),
+            ],
+        };
+        let out = select_hub_models(manifest, None);
+        assert_eq!(out[0].id, "text_model"); // sorted: text_ before vl_
+        assert_eq!(out[0].model_type, ModelType::Llm);
+        assert_eq!(out[1].model_type, ModelType::Vlm);
     }
 
     #[test]

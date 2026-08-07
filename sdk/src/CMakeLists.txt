@@ -42,7 +42,9 @@ if(WIN32)
         geniex_model_resolve_hub
         geniex_model_list_chipsets
         geniex_model_list_chipsets_free
-        geniex_model_detect_chipset)
+        geniex_model_detect_chipset
+        geniex_model_list_hub
+        geniex_model_list_hub_free)
     target_link_libraries(geniex PRIVATE "${RUST_MODEL_LIB}")
     foreach(_sym ${GENIEX_MODEL_FFI_SYMBOLS})
         target_link_options(geniex PRIVATE

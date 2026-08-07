@@ -456,6 +456,44 @@ GENIEX_API void geniex_model_list_chipsets_free(geniex_ChipsetList* out);
  */
 GENIEX_API int32_t geniex_model_detect_chipset(char** out_chipset);
 
+/* ============================================================
+ *  Hub model catalogue
+ * ============================================================ */
+
+/**
+ * @brief One Qualcomm AI Hub model geniex can run (qairt / NPU).
+ *
+ * `name` and the `chipsets` array are heap-allocated; free the enclosing
+ * list with geniex_model_list_hub_free().
+ */
+typedef struct {
+    char*            name;          /**< Pullable name, e.g. "qualcomm/Qwen3-4B". */
+    geniex_ModelType model_type;    /**< LLM or VLM.                              */
+    char**           chipsets;      /**< Canonical chipset ids the model runs on. */
+    int32_t          chipset_count; /**< Length of `chipsets`.                    */
+} geniex_HubModelInfo;
+
+typedef struct {
+    geniex_HubModelInfo* models;
+    int32_t              count;
+} geniex_HubModelList;
+
+/**
+ * @brief List Qualcomm AI Hub models with a qairt (NPU) asset, sorted by name.
+ *
+ * Sourced from the remote `manifest.json` (cached 24h); may hit the network.
+ *
+ * @param chipset  Canonical chipset id to filter by, or NULL to list every
+ *                 model. Detecting the host chipset is the caller's job — see
+ *                 geniex_model_detect_chipset().
+ * @param out  Populated on success. Call geniex_model_list_hub_free() when done.
+ * @return GENIEX_SUCCESS, or a negative geniex_ErrorCode.
+ */
+GENIEX_API int32_t geniex_model_list_hub(const char* chipset, geniex_HubModelList* out);
+
+/** Free every model's name + chipsets array, then zero the struct. */
+GENIEX_API void geniex_model_list_hub_free(geniex_HubModelList* out);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
