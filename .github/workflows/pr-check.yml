@@ -57,6 +57,13 @@ jobs:
     with:
       upload_artifact: true
 
+  test-rust:
+    name: test-rust
+    needs: [lint]
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    uses: ./.github/workflows/_test-rust.yml
+    secrets: inherit
+
   build-cli:
     name: build-cli
     needs: [build-sdk]
