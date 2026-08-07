@@ -296,7 +296,7 @@ def _bind_all() -> None:
     lib.geniex_model_list_chipsets_free.argtypes = [POINTER(geniex_ChipsetList)]
     lib.geniex_model_list_chipsets_free.restype = None
 
-    lib.geniex_model_detect_chipset.argtypes = [POINTER(c_char_p)]
+    lib.geniex_model_detect_chipset.argtypes = [c_int32, POINTER(c_char_p)]
     lib.geniex_model_detect_chipset.restype = c_int32
 
     lib.geniex_model_list_hub.argtypes = [c_char_p, POINTER(geniex_HubModelList)]

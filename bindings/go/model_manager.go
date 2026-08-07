@@ -280,11 +280,15 @@ func ModelListChipsets() ([]ChipsetInfo, error) {
 	return result, nil
 }
 
-// ModelDetectChipset probes the current host for its chipset via a local
-// detector (no network). Returns "" when the platform can't be probed.
-func ModelDetectChipset() (string, error) {
+// ModelDetectChipset probes the host chipset. offline=true stays local (returns
+// the canonical id); else it may hit the network. Returns "" when not probeable.
+func ModelDetectChipset(offline bool) (string, error) {
+	var cOffline C.int32_t
+	if offline {
+		cOffline = 1
+	}
 	var out *C.char
-	if res := C.geniex_model_detect_chipset(&out); res != C.GENIEX_SUCCESS {
+	if res := C.geniex_model_detect_chipset(cOffline, &out); res != C.GENIEX_SUCCESS {
 		return "", modelError(res)
 	}
 	if out == nil {

@@ -498,15 +498,14 @@ def list_chipsets() -> list[ChipsetInfo]:
         lib.geniex_model_list_chipsets_free(byref(out))
 
 
-def detect_chipset() -> str | None:
-    """Detect the current host's chipset via a local probe (no network).
-
-    Returns ``None`` when the platform cannot be probed.
+def detect_chipset(offline: bool = False) -> str | None:
+    """Detect the host chipset. ``offline`` stays local (canonical id); else it
+    may hit the network. Returns ``None`` when not probeable.
     """
     _ensure_init()
     lib = load_library()
     out = c_char_p()
-    _check(lib.geniex_model_detect_chipset(byref(out)))
+    _check(lib.geniex_model_detect_chipset(c_int32(1 if offline else 0), byref(out)))
     if not out.value:
         return None
     try:

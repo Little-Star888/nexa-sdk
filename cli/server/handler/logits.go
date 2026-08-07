@@ -11,6 +11,7 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
+	"github.com/qualcomm/GenieX/cli/internal/store"
 	"github.com/qualcomm/GenieX/cli/server/service"
 )
 
@@ -43,11 +44,11 @@ const defaultLogitsTopN = 20
 // top_n is 0 each row is the full vocabulary, ordered by token id, and token id
 // is the column index — TokenIDs is then omitted.
 type ForwardLogitsResponse struct {
-	Model     string        `json:"model"`
-	NRows     int           `json:"n_rows"`
-	VocabSize int           `json:"vocab_size"`
-	TopN      int           `json:"top_n"`
-	Rows      []ForwardRow  `json:"rows"`
+	Model     string       `json:"model"`
+	NRows     int          `json:"n_rows"`
+	VocabSize int          `json:"vocab_size"`
+	TopN      int          `json:"top_n"`
+	Rows      []ForwardRow `json:"rows"`
 }
 
 // ForwardRow is one position's logits. For top-N output, Logits[i] pairs with
@@ -88,7 +89,7 @@ func ForwardLogits(c *gin.Context) {
 		return
 	}
 
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, service.SpecParam{})
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, store.Get().ResolveChipset(true), service.SpecParam{})
 	if err != nil {
 		slog.Error("Failed to resolve model params", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})

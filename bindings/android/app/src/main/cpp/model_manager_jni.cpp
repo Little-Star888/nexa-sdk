@@ -557,9 +557,10 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_com_geniex_sdk_jni_ModelManager_l
     return arr;
 }
 
-extern "C" JNIEXPORT jstring JNICALL Java_com_geniex_sdk_jni_ModelManager_detectChipset(JNIEnv* env, jobject /*thiz*/) {
+extern "C" JNIEXPORT jstring JNICALL Java_com_geniex_sdk_jni_ModelManager_detectChipset(
+    JNIEnv* env, jobject /*thiz*/, jboolean offline) {
     char*   out = nullptr;
-    int32_t rc  = geniex_model_detect_chipset(&out);
+    int32_t rc  = geniex_model_detect_chipset(offline ? 1 : 0, &out);
     if (rc != GENIEX_SUCCESS || !out) return nullptr;
     jstring result = env->NewStringUTF(out);
     geniex_free(out);

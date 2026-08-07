@@ -440,21 +440,27 @@ GENIEX_API void geniex_model_list_chipsets_free(geniex_ChipsetList* out);
  *
  * Probes the host (Windows-on-Snapdragon X Elite / X Plus / X2 Elite / X2 Plus, Linux
  * on Qualcomm Dragonwing boards QCS6490 / QCS9075, Android on Snapdragon via
- * `ro.soc.model`), then resolves the raw id to the AI Hub reference device
- * name (e.g. "Snapdragon X Elite CRD") — the same name geniex_model_list_chipsets
- * surfaces and the picker stores. Resolution reads platform.json (24h on-disk
- * cache), so the first call may hit the network; it falls back to the raw
- * detected id when the catalogue is unavailable or has no entry for it.
+ * `ro.soc.model`) for its raw canonical chipset id (e.g. "qualcomm-qcs6490").
+ *
+ * When `offline` is 0, the raw id is then resolved to the AI Hub reference
+ * device name (e.g. "Snapdragon X Elite CRD") — the same name
+ * geniex_model_list_chipsets surfaces and the picker stores — by reading
+ * platform.json (24h on-disk cache), so that call may hit the network; it falls
+ * back to the raw id when the catalogue is unavailable or has no entry for it.
+ * Pass a non-zero `offline` to skip that translation entirely and return the
+ * raw canonical id from a purely local probe (never touches the network).
  *
  * The returned value is accepted by geniex_model_pull's `chipset` field.
  *
+ * @param offline      Non-zero: local probe only, return the raw canonical id.
+ *                     Zero: also translate to the reference-device name online.
  * @param out_chipset  Set to a heap-allocated string on success, or NULL when
  *                     the host cannot be probed on this platform. Free a
  *                     non-NULL value with geniex_free().
  * @return GENIEX_SUCCESS (even when *out_chipset is NULL), or a negative
  *         geniex_ErrorCode on a hard failure (e.g. NULL out_chipset).
  */
-GENIEX_API int32_t geniex_model_detect_chipset(char** out_chipset);
+GENIEX_API int32_t geniex_model_detect_chipset(int32_t offline, char** out_chipset);
 
 /* ============================================================
  *  Hub model catalogue

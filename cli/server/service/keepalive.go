@@ -60,7 +60,7 @@ func resolveDraftModelPath(draft string) (string, error) {
 	return paths.ModelPath, nil
 }
 
-func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute string, spec SpecParam) (types.ModelParam, error) {
+func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute, chipset string, spec SpecParam) (types.ModelParam, error) {
 	// nctx / ngl / compute already carry the resolved value (explicit request
 	// or the server default prefilled by the handler). Non-llama_cpp plugins
 	// (e.g. qairt) reject non-zero nctx, so zero it for them; the SDK does the
@@ -68,6 +68,14 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 	nctx, ngl := reqNCtx, reqNgl
 	if runtimeID != geniex_sdk.RuntimeLlamaCpp {
 		nctx = 0
+	}
+
+	// Host-aware default (e.g. RB3 Gen 2 → cpu) before the SDK's npu fallback.
+	// chipset is resolved by the caller (offline) so this stays store-free.
+	if resolved, overridden := config.ComputeDefault(reqCompute, chipset); overridden {
+		slog.Info("applied host-aware compute default", "compute", resolved)
+		fmt.Println(render.GetTheme().Info.Sprintf("Defaulting to compute %s for this device.", resolved))
+		reqCompute = resolved
 	}
 
 	resolved, err := geniex_sdk.ResolveDevice(geniex_sdk.ResolveDeviceInput{

@@ -117,8 +117,8 @@ object ModelManagerWrapper {
         native.listChipsets().toList()
     }
 
-    suspend fun detectChipset(): String? = withContext(Dispatchers.IO) {
-        native.detectChipset()
+    suspend fun detectChipset(offline: Boolean = false): String? = withContext(Dispatchers.IO) {
+        native.detectChipset(offline)
     }
 
     suspend fun listHubModels(chipset: String? = null): List<HubModel> = withContext(Dispatchers.IO) {
