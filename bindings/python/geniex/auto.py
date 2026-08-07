@@ -405,7 +405,10 @@ class AutoModelForCausalLM:
         spec_type = kwargs.get('spec_type', '')
         is_vlm = _is_vlm(resolved_mmproj, model_name or model_name_or_path, model_path)
         if is_vlm and spec_type:
-            print(f"Warning: spec_type set on a VLM-classified model; running the LLM path, image / audio inputs will be ignored")
+            print(
+                'Warning: spec_type set on a VLM-classified model; '
+                'running the LLM path, image / audio inputs will be ignored'
+            )
             is_vlm = False
         if is_vlm:
             return _create_vlm_handle(
