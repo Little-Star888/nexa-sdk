@@ -70,7 +70,8 @@ GENIEX_DEVICE_TEST=1 pytest tests
 
 The matrix uses one model per modality, aligned across both plugins so a
 keyword-quality divergence between llama_cpp and QAIRT traces to backend /
-quantization rather than model identity (`tests/_models.py`):
+quantization rather than model identity. Manifest: `tests/models.json` (edit
+this file to swap or add models); loader: `tests/_models.py`.
 
 | Modality | llama_cpp (HF GGUF) | QAIRT (AI Hub) |
 |----------|---------------------|----------------|
