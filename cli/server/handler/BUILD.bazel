@@ -5,6 +5,10 @@ go_library(
     name = "handler",
     srcs = [
         "chat.go",
+        "chat_messages.go",
+        "chat_response.go",
+        "chat_stream.go",
+        "chat_token.go",
         "logits.go",
         "model.go",
     ],

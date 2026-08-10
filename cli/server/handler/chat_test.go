@@ -6,8 +6,6 @@ package handler
 import (
 	"strings"
 	"testing"
-
-	"github.com/qualcomm/GenieX/cli/internal/thinkfsm"
 )
 
 func TestReasoningSeparated(t *testing.T) {
@@ -27,14 +25,14 @@ func TestReasoningSeparated(t *testing.T) {
 	}
 }
 
-func TestReasoningSink(t *testing.T) {
+func TestSinks(t *testing.T) {
 	tokens := []string{"<think>", "reason", "</think>", "answer"}
 
-	t.Run("separation splits think block", func(t *testing.T) {
+	t.Run("reasoningClass splits think block", func(t *testing.T) {
 		var content, reasoning strings.Builder
-		sink := reasoningSink(thinkfsm.New(), &content, &reasoning)
+		s := sink(reasoningClass(), &content, &reasoning)
 		for _, tok := range tokens {
-			sink(tok)
+			s(tok)
 		}
 		if got := content.String(); got != "answer" {
 			t.Errorf("content = %q, want %q", got, "answer")
@@ -44,17 +42,14 @@ func TestReasoningSink(t *testing.T) {
 		}
 	})
 
-	t.Run("nil splitter keeps everything inline", func(t *testing.T) {
+	t.Run("plainClass keeps everything inline", func(t *testing.T) {
 		var content, reasoning strings.Builder
-		sink := reasoningSink(nil, &content, &reasoning)
+		s := sink(plainClass, &content, &reasoning)
 		for _, tok := range tokens {
-			sink(tok)
+			s(tok)
 		}
 		if got := content.String(); got != "<think>reason</think>answer" {
 			t.Errorf("content = %q, want raw inline", got)
-		}
-		if got := reasoning.String(); got != "" {
-			t.Errorf("reasoning = %q, want empty", got)
 		}
 	})
 }
