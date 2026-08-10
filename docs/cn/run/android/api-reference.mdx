@@ -166,7 +166,6 @@ data class ModelConfig(
     var nGpuLayers:            Int     = -1,    // -1 = all layers
     val chat_template_path:    String  = "",
     val chat_template_content: String  = "",
-    val enable_thinking:       Boolean = false,
 )
 ```
 
@@ -359,7 +358,7 @@ LlmWrapper.builder()
     .llmCreateInput(
         LlmCreateInput(
             model_path = paths.model_path,
-            config     = ModelConfig(enable_thinking = false),
+            config     = ModelConfig(),
             runtime_id  = "qairt",
             compute_unit  = null,           // null → NPU (only option for Qualcomm AI Engine Direct)
         )
@@ -396,7 +395,7 @@ VlmWrapper.builder()
         VlmCreateInput(
             model_path  = paths.model_path,
             mmproj_path = paths.mmproj_path,
-            config      = ModelConfig(enable_thinking = false),
+            config      = ModelConfig(),
             runtime_id   = "qairt",
             compute_unit   = null,
         )

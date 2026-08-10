@@ -413,7 +413,6 @@ typedef struct {
 
     geniex_Path chat_template_path;     // path to chat template file, optional
     const char* chat_template_content;  // content of chat template file, optional
-    bool        enable_thinking;        // enable thinking mode for Qwen models
 
     // Speculative decoding (llama_cpp only; ignored by qairt). Disabled when
     // spec_type is NULL/""/"none". One or comma-separated llama.cpp type names,

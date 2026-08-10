@@ -206,7 +206,7 @@ Bundles outside the `ai-hub-models/*` namespace — whether self-converted from 
         .llmCreateInput(
             LlmCreateInput(
                 model_path = paths.model_path,
-                config     = ModelConfig(enable_thinking = false),
+                config     = ModelConfig(),
                 runtime_id  = "qairt",
                 compute_unit  = null,   // qairt is NPU-only
             )

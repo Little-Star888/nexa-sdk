@@ -220,8 +220,7 @@ struct fmt::formatter<geniex_ModelConfig> {
         return fmt::format_to(ctx.out(),
             "ModelConfig(n_ctx: {}, n_threads: {}, n_threads_batch: {}, n_batch: {}, n_ubatch: {}, n_seq_max: {}, "
                       "n_gpu_layers: {}, "
-                      "chat_template_path: {}, chat_template_content: {}, "
-                      "enable_thinking: {})",
+                      "chat_template_path: {}, chat_template_content: {})",
             lp(p.n_ctx),
             lp(p.n_threads),
             lp(p.n_threads_batch),
@@ -230,8 +229,7 @@ struct fmt::formatter<geniex_ModelConfig> {
             lp(p.n_seq_max),
             lp(p.n_gpu_layers),
             lp(p.chat_template_path),
-            lp(p.chat_template_content),
-            lp(p.enable_thinking));
+            lp(p.chat_template_content));
     }
 };
 

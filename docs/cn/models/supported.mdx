@@ -206,7 +206,7 @@ Hugging Face 上的部分模型是**受限模型（gated）**——你需要在 
         .llmCreateInput(
             LlmCreateInput(
                 model_path = paths.model_path,
-                config     = ModelConfig(enable_thinking = false),
+                config     = ModelConfig(),
                 runtime_id  = "qairt",
                 compute_unit  = null,   // qairt 仅支持 NPU
             )

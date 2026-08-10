@@ -38,7 +38,6 @@ extern "C" JNIEXPORT jlong JNICALL Java_com_geniex_sdk_jni_Llm_create(
         LOGd("[JNI] create() geniex_llm_create called with:");
         LOGd("  model_path: %s", create_input.model_path ? create_input.model_path : "(null)");
         LOGd("  tokenizer_path: %s", create_input.tokenizer_path ? create_input.tokenizer_path : "(null)");
-        LOGd("  config.enable_thinking: %s", create_input.config.enable_thinking ? "true" : "false");
         LOGd("  plugin_id: %s", create_input.plugin_id ? create_input.plugin_id : "(null)");
 
         int32_t result = geniex_llm_create(&create_input, &handle);

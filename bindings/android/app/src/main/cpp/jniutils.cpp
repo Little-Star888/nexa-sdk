@@ -243,10 +243,6 @@ geniex_ModelConfig extract_model_config(JNIEnv* env, jobject configObj) {
     // Note: old fields like system_library_path, backend_library_path, etc. are removed
     // They don't exist in geniex_ModelConfig anymore (see include/ml.h)
 
-    // enable_thinking
-    fid                    = env->GetFieldID(cls, "enable_thinking", "Z");
-    config.enable_thinking = env->GetBooleanField(configObj, fid);
-
     // spec_type
     fid              = env->GetFieldID(cls, "spec_type", "Ljava/lang/String;");
     jstr             = (jstring)env->GetObjectField(configObj, fid);

@@ -100,7 +100,6 @@ class geniex_ModelConfig(Structure):
         ('n_gpu_layers', c_int32),
         ('chat_template_path', c_char_p),
         ('chat_template_content', c_char_p),
-        ('enable_thinking', c_bool),
         ('spec_type', c_char_p),
         ('spec_draft_model', c_char_p),
         ('spec_n_max', c_int32),
