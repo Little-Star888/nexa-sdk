@@ -98,6 +98,23 @@ geniex serve
 
 ![响应体展示 200 成功响应及 VLM 对图像的描述](/Images/server/curl-5.png)
 
+## **POST /v1/completions**
+
+对 `prompt` 生成原始续写，不套用聊天模板 —— 提示词会原样传给模型。适用于自行构造完整提示词的客户端，例如编辑器的 fill-in-the-middle（FIM）代码补全：把模型的 FIM 标记直接写进 `prompt`。仅支持 LLM 模型。
+
+```json Example Value
+{
+  "model": "unsloth/Qwen2.5-Coder-3B-GGUF:Q4_0",
+  "prompt": "<|fim_prefix|>def fibonacci(n):\n    <|fim_suffix|>\n    return a<|fim_middle|>",
+  "max_tokens": 64,
+  "temperature": 0.2,
+  "stop": ["<|endoftext|>"],
+  "stream": false
+}
+```
+
+响应中的 `choices[0].text` 即原始补全内容，可直接插入光标处。`stream`、`stop`、`echo` 及采样参数（`temperature`、`top_p`、`top_k`、`min_p`、`repetition_penalty`、`seed`）与 `/v1/chat/completions` 行为一致；不支持 `suffix` —— 请改用模型的 FIM 标记把后缀编码进 `prompt`。
+
 ## **Python 客户端（OpenAI SDK）**
 
 由于服务器使用 OpenAI 协议，可直接将官方 `openai` Python 客户端指向本地端点，复用任意已有的 OpenAI 代码。先通过 `pip install openai` 安装，然后创建 client：

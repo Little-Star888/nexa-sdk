@@ -9,6 +9,7 @@ go_library(
         "chat_response.go",
         "chat_stream.go",
         "chat_token.go",
+        "completion.go",
         "logits.go",
         "model.go",
     ],
@@ -34,6 +35,7 @@ go_cgo_test(
     name = "handler_test",
     srcs = [
         "chat_test.go",
+        "completion_test.go",
     ],
     embed = [":handler"],
 )
