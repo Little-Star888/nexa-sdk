@@ -232,7 +232,6 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 			draftPath = p
 		}
 		t, e = geniex_sdk.NewLLM(geniex_sdk.LlmCreateInput{
-			ModelName: paths.ModelName,
 			ModelPath: modelfile,
 			DeviceID:  param.DeviceID,
 			Config: geniex_sdk.ModelConfig{
@@ -248,7 +247,6 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 		})
 	case reflect.TypeFor[geniex_sdk.VLM]():
 		t, e = geniex_sdk.NewVLM(geniex_sdk.VlmCreateInput{
-			ModelName:  paths.ModelName,
 			ModelPath:  modelfile,
 			MmprojPath: paths.MmprojPath,
 			DeviceID:   param.DeviceID,

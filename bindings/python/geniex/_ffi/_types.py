@@ -36,10 +36,8 @@ class geniex_ProfileData(Structure):
         ('decode_time', c_int64),
         ('prompt_tokens', c_int64),
         ('generated_tokens', c_int64),
-        ('audio_duration', c_int64),
         ('prefill_speed', c_double),
         ('decoding_speed', c_double),
-        ('real_time_factor', c_double),
         ('draft_n_total', c_int64),
         ('draft_n_accepted', c_int64),
         ('stop_reason', c_char_p),
@@ -63,7 +61,6 @@ class geniex_SamplerConfig(Structure):
         ('seed', c_int32),
         ('grammar_path', c_char_p),
         ('grammar_string', c_char_p),
-        ('enable_json', c_bool),
     ]
 
 
@@ -77,11 +74,9 @@ class geniex_GenerationConfig(Structure):
         ('max_tokens', c_int32),
         ('stop', POINTER(c_char_p)),
         ('stop_count', c_int32),
-        ('n_past', c_int32),
         ('sampler_config', POINTER(geniex_SamplerConfig)),
         ('image_paths', POINTER(c_char_p)),
         ('image_count', c_int32),
-        ('image_max_length', c_int32),
         ('audio_paths', POINTER(c_char_p)),
         ('audio_count', c_int32),
         ('sliding_window', c_bool),
@@ -105,12 +100,7 @@ class geniex_ModelConfig(Structure):
         ('n_gpu_layers', c_int32),
         ('chat_template_path', c_char_p),
         ('chat_template_content', c_char_p),
-        ('system_prompt', c_char_p),
-        ('enable_sampling', c_bool),
-        ('grammar_str', c_char_p),
-        ('max_tokens', c_int32),
         ('enable_thinking', c_bool),
-        ('verbose', c_bool),
         ('spec_type', c_char_p),
         ('spec_draft_model', c_char_p),
         ('spec_n_max', c_int32),
@@ -147,7 +137,6 @@ class geniex_KvCacheLoadOutput(Structure):
 
 class geniex_LlmCreateInput(Structure):
     _fields_ = [
-        ('model_name', c_char_p),
         ('model_path', c_char_p),
         ('tokenizer_path', c_char_p),
         ('config', geniex_ModelConfig),
@@ -179,7 +168,6 @@ class geniex_LlmModelInfo(Structure):
         ('vocab_size', c_int32),
         ('bos_token', c_int32),
         ('add_bos', c_int32),
-        ('reserved0', c_int32),
     ]
 
 
@@ -245,7 +233,6 @@ class geniex_VlmChatMessage(Structure):
 
 class geniex_VlmCreateInput(Structure):
     _fields_ = [
-        ('model_name', c_char_p),
         ('model_path', c_char_p),
         ('mmproj_path', c_char_p),
         ('config', geniex_ModelConfig),

@@ -56,7 +56,6 @@ def _build_sampler(
     frequency_penalty: float,
     seed: int,
     grammar: str | None,
-    json_mode: bool,
 ) -> geniex_SamplerConfig:
     return geniex_SamplerConfig(
         temperature=temperature,
@@ -68,7 +67,6 @@ def _build_sampler(
         frequency_penalty=frequency_penalty,
         seed=seed,
         grammar_string=_enc(grammar),
-        enable_json=json_mode,
     )
 
 
@@ -200,7 +198,6 @@ class GenieXLLM:
         seed: int = 0,
         stop: list[str] | None = None,
         grammar: str | None = None,
-        json_mode: bool = False,
         stream: bool = False,
         # Opt-in ring-buffer context eviction (qairt only).
         sliding_window: bool = False,
@@ -224,7 +221,6 @@ class GenieXLLM:
             frequency_penalty,
             seed,
             grammar,
-            json_mode,
         )
         cfg, _sa, _ia, _aa = _build_gen_config(
             max_new_tokens, stop, sampler, [], [], sliding_window, sliding_window_n_keep
@@ -500,7 +496,6 @@ class GenieXVLM:
         seed: int = 0,
         stop: list[str] | None = None,
         grammar: str | None = None,
-        json_mode: bool = False,
         images: list[str] | None = None,
         audios: list[str] | None = None,
         stream: bool = False,
@@ -540,7 +535,6 @@ class GenieXVLM:
             frequency_penalty,
             seed,
             grammar,
-            json_mode,
         )
         cfg, _sa, _ia, _aa = _build_gen_config(max_new_tokens, stop, sampler, images, audios)
 

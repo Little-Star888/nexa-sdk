@@ -28,7 +28,6 @@ const (
 )
 
 type LlmCreateInput struct {
-	ModelName     string
 	ModelPath     string
 	TokenizerPath string
 	Config        ModelConfig
@@ -39,7 +38,6 @@ type LlmCreateInput struct {
 func (lci LlmCreateInput) toCPtr() *C.geniex_LlmCreateInput {
 	cPtr := (*C.geniex_LlmCreateInput)(cMalloc(C.sizeof_geniex_LlmCreateInput))
 	*cPtr = C.geniex_LlmCreateInput{
-		model_name:     cStringIfSet(lci.ModelName),
 		model_path:     cStringIfSet(lci.ModelPath),
 		tokenizer_path: cStringIfSet(lci.TokenizerPath),
 		plugin_id:      cStringIfSet(lci.RuntimeID),
@@ -53,7 +51,6 @@ func freeLlmCreateInput(cPtr *C.geniex_LlmCreateInput) {
 	if cPtr == nil {
 		return
 	}
-	cFreeIfSet(unsafe.Pointer(cPtr.model_name))
 	cFreeIfSet(unsafe.Pointer(cPtr.model_path))
 	cFreeIfSet(unsafe.Pointer(cPtr.tokenizer_path))
 	cFreeIfSet(unsafe.Pointer(cPtr.plugin_id))

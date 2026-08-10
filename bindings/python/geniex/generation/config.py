@@ -24,7 +24,6 @@ class GenerationConfig:
     seed: int = 0
     stop: list[str] = field(default_factory=list)
     grammar: str | None = None
-    json_mode: bool = False
     images: list[str] = field(default_factory=list)
     audios: list[str] = field(default_factory=list)
     stream: bool = False

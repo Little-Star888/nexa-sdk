@@ -19,10 +19,8 @@ type ProfileData struct {
 	DecodeTime      int64
 	PromptTokens    int64
 	GeneratedTokens int64
-	AudioDuration   int64
 	PrefillSpeed    float64
 	DecodingSpeed   float64
-	RealTimeFactor  float64
 	DraftNTotal     int64
 	DraftNAccepted  int64
 	StopReason      string
@@ -44,10 +42,8 @@ func newProfileDataFromCPtr(c C.geniex_ProfileData) ProfileData {
 		DecodeTime:      int64(c.decode_time),
 		PromptTokens:    int64(c.prompt_tokens),
 		GeneratedTokens: int64(c.generated_tokens),
-		AudioDuration:   int64(c.audio_duration),
 		PrefillSpeed:    float64(c.prefill_speed),
 		DecodingSpeed:   float64(c.decoding_speed),
-		RealTimeFactor:  float64(c.real_time_factor),
 		DraftNTotal:     int64(c.draft_n_total),
 		DraftNAccepted:  int64(c.draft_n_accepted),
 		StopReason:      C.GoString(c.stop_reason),
@@ -67,7 +63,6 @@ type SamplerConfig struct {
 	Seed              int32
 	GrammarPath       string
 	GrammarString     string
-	EnableJson        bool
 }
 
 // LCOV_EXCL_START
@@ -84,7 +79,6 @@ func (sc SamplerConfig) toCPtr() *C.geniex_SamplerConfig {
 		seed:               C.int32_t(sc.Seed),
 		grammar_path:       cStringIfSet(sc.GrammarPath),
 		grammar_string:     cStringIfSet(sc.GrammarString),
-		enable_json:        C.bool(sc.EnableJson),
 	}
 	return cPtr
 }
@@ -103,10 +97,8 @@ func freeSamplerConfig(cPtr *C.geniex_SamplerConfig) {
 type GenerationConfig struct {
 	MaxTokens      int32
 	Stop           []string
-	NPast          int32
 	SamplerConfig  *SamplerConfig
 	ImagePaths     []string
-	ImageMaxLength int32
 	AudioPaths     []string
 
 	// Opt-in ring-buffer context eviction (qairt only).
@@ -119,8 +111,6 @@ func (gc GenerationConfig) toCPtr() *C.geniex_GenerationConfig {
 	cPtr := (*C.geniex_GenerationConfig)(cMalloc(C.sizeof_geniex_GenerationConfig))
 	*cPtr = C.geniex_GenerationConfig{
 		max_tokens:            C.int32_t(gc.MaxTokens),
-		n_past:                C.int32_t(gc.NPast),
-		image_max_length:      C.int32_t(gc.ImageMaxLength),
 		sliding_window:        C.bool(gc.SlidingWindow),
 		sliding_window_n_keep: C.int32_t(gc.SlidingWindowNKeep),
 	}

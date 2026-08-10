@@ -205,9 +205,8 @@ Bundles outside the `ai-hub-models/*` namespace — whether self-converted from 
     val llm = LlmWrapper.builder()
         .llmCreateInput(
             LlmCreateInput(
-                model_name = paths.model_name,
                 model_path = paths.model_path,
-                config     = ModelConfig(max_tokens = 2048, enable_thinking = false),
+                config     = ModelConfig(enable_thinking = false),
                 runtime_id  = "qairt",
                 compute_unit  = null,   // qairt is NPU-only
             )
@@ -280,7 +279,6 @@ A local GGUF model is a directory (or file) holding your `.gguf` weights — sid
     val llm = LlmWrapper.builder()
         .llmCreateInput(
             LlmCreateInput(
-                model_name = paths.model_name,
                 model_path = paths.model_path,
                 config     = ModelConfig(nCtx = 4096),
                 runtime_id  = "llama_cpp",

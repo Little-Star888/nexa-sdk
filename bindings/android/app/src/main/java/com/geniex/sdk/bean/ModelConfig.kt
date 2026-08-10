@@ -37,13 +37,8 @@ data class ModelConfig(
     /** Content of the chat template file (optional) */
     val chat_template_content: String = "",
 
-    /** Maximum number of tokens to generate */
-    val max_tokens: Int = 2048,
-
     /** Enable "thinking" mode for more detailed reasoning */
     val enable_thinking: Boolean = false,
-
-    val verbose: Boolean = false,
 
     /** Speculative decoding type(s), comma-separated (llama_cpp only; "" / "none" = disabled).
      *  Draft models: "draft-mtp","draft-eagle3","draft-simple". Self-speculative: "ngram-*". */

@@ -227,13 +227,12 @@ def _build_model_config(plugin_id: str | None, n_ctx: int, n_gpu_layers: int, **
         'n_batch',
         'n_ubatch',
         'n_seq_max',
-        'max_tokens',
         'spec_n_max',
         'spec_n_min',
     }
-    _bool_fields = {'enable_thinking', 'verbose'}
+    _bool_fields = {'enable_thinking'}
     _float_fields = {'spec_p_min'}
-    _str_fields = {'chat_template_path', 'chat_template_content', 'system_prompt', 'spec_type', 'spec_draft_model'}
+    _str_fields = {'chat_template_path', 'chat_template_content', 'spec_type', 'spec_draft_model'}
     for k, v in kwargs.items():
         if k in _int_fields:
             setattr(cfg, k, int(v))
@@ -318,7 +317,6 @@ def _is_vlm(mmproj_path: str | None, cache_key: str, model_path: str | None = No
 
 
 def _create_vlm_handle(
-    resolved_name: str,
     model_path: str,
     mmproj_path: str | None,
     tokenizer_path: str | None,
@@ -328,7 +326,6 @@ def _create_vlm_handle(
     meta: dict | None = None,
 ) -> GenieXVLM:
     inp = geniex_VlmCreateInput(
-        model_name=resolved_name.encode(),
         model_path=model_path.encode(),
         config=config,
     )
@@ -412,7 +409,6 @@ class AutoModelForCausalLM:
             is_vlm = False
         if is_vlm:
             return _create_vlm_handle(
-                resolved_name,
                 model_path,
                 resolved_mmproj,
                 tokenizer_path or _tok,
@@ -423,7 +419,6 @@ class AutoModelForCausalLM:
             )
 
         inp = geniex_LlmCreateInput(
-            model_name=resolved_name.encode(),
             model_path=model_path.encode(),
             config=config,
         )
@@ -492,7 +487,6 @@ class AutoModelForVision2Seq:
         }
 
         return _create_vlm_handle(
-            resolved_name,
             model_path,
             mmproj_path or _mmproj,
             resolved_tok_path,

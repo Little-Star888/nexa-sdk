@@ -354,11 +354,9 @@ typedef struct {
 
     int64_t prompt_tokens;    /* Number of prompt tokens */
     int64_t generated_tokens; /* Number of generated tokens */
-    int64_t audio_duration;   /* Audio duration (us) */
 
-    double prefill_speed;    /* Prefill speed (tokens/sec) */
-    double decoding_speed;   /* Decoding speed (tokens/sec) */
-    double real_time_factor; /* Real-Time Factor(RTF) (1.0 = real-time, >1.0 = faster, <1.0 = slower) */
+    double prefill_speed;  /* Prefill speed (tokens/sec) */
+    double decoding_speed; /* Decoding speed (tokens/sec) */
 
     int64_t draft_n_total;    /* Speculative decoding: draft tokens generated (0 when disabled) */
     int64_t draft_n_accepted; /* Speculative decoding: draft tokens accepted by the target model */
@@ -382,7 +380,6 @@ typedef struct {
     int32_t     seed;               /* Random seed (-1 for random) */
     geniex_Path grammar_path;       /* Optional grammar file path */
     const char* grammar_string;     /* Optional grammar string (BNF-like format) */
-    bool        enable_json;        /* Enable JSON grammar */
 } geniex_SamplerConfig;
 
 /** LLM / VLM generation configuration (IMPROVED: support multiple images and audios) */
@@ -390,14 +387,12 @@ typedef struct {
     int32_t               max_tokens;     /* Maximum tokens to generate */
     const char**          stop;           /* Array of stop sequences */
     int32_t               stop_count;     /* Number of stop sequences */
-    int32_t               n_past;         /* Number of past tokens to consider */
     geniex_SamplerConfig* sampler_config; /* Advanced sampling config */
     // --- Improved multimodal support ---
-    geniex_Path* image_paths;      /* Array of image paths for VLM (NULL if none) */
-    int32_t      image_count;      /* Number of images */
-    int32_t      image_max_length; /* Maximum length of the image */
-    geniex_Path* audio_paths;      /* Array of audio paths for VLM (NULL if none) */
-    int32_t      audio_count;      /* Number of audios */
+    geniex_Path* image_paths; /* Array of image paths for VLM (NULL if none) */
+    int32_t      image_count; /* Number of images */
+    geniex_Path* audio_paths; /* Array of audio paths for VLM (NULL if none) */
+    int32_t      audio_count; /* Number of audios */
     // --- Context-length overflow handling (qcom-ai-hub/geniex#1197) ---
     /* qairt only; llama_cpp ignores this (it always context-shifts). When true,
      * evicts the oldest context tokens above sliding_window_n_keep instead of
@@ -416,15 +411,9 @@ typedef struct {
     int32_t n_seq_max;        // max number of sequences (i.e. distinct states for recurrent models)
     int32_t n_gpu_layers;     // number of layers to offload to GPU, 0 = all layers on CPU
 
-    // TODO: consider removing the following fields from ModelConfig, or move to another struct
     geniex_Path chat_template_path;     // path to chat template file, optional
     const char* chat_template_content;  // content of chat template file, optional
-    const char* system_prompt;          // system prompt for chat template, optional
-    bool        enable_sampling;        // DEPRECATED, use enable_json in geniex_SamplerConfig
-    const char* grammar_str;            // grammar string
-    int32_t     max_tokens;             // max tokens to generate
     bool        enable_thinking;        // enable thinking mode for Qwen models
-    bool        verbose;                // verbose logging
 
     // Speculative decoding (llama_cpp only; ignored by qairt). Disabled when
     // spec_type is NULL/""/"none". One or comma-separated llama.cpp type names,
@@ -444,7 +433,6 @@ typedef struct geniex_LLM geniex_LLM; /* Opaque LLM handle */
 
 /* ====================  Lifecycle Management  ============================== */
 typedef struct {
-    const char*        model_name;     /** Name of the model */
     geniex_Path        model_path;     /** Path to the model file */
     geniex_Path        tokenizer_path; /** Path to the tokenizer file */
     geniex_ModelConfig config;         /** Model configuration */
@@ -597,7 +585,6 @@ typedef struct {
     int32_t vocab_size; /** Number of tokens in the model vocabulary (>=1 on success). */
     int32_t bos_token;  /** BOS token id, or -1 if the model has no BOS. */
     int32_t add_bos;    /** 1 = caller should prepend BOS at position 0 when feeding raw input_ids. */
-    int32_t reserved0;  /** Reserved, must be 0. */
 } geniex_LlmModelInfo;
 
 /**
@@ -697,7 +684,6 @@ typedef struct geniex_VLM geniex_VLM; /* Opaque VLM handle */
 /* ====================  Lifecycle Management  ============================== */
 
 typedef struct {
-    const char*        model_name;     /** Name of the model */
     geniex_Path        model_path;     /** Path to the model file */
     geniex_Path        mmproj_path;    /** Path to the mmproj file */
     geniex_ModelConfig config;         /** Model configuration */

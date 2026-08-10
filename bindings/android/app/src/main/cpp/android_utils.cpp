@@ -33,8 +33,8 @@ jobject create_java_profile_data(JNIEnv *env, geniex_ProfileData data) {
     jclass cls = env->FindClass("com/geniex/sdk/bean/ProfilingData");
     if (!cls) return nullptr;
 
-    // (DDDJJJDDDLjava/lang/String;)V
-    jmethodID ctor = env->GetMethodID(cls, "<init>", "(DDDJJJDDDLjava/lang/String;)V");
+    // (DDDJJDDLjava/lang/String;)V
+    jmethodID ctor = env->GetMethodID(cls, "<init>", "(DDDJJDDLjava/lang/String;)V");
     if (!ctor) return nullptr;
 
     const auto ttft_ms   = static_cast<jdouble>(data.ttft / 1000.0);
@@ -43,9 +43,8 @@ jobject create_java_profile_data(JNIEnv *env, geniex_ProfileData data) {
 
     const auto prompt_tokens = static_cast<jlong>(data.prompt_tokens);
     const auto gen_tokens    = static_cast<jlong>(data.generated_tokens);
-    const auto audio_ms      = static_cast<jlong>(data.audio_duration / 1000);
 
-    // ---- compute speeds/rtf locally (tokens/sec; RTF: audio/proc) ----
+    // ---- compute speeds locally (tokens/sec) ----
     auto tok_per_s = [](int64_t tokens, int64_t time_us) -> jdouble {
         if (time_us <= 0) return 0.0;
         return static_cast<jdouble>(tokens) * 1e6 / static_cast<jdouble>(time_us);
@@ -54,11 +53,7 @@ jobject create_java_profile_data(JNIEnv *env, geniex_ProfileData data) {
     const jdouble prefill_speed  = tok_per_s(data.prompt_tokens, data.prompt_time);
     const jdouble decoding_speed = tok_per_s(data.generated_tokens, data.decode_time);
 
-    const int64_t proc_us =
-        (data.prompt_time > 0 ? data.prompt_time : 0) + (data.decode_time > 0 ? data.decode_time : 0);
-    const jdouble rtf = (proc_us > 0) ? static_cast<jdouble>(data.audio_duration) / static_cast<jdouble>(proc_us) : 0.0;
-
-    LOGd("prefill_speed=%.6f tok/s, decoding_speed=%.6f tok/s, rtf=%.4f", prefill_speed, decoding_speed, rtf);
+    LOGd("prefill_speed=%.6f tok/s, decoding_speed=%.6f tok/s", prefill_speed, decoding_speed);
 
     jstring jStopReason = env->NewStringUTF(data.stop_reason ? data.stop_reason : "");
 
@@ -68,12 +63,10 @@ jobject create_java_profile_data(JNIEnv *env, geniex_ProfileData data) {
         prompt_ms,
         decode_ms,  // D D D
         prompt_tokens,
-        gen_tokens,
-        audio_ms,  // J J J
+        gen_tokens,  // J J
         prefill_speed,
-        decoding_speed,
-        rtf,         // D D D
-        jStopReason  // String
+        decoding_speed,  // D D
+        jStopReason      // String
     );
 
     env->DeleteLocalRef(jStopReason);
