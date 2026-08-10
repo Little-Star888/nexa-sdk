@@ -54,9 +54,9 @@ geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu
 Then enable MTP:
 
 ```powershell
-geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu ^
-    --spec-type draft-mtp ^
-    --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0 ^
+geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu `
+    --spec-type draft-mtp `
+    --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0 `
     --draft-tokens 3
 ```
 
@@ -101,9 +101,9 @@ Start at `3`. Raise it only if acceptance is high — with mediocre acceptance a
 ```powershell
 geniex serve                      # terminal 1
 
-geniex run google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu ^
-    --spec-type draft-mtp ^
-    --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0 ^
+geniex run google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute npu `
+    --spec-type draft-mtp `
+    --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0 `
     --draft-tokens 3
 ```
 
