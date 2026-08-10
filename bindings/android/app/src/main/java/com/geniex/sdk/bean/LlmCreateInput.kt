@@ -1,13 +1,6 @@
 package com.geniex.sdk.bean
 
 data class LlmCreateInput(
-    /**
-     * Optional model identifier. The QAIRT plugin no longer needs it — it
-     * dispatches by reading `metadata.json` from the bundle directory. It is
-     * currently unused by `geniex_resolve_device` (reserved for future
-     * model-specific defaults) and kept for diagnostics.
-     */
-    val model_name: String? = null,
     override val model_path: String,
     val tokenizer_path: String? = null,
     override val config: ModelConfig,

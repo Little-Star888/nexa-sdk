@@ -45,8 +45,6 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }
 
-    enable_thinking_ = input->config.enable_thinking;
-
     // Reject llama.cpp-only parameters that have no meaning in the QAIRT plugin
     if (input->config.n_gpu_layers != 0) {
         GENIEX_LOG_ERROR("--ngl (n_gpu_layers) is not supported by the qairt plugin");
@@ -195,7 +193,7 @@ int32_t QairtLlm::apply_chat_template(
     if (is_first_turn_ && input->tools && input->tools[0] != '\0') {
         opts.tools_json = input->tools;
     }
-    opts.enable_thinking = input->enable_thinking || enable_thinking_;
+    opts.enable_thinking = input->enable_thinking;
 
     std::string formatted;
     try {
@@ -238,7 +236,6 @@ int32_t QairtLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
             gen_cfg.sliding_window_n_keep = input->config->sliding_window_n_keep;
         }
     }
-    gen_cfg.thinking_mode = enable_thinking_;
 
     // Wrap token callback
     std::function<bool(const char*)> on_token_fn;

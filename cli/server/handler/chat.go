@@ -39,14 +39,11 @@ type ChatCompletionRequest struct {
 	// "deepseek-legacy" / "auto" move it to reasoning_content.
 	ReasoningFormat string `json:"reasoning_format"`
 
-	ImageMaxLength int32 `json:"image_max_length"`
-
 	TopK              int32   `json:"top_k"`
 	MinP              float32 `json:"min_p"`
 	RepetitionPenalty float32 `json:"repetition_penalty"`
 	GrammarPath       string  `json:"grammar_path"`
 	GrammarString     string  `json:"grammar_string"`
-	EnableJson        bool    `json:"enable_json"`
 
 	SpecType       string  `json:"spec_type"`
 	SpecDraftModel string  `json:"spec_draft_model"`
@@ -71,13 +68,11 @@ func defaultChatCompletionRequest() ChatCompletionRequest {
 		NCtx:              cfg.NCtx,
 		Ngl:               cfg.Ngl,
 		Compute:           cfg.Compute,
-		ImageMaxLength:    512,
 		TopK:              0,
 		MinP:              0.0,
 		RepetitionPenalty: 1.0,
 		GrammarPath:       "",
 		GrammarString:     "",
-		EnableJson:        false,
 	}
 }
 
@@ -227,10 +222,9 @@ func prepareVLM(p *geniex_sdk.VLM, messages []geniex_sdk.VlmChatMessage, param C
 			OnToken:    onToken,
 			Config: &geniex_sdk.GenerationConfig{
 				MaxTokens:      int32(param.MaxCompletionTokens.Value),
-				SamplerConfig:  sampler,
-				ImagePaths:     images,
-				AudioPaths:     audios,
-				ImageMaxLength: param.ImageMaxLength,
+				SamplerConfig: sampler,
+				ImagePaths:    images,
+				AudioPaths:    audios,
 			},
 		})
 		if out == nil {
@@ -273,7 +267,6 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 		PresencePenalty:   float32(param.PresencePenalty.Value),
 		FrequencyPenalty:  float32(param.FrequencyPenalty.Value),
 		Seed:              int32(param.Seed.Value),
-		EnableJson:        param.EnableJson,
 	}
 	prompt, gen, err := prepare(p, messages, param, tools, sampler)
 	if err != nil {

@@ -33,7 +33,6 @@ var (
 	maxTokens      int32
 	stop           []string
 	stopFile       string
-	imageMaxLength int32
 	enableThink    bool
 	prompt         []string
 	tokenFile      string
@@ -58,7 +57,6 @@ var (
 	seed              int32
 	grammarPath       string
 	grammarString     string
-	enableJson        bool
 )
 
 // NOTE: flagset use same flag name will be ignored, but usage is different, so we keep them in different flagset
@@ -76,7 +74,6 @@ var (
 		samplerFlags.Int32VarP(&seed, "seed", "", 0, "random seed")
 		samplerFlags.StringVarP(&grammarPath, "grammar-path", "", "", "path to grammar file")
 		samplerFlags.StringVarP(&grammarString, "grammar-string", "", "", "grammar in string format")
-		samplerFlags.BoolVarP(&enableJson, "enable-json", "", false, "enable json output")
 		return samplerFlags
 	}()
 	llmFlags = func() *pflag.FlagSet {
@@ -105,7 +102,6 @@ var (
 		vlmFlags := pflag.NewFlagSet("VLM Specific", pflag.ExitOnError)
 		vlmFlags.SortFlags = false
 		vlmFlags.StringArrayVarP(&prompt, "prompt", "p", nil, "pass prompt")
-		vlmFlags.Int32VarP(&imageMaxLength, "image-max-length", "", 512, "max image length")
 		return vlmFlags
 	}()
 	flagGroups = []*pflag.FlagSet{
@@ -314,7 +310,6 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 		Seed:              seed,
 		GrammarPath:       grammarPath,
 		GrammarString:     grammarString,
-		EnableJson:        enableJson,
 	}
 	stopSequences, err := loadStopSequences()
 	if err != nil {
@@ -349,7 +344,6 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 	spin.Start()
 
 	p, err := geniex_sdk.NewLLM(geniex_sdk.LlmCreateInput{
-		ModelName: paths.ModelName,
 		ModelPath: paths.ModelPath,
 		RuntimeID: paths.RuntimeID,
 		DeviceID:  deviceID,
@@ -497,7 +491,6 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 		Seed:              seed,
 		GrammarPath:       grammarPath,
 		GrammarString:     grammarString,
-		EnableJson:        enableJson,
 	}
 	stopSequences, err := loadStopSequences()
 	if err != nil {
@@ -512,7 +505,6 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 	spin := render.NewSpinner("loading model...")
 	spin.Start()
 	p, err := geniex_sdk.NewVLM(geniex_sdk.VlmCreateInput{
-		ModelName:  paths.ModelName,
 		ModelPath:  paths.ModelPath,
 		MmprojPath: paths.MmprojPath,
 		RuntimeID:  paths.RuntimeID,
@@ -584,7 +576,6 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 					Stop:           stopSequences,
 					SamplerConfig:  samplerConfig,
 					ImagePaths:     images,
-					ImageMaxLength: imageMaxLength,
 					AudioPaths:     audios,
 				},
 			})

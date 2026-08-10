@@ -252,14 +252,7 @@ stop reason:    %s
 		}
 
 	} else {
-		if pd.AudioDuration > 0 { // ASR TTS
-			text = fmt.Sprintf("processing_time %.2fs  |  audio_duration %.2fs  |  RTF %.2f (%.1fx realtime)",
-				float64(pd.TotalTimeUs())/1e6,
-				float64(pd.AudioDuration)/1e6,
-				pd.RealTimeFactor,
-				1.0/pd.RealTimeFactor)
-
-		} else if pd.DecodingSpeed != 0 {
+		if pd.DecodingSpeed != 0 {
 			text = fmt.Sprintf("— %.1f tok/s • %d tok • %.1f s first token",
 				pd.DecodingSpeed,
 				pd.GeneratedTokens,

@@ -1061,7 +1061,6 @@ static void fill_model_config(geniex_ModelConfig* c, const options_t* o, int32_t
     c->n_ctx            = o->n_ctx;
     c->n_threads        = o->n_threads;
     c->n_gpu_layers     = ngl;
-    c->max_tokens       = o->max_new_tokens;
     c->spec_type        = o->spec_type;   /* may be NULL */
     c->spec_draft_model = o->draft_model; /* may be NULL */
     c->spec_n_max       = o->draft_tokens;
@@ -1072,7 +1071,6 @@ static void fill_model_config(geniex_ModelConfig* c, const options_t* o, int32_t
 static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out) {
     geniex_LlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
-    cin.model_name     = "benchmark";
     cin.model_path     = o->model_path;
     cin.tokenizer_path = o->tokenizer_path; /* may be NULL */
     cin.plugin_id      = o->plugin;
@@ -1271,7 +1269,6 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
 static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out) {
     geniex_VlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
-    cin.model_name     = "benchmark";
     cin.model_path     = o->model_path;
     cin.mmproj_path    = o->mmproj_path;
     cin.tokenizer_path = o->tokenizer_path;
@@ -1748,7 +1745,6 @@ static void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_byt
 static void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
     geniex_LlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
-    cin.model_name     = "benchmark";
     cin.model_path     = o->model_path;
     cin.tokenizer_path = o->tokenizer_path; /* may be NULL */
     cin.plugin_id      = o->plugin;

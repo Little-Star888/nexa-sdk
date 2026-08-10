@@ -133,7 +133,6 @@ data class ModelPaths(
 
 ```kotlin
 data class LlmCreateInput(
-    val model_name:     String,
     val model_path:     String,
     val tokenizer_path: String? = null,
     val config:         ModelConfig,
@@ -146,7 +145,6 @@ data class LlmCreateInput(
 
 ```kotlin
 data class VlmCreateInput(
-    val model_name:  String,
     val model_path:  String,
     val mmproj_path: String? = null,     // vision projection weights (GGUF VLMs)
     val config:      ModelConfig,
@@ -168,9 +166,6 @@ data class ModelConfig(
     var nGpuLayers:            Int     = -1,    // -1 = all layers
     val chat_template_path:    String  = "",
     val chat_template_content: String  = "",
-    val max_tokens:            Int     = 2048,
-    val enable_thinking:       Boolean = false,
-    val verbose:               Boolean = false,
 )
 ```
 
@@ -208,7 +203,6 @@ data class GenerationConfig(
     var maxTokens:     Int              = 32,
     var stopWords:     Array<String>?   = null,
     var stopCount:     Int              = 0,
-    var nPast:         Int              = 0,
     var samplerConfig: SamplerConfig?   = null,
     var imagePaths:    Array<String>?   = null,
     var imageCount:    Int              = 0,
@@ -246,7 +240,6 @@ val paths = ModelManagerWrapper.getPaths("unsloth/Qwen3-0.6B-GGUF")
 LlmWrapper.builder()
     .llmCreateInput(
         LlmCreateInput(
-            model_name = paths.model_name,
             model_path = paths.model_path,
             config     = ModelConfig(nCtx = 4096),
             runtime_id  = "llama_cpp",
@@ -289,7 +282,6 @@ val paths = ModelManagerWrapper.getPaths("unsloth/Qwen3-VL-2B-Instruct-GGUF")
 VlmWrapper.builder()
     .vlmCreateInput(
         VlmCreateInput(
-            model_name  = paths.model_name,
             model_path  = paths.model_path,
             mmproj_path = paths.mmproj_path,
             config      = ModelConfig(nCtx = 4096),
@@ -365,9 +357,8 @@ val paths = ModelManagerWrapper.getPaths("ai-hub-models/Qwen3-4B-Instruct-2507")
 LlmWrapper.builder()
     .llmCreateInput(
         LlmCreateInput(
-            model_name = paths.model_name,
             model_path = paths.model_path,
-            config     = ModelConfig(max_tokens = 2048, enable_thinking = false),
+            config     = ModelConfig(),
             runtime_id  = "qairt",
             compute_unit  = null,           // null → NPU (only option for Qualcomm AI Engine Direct)
         )
@@ -402,10 +393,9 @@ val paths = ModelManagerWrapper.getPaths("ai-hub-models/Qwen2.5-VL-7B-Instruct")
 VlmWrapper.builder()
     .vlmCreateInput(
         VlmCreateInput(
-            model_name  = paths.model_name,
             model_path  = paths.model_path,
             mmproj_path = paths.mmproj_path,
-            config      = ModelConfig(max_tokens = 2048, enable_thinking = false),
+            config      = ModelConfig(),
             runtime_id   = "qairt",
             compute_unit   = null,
         )

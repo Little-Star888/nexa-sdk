@@ -13,7 +13,6 @@ namespace geniex {
 
 class QairtLlm : public ILlm {
     std::unique_ptr<LLMPipeline> pipeline_;
-    bool                         enable_thinking_ = false;
 
     // Bundle's `dialog.sampler` defaults; parsed once at create().
     ParsedSamplerConfig bundle_sampler_;

@@ -42,8 +42,6 @@ int32_t QairtVlm::create(const geniex_VlmCreateInput* input) {
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }
 
-    enable_thinking_ = input->config.enable_thinking;
-
     // Reject llama.cpp-only parameters that have no meaning in the QAIRT plugin
     if (input->config.n_gpu_layers != 0) {
         GENIEX_LOG_ERROR("--ngl (n_gpu_layers) is not supported by the qairt plugin");
@@ -236,6 +234,7 @@ int32_t QairtVlm::apply_chat_template(
     // Record pending size — committed to history_size_ only after a successful generate().
     pending_history_size_ = messages.size();
 
+    // TODO: honor input->enable_thinking once VisionProcessor exposes it.
     std::string formatted = pipeline_->applyChatTemplate(new_messages, /*add_generation_prompt=*/true);
 
     output->formatted_text = portable_strdup(formatted.c_str());
@@ -266,7 +265,6 @@ int32_t QairtVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
         gen_cfg.max_tokens = input->config->max_tokens > 0 ? input->config->max_tokens : 512;
         qairt::apply_sampler_config(input->config->sampler_config, gen_cfg, bundle_sampler_);
     }
-    gen_cfg.thinking_mode = enable_thinking_;
 
     // Wrap token callback
     std::function<bool(const char*)> on_token_fn;
