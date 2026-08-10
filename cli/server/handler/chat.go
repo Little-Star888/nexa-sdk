@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"
@@ -283,7 +284,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 	// ---- generate: stream SSE chunks or write one blocking response ----
 	if param.Stream {
 		// streaming
-		stopGen := false
+		var stopGen atomic.Bool
 		dataCh := make(chan string)
 
 		var (
@@ -296,7 +297,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 		go func() {
 			defer wg.Done()
 			profile, _, genErr = gen(prompt, func(token string) bool {
-				if stopGen {
+				if stopGen.Load() {
 					return false
 				}
 				dataCh <- token
@@ -317,7 +318,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 			streamPlainText(c, dataCh, wait, includeUsage, &profile, render(class))
 		}
 
-		stopGen = true
+		stopGen.Store(true)
 		for range dataCh {
 		}
 	} else {
