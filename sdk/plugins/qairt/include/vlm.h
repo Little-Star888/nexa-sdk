@@ -14,7 +14,6 @@ namespace geniex {
 class QairtVlm : public IVlm {
     std::unique_ptr<VLMPipeline> pipeline_;
 
-    bool enable_thinking_ = false;
     // True iff a vision encoder shard was located at create time. Audio is not
     // wired into the QAIRT VLM pipeline yet, so always reported as unsupported.
     bool has_vision_encoder_ = false;
