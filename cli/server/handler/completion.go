@@ -178,56 +178,64 @@ func Completions(c *gin.Context) {
 		echo = prompt
 	}
 
+	// ---- generate: stream SSE chunks or write one blocking response ----
 	if req.Stream {
-		streamCompletion(c, p, prompt, genConfig, echo, req.StreamOptions.IncludeUsage.Value)
-		return
+		// streaming
+		var stopGen atomic.Bool
+		dataCh := make(chan string)
+
+		var (
+			profile geniex_sdk.ProfileData
+			genErr  error
+			wg      sync.WaitGroup
+		)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := p.Generate(geniex_sdk.LlmGenerateInput{
+				PromptUTF8: prompt,
+				OnToken: func(token string) bool {
+					if stopGen.Load() {
+						return false
+					}
+					dataCh <- token
+					return true
+				},
+				Config: genConfig,
+			})
+			genErr = err
+			if out != nil {
+				profile = out.ProfileData
+			}
+			close(dataCh)
+		}()
+
+		wait := func() error { wg.Wait(); return genErr }
+		streamCompletion(c, dataCh, wait, req.StreamOptions.IncludeUsage.Value, echo, &profile)
+
+		stopGen.Store(true)
+		for range dataCh {
+		}
+	} else {
+		// blocking
+		out, err := p.Generate(geniex_sdk.LlmGenerateInput{
+			PromptUTF8: prompt,
+			Config:     genConfig,
+		})
+		if errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
+			writeCompletionContextLengthExceeded(c, echo+out.FullText, out.ProfileData)
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
+			return
+		}
+		writeCompletionResponse(c, echo+out.FullText, out.ProfileData)
 	}
-
-	out, err := p.Generate(geniex_sdk.LlmGenerateInput{
-		PromptUTF8: prompt,
-		Config:     genConfig,
-	})
-	if errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
-		writeCompletionContextLengthExceeded(c, echo+out.FullText, out.ProfileData)
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
-		return
-	}
-	c.JSON(http.StatusOK, completionResponse{
-		Object: "text_completion",
-		Choices: []completionChoice{{
-			Text:         echo + out.FullText,
-			FinishReason: mapFinishReason(out.ProfileData.StopReason),
-		}},
-		Usage: profile2Usage(out.ProfileData),
-	})
 }
 
-type completionChoice struct {
-	Index        int64  `json:"index"`
-	Text         string `json:"text"`
-	FinishReason string `json:"finish_reason"`
-}
-
-type completionResponse struct {
-	Object  string                 `json:"object"`
-	Choices []completionChoice     `json:"choices"`
-	Usage   openai.CompletionUsage `json:"usage"`
-}
-
-func writeCompletionContextLengthExceeded(c *gin.Context, text string, profile geniex_sdk.ProfileData) {
-	c.JSON(http.StatusBadRequest, map[string]any{
-		"error": map[string]any{
-			"message": "model context window exceeded; output truncated",
-			"type":    "invalid_request_error",
-			"code":    "context_length_exceeded",
-		},
-		"choices": []completionChoice{{Text: text, FinishReason: "length"}},
-		"usage":   profile2Usage(profile),
-	})
-}
+// ---- streaming SSE chunks ----
 
 type completionStreamChoice struct {
 	Index        int64   `json:"index"`
@@ -261,33 +269,8 @@ func completionUsageChunk(u openai.CompletionUsage) completionStreamChunk {
 	return completionStreamChunk{Object: completionObject, Choices: []completionStreamChoice{}, Usage: &u}
 }
 
-func streamCompletion(c *gin.Context, p *geniex_sdk.LLM, prompt string, genConfig *geniex_sdk.GenerationConfig, echo string, includeUsage bool) {
-	var stopGen atomic.Bool
-	dataCh := make(chan string)
-
-	var (
-		out    *geniex_sdk.LlmGenerateOutput
-		genErr error
-		wg     sync.WaitGroup
-	)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		out, genErr = p.Generate(geniex_sdk.LlmGenerateInput{
-			PromptUTF8: prompt,
-			OnToken: func(token string) bool {
-				if stopGen.Load() {
-					return false
-				}
-				dataCh <- token
-				return true
-			},
-			Config: genConfig,
-		})
-		close(dataCh)
-	}()
-
+// profile is read only after wait() returns, when generation has filled it.
+func streamCompletion(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, echo string, profile *geniex_sdk.ProfileData) {
 	first := echo != ""
 	c.Stream(func(w io.Writer) bool {
 		if first {
@@ -300,20 +283,54 @@ func streamCompletion(c *gin.Context, p *geniex_sdk.LLM, prompt string, genConfi
 			c.SSEvent("", completionTextChunk(r))
 			return true
 		}
-		wg.Wait()
-		if genErr != nil {
-			c.SSEvent("", map[string]any{"error": genErr.Error(), "code": geniex_sdk.SDKErrorCode(genErr)})
+		if err := wait(); err != nil {
+			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
-		c.SSEvent("", completionFinishChunk(mapFinishReason(out.ProfileData.StopReason)))
+		c.SSEvent("", completionFinishChunk(mapFinishReason(profile.StopReason)))
 		if includeUsage {
-			c.SSEvent("", completionUsageChunk(profile2Usage(out.ProfileData)))
+			c.SSEvent("", completionUsageChunk(profile2Usage(*profile)))
 		}
 		c.SSEvent("", "[DONE]")
 		return false
 	})
+}
 
-	stopGen.Store(true)
-	for range dataCh {
-	}
+// ---- blocking response ----
+
+type completionChoice struct {
+	Index        int64  `json:"index"`
+	Text         string `json:"text"`
+	FinishReason string `json:"finish_reason"`
+}
+
+type completionResponse struct {
+	Object  string                 `json:"object"`
+	Choices []completionChoice     `json:"choices"`
+	Usage   openai.CompletionUsage `json:"usage"`
+}
+
+func writeCompletionResponse(c *gin.Context, text string, profile geniex_sdk.ProfileData) {
+	c.JSON(http.StatusOK, completionResponse{
+		Object: completionObject,
+		Choices: []completionChoice{{
+			Text:         text,
+			FinishReason: mapFinishReason(profile.StopReason),
+		}},
+		Usage: profile2Usage(profile),
+	})
+}
+
+// OpenAI's 400 body, plus the partial generation under `choices` so clients can
+// recover the truncated output.
+func writeCompletionContextLengthExceeded(c *gin.Context, text string, profile geniex_sdk.ProfileData) {
+	c.JSON(http.StatusBadRequest, map[string]any{
+		"error": map[string]any{
+			"message": "model context window exceeded; output truncated",
+			"type":    "invalid_request_error",
+			"code":    "context_length_exceeded",
+		},
+		"choices": []completionChoice{{Text: text, FinishReason: "length"}},
+		"usage":   profile2Usage(profile),
+	})
 }
