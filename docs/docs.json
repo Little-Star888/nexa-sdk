@@ -96,7 +96,8 @@
             "group": "Tutorials",
             "icon": "graduation-cap",
             "pages": [
-              "en/tutorials/speculative-decoding-mtp"
+              "en/tutorials/speculative-decoding-mtp",
+              "en/tutorials/audio-input"
             ]
           },
           {
