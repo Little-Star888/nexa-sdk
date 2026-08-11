@@ -98,6 +98,23 @@ In Swagger UI, replace the request body with this VLM payload, point `image_url.
 
 ![Response body showing a successful 200 response with the VLM's image description](/Images/server/curl-5.png)
 
+## **POST /v1/completions**
+
+Generates a raw continuation of `prompt` with no chat template applied — the prompt reaches the model verbatim. Use this for clients that build the full prompt themselves, such as editor fill-in-the-middle (FIM) code autocompletion: put the model's FIM tokens directly in `prompt`. LLM models only.
+
+```json Example Value
+{
+  "model": "unsloth/Qwen2.5-Coder-3B-GGUF:Q4_0",
+  "prompt": "<|fim_prefix|>def fibonacci(n):\n    <|fim_suffix|>\n    return a<|fim_middle|>",
+  "max_tokens": 64,
+  "temperature": 0.2,
+  "stop": ["<|endoftext|>"],
+  "stream": false
+}
+```
+
+The response `choices[0].text` is the raw completion, ready to insert at the cursor. `stream`, `stop`, `echo` and the sampler knobs (`temperature`, `top_p`, `top_k`, `min_p`, `repetition_penalty`, `seed`) work as on `/v1/chat/completions`; `suffix` is not supported — encode the suffix with the model's FIM tokens inside `prompt` instead.
+
 ## **Python client (OpenAI SDK)**
 
 Because the server speaks the OpenAI protocol, you can point the official `openai` Python client at the local endpoint and reuse any existing OpenAI code. Install with `pip install openai`, then create a client:

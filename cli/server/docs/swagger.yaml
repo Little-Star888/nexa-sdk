@@ -25,6 +25,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatCompletionResponse"
 
+  /v1/completions:
+    post:
+      summary: Creates a raw text completion for the given prompt
+      description: |
+        Generates a continuation of the prompt with no chat template applied —
+        the prompt is passed to the model verbatim. Intended for clients that
+        build the full prompt themselves, e.g. editor fill-in-the-middle (FIM)
+        code autocompletion; include the model's FIM tokens in `prompt`
+        directly. LLM models only.
+      operationId: PostV1Completions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompletionRequest"
+      responses:
+        "200":
+          description: Successful response for non-streaming requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionResponse"
+
   /v1/logits:
     post:
       summary: Raw logits from a single prefill-only forward pass
@@ -147,6 +171,129 @@ components:
                 items:
                   type: number
                 description: top_n > 0 — top logits sorted descending; top_n == 0 — full vocab in token-id order.
+
+    # ---------- Completions ----------
+    CompletionRequest:
+      type: object
+      required: [model, prompt]
+      example:
+        model: "qualcomm/Qwen3-4B-Instruct-2507"
+        prompt: "def fibonacci(n):"
+        max_tokens: 64
+        temperature: 0.2
+        stream: false
+      properties:
+        model:
+          type: string
+          description: ID of the model to use (LLM only)
+        prompt:
+          type: string
+          description: The prompt to complete, passed to the model verbatim (no chat template). A single-element string array is also accepted.
+        max_tokens:
+          type: integer
+          minimum: 1
+          default: 16
+          description: The maximum number of tokens to generate
+        suffix:
+          type: string
+          description: Not supported — include the model's FIM tokens in `prompt` instead
+        echo:
+          type: boolean
+          default: false
+          description: Echo back the prompt in addition to the completion
+        stop:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: Sequences where generation stops; the returned text does not contain them
+        temperature:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 2
+          description: What sampling temperature to use, between 0 and 2
+        top_p:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: An alternative to sampling with temperature, called nucleus sampling
+        seed:
+          type: integer
+          description: Best-effort deterministic sampling seed
+        presence_penalty:
+          type: number
+          format: float
+          minimum: -2
+          maximum: 2
+          description: Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far
+        frequency_penalty:
+          type: number
+          format: float
+          minimum: -2
+          maximum: 2
+          description: Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far
+        stream:
+          type: boolean
+          description: If set, partial text deltas will be sent
+          default: false
+        stream_options:
+          type: object
+          description: Options for streaming responses. Only used when stream is true.
+          properties:
+            include_usage:
+              type: boolean
+              description: If set, an additional chunk will be streamed with token usage statistics for the entire request
+        top_k:
+          type: integer
+          minimum: 0
+          description: An alternative to sampling with temperature, called top-k sampling
+        min_p:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Minimum token probability, scaled by the probability of the most likely token
+        repetition_penalty:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          description: The parameter for repetition penalty. 1.0 means no penalty
+        nctx:
+          type: integer
+          minimum: 1
+          description: Context window size (llama_cpp only). Omit to use the server default set via `geniex serve --nctx` / `GENIEX_NCTX` (4096 out of the box).
+        ngl:
+          type: integer
+          description: Number of GPU/NPU layers to offload (llama_cpp only). Omit to use the server default set via `geniex serve --ngl` / `GENIEX_NGL` (999 out of the box); the server chooses the correct layout per backend.
+        compute:
+          type: string
+          enum: [cpu, gpu, npu, hybrid]
+          description: Compute unit to run on. Omit to use the server default set via `geniex serve --compute` / `GENIEX_COMPUTE`. QAIRT is NPU-only; other aliases are coerced with a warning.
+    CompletionResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: "text_completion"
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              text:
+                type: string
+                description: The generated continuation of the prompt
+              finish_reason:
+                type: string
+                enum: [stop, length]
+        usage:
+          $ref: "#/components/schemas/TokenUsage"
 
     # ---------- Chat ----------
     ChatCompletionRequest:
