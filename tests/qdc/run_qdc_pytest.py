@@ -1,7 +1,18 @@
 # Copyright 2024-2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Run the SDK pytest suite on a real QDC device (Linux QCS9075M / Windows SC8480XP)."""
+"""Run the SDK pytest suite on a real QDC device.
+
+Two entry paths depending on the device family:
+- Linux (QCS9075M) / Windows (SC8480XP): QDC executes a shell / PowerShell
+  script from the artifact root that installs pytest, imports geniex, then
+  runs the tests suite.
+- Android (SM8850): QDC's APPIUM framework auto-discovers pytest under the
+  artifact's tests/ on its own container host, which is what unlocks adb
+  to the phone. The host-side test in `android/test_run_device.py` pushes
+  a Termux-derived Python + pkg-geniex + tests/ to the phone and runs the
+  device-gated pytest cells there.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +20,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -63,17 +75,87 @@ def _build_linux_artifact(pkg_dir: Path, tmp: Path) -> Path:
     return Path(shutil.make_archive(str(tmp / 'artifact'), 'zip', stage))
 
 
+def _build_android_artifact(pkg_dir: Path, tmp: Path) -> Path:
+    # QDC APPIUM auto-discovers `pytest tests/` from the artifact root; the
+    # payload the host-side driver pushes to the phone lives at payload/ so
+    # the appium container's pytest never imports payload/tests/conftest.py
+    # (which imports geniex — absent on the host).
+    sys.path.insert(0, str(HERE / 'android'))
+    import android_deploy  # noqa: PLC0415
+
+    stage = tmp / 'stage'
+    payload = stage / 'payload'
+    shutil.copytree(pkg_dir, payload / 'sdk' / 'pkg-geniex')
+    shutil.copytree(REPO / 'tests', payload / 'tests', ignore=_IGNORE)
+    shutil.copytree(REPO / 'bindings' / 'python', payload / 'bindings' / 'python', ignore=_IGNORE)
+    img = payload / TEST_IMAGE_REL
+    img.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(REPO / TEST_IMAGE_REL, img)
+    # Fetched on the runner (public internet); appium container can't reach termux.dev.
+    android_deploy.fetch_termux_usr(payload / 'termux-usr')
+
+    host = stage / 'tests'
+    host.mkdir()
+    for name in ('conftest.py', 'test_run_device.py', 'android_deploy.py'):
+        shutil.copy(HERE / 'android' / name, host / name)
+    (stage / 'requirements.txt').write_text((HERE / 'android' / 'requirements.txt').read_text())
+    # -s (no capture) forces device-side pytest stdout through to the QDC stdout log —
+    # otherwise host pytest swallows adb_shell output and only surfaces it on host FAIL.
+    (stage / 'pytest.ini').write_text('[pytest]\naddopts = -s\n')
+    return Path(shutil.make_archive(str(tmp / 'artifact'), 'zip', stage))
+
+
 BUILDERS = {
     'linux': _build_linux_artifact,
     'windows': _build_windows_artifact,
+    'android': _build_android_artifact,
 }
 ENTRY = {
     'linux': '/bin/bash /data/local/tmp/TestContent/run_pytest.sh',
     'windows': 'C:\\Temp\\TestContent\\run_pytest.ps1',
+    'android': None,
 }
 
 
 Row = tuple[str, str, str, str]
+
+_STATUS_RE = re.compile(r'^(?:\[[^\]]+\]\s*)?(\S+\.py::.+?)\s+(PASSED|FAILED|SKIPPED|ERROR)\b(.*)$')
+
+
+def _rows_from_stdout(text: str) -> list[Row]:
+    # Parse `test_file.py::name[params] STATUS [reason]` lines from pytest -v stdout.
+    # A crash line (`Fatal Python error`, ggml `abort`) with no PASSED/FAILED trailing
+    # the last-seen testcase is booked as that case's FAIL — pytest never got to write it.
+    rows: list[Row] = []
+    seen: dict[str, int] = {}
+    last_incomplete: str | None = None
+    crash_marker: str | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        m = _STATUS_RE.match(line)
+        if m:
+            name, status, tail = m.group(1), m.group(2), m.group(3).strip()
+            if name in seen:
+                continue
+            seen[name] = len(rows)
+            last_incomplete = None
+            if status == 'PASSED':
+                rows.append(('PASS', name, '', ''))
+            elif status == 'SKIPPED':
+                rows.append(('SKIP', name, tail.lstrip('(').rstrip(')'), ''))
+            else:
+                rows.append(('FAIL', name, tail, ''))
+            continue
+        # Testcase line without a trailing status → pytest started it but crashed mid-run.
+        # Extract the nodeid: `file.py::name` optionally followed by `[params]` (params may contain spaces).
+        m2 = re.match(r'^(?:\[[^\]]+\]\s*)?(\S+\.py::\S+?(?:\[[^\]]*\])?)(?:\s|$)', line)
+        if m2 and m2.group(1) not in seen:
+            last_incomplete = m2.group(1)
+        if 'Fatal Python error' in line or 'ggml_abort' in line or 'ggml-hex:' in line:
+            crash_marker = crash_marker or line
+    if last_incomplete and crash_marker:
+        rows.append(('FAIL', last_incomplete, crash_marker[:200], ''))
+    return rows
 
 
 def _rows_from_junit(xml: bytes) -> list[Row]:
@@ -278,27 +360,56 @@ def main() -> int:
             client,
             job_id,
             tmp,
-            lambda n: n in ('harness.log', 'test_dbg.stdout', 'test.stdout', 'script.log'),
+            lambda n: n
+            in (
+                'harness.log',
+                'test_dbg.stdout',
+                'test.stdout',
+                'script.log',
+                'appium_tests_stdout.txt',
+                'install.txt',
+            ),
         )
+
+    # Android APPIUM zips log members as `results/device-results.xml`; collapse
+    # to basename so all three legs look up the same key.
+    def _basename(n: str) -> str:
+        return n.replace('\\', '/').rsplit('/', 1)[-1]
 
     if args.logs_dir:
         args.logs_dir.mkdir(parents=True, exist_ok=True)
         for name, data in list(results) + list(diag):
-            (args.logs_dir / name).write_bytes(data)
+            (args.logs_dir / _basename(name)).write_bytes(data)
 
     for name, data in diag:
-        print(f'\n===== device log: {name} =====\n{data.decode("utf-8", "replace")}')
+        # Encode via stdout.buffer so Windows cp1252 hosts don't blow up on
+        # non-ASCII log bytes; CI's Linux runner is UTF-8 either way.
+        header = f'\n===== device log: {name} =====\n'.encode()
+        try:
+            sys.stdout.buffer.write(header + data + b'\n')
+        except AttributeError:
+            print(header.decode() + data.decode('utf-8', 'replace'))
 
-    by_name = {name: data for name, data in results}
+    by_name = {_basename(name): data for name, data in results}
     if b'</testsuite>' in by_name.get('device-results.xml', b''):
         code, md = summarise(by_name['device-results.xml'], label)
     elif by_name.get('device-report.log'):
         log.warning('JUnit XML missing or incomplete; reconstructing from --report-log NDJSON')
         code, md = summarise_reportlog(by_name['device-report.log'], label)
     else:
-        log.error('no JUnit XML or report-log recovered (see device logs above)')
-        write_summary(f'## QDC Test — {label}\n\nNo JUnit XML or report-log recovered.\n')
-        return 1
+        log.warning('no JUnit XML or report-log recovered; reconstructing from device stdout')
+        diag_by_name = {_basename(name): data for name, data in diag}
+        stdout_keys = ('appium_tests_stdout.txt', 'test.stdout', 'test_dbg.stdout')
+        stdout_key = next((k for k in stdout_keys if k in diag_by_name), None)
+        rows: list[Row] = []
+        if stdout_key:
+            rows = _rows_from_stdout(diag_by_name[stdout_key].decode('utf-8', 'replace'))
+        if not rows:
+            write_summary(f'## QDC Test — {label}\n\nNo test outcomes recovered.\n')
+            return 1
+        code, md = _render_summary(rows, label)
+        write_summary(md)
+        return code
     write_summary(md)
     return code
 

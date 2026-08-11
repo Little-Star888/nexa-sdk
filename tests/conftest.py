@@ -90,6 +90,9 @@ def pytest_runtest_setup(item):
             pytest.skip('set GENIEX_DEVICE_TEST=1 to run device-gated tests')
         if not _is_snapdragon_host():
             pytest.skip('device-gated tests require a Snapdragon host')
+    device_map = item.callspec.params.get('device_map') if hasattr(item, 'callspec') else None
+    if device_map == 'gpu' and hasattr(sys, 'getandroidapilevel'):
+        pytest.skip('llama_cpp opencl backend aborts on Adreno / Android')
 
 
 @pytest.fixture(scope='session')
@@ -108,6 +111,8 @@ def llama_cpp_llm_paths(geniex_session):
 
 @pytest.fixture(scope='session')
 def llama_cpp_mtp_paths(geniex_session):
+    if hasattr(sys, 'getandroidapilevel'):
+        pytest.skip('MTP target+draft (2×27B) exceeds mobile RAM')
     target = _mm.ensure_cached(LLAMA_CPP_MTP_TARGET_MODEL, precision=LLAMA_CPP_MTP_TARGET_PRECISION, hub='hf')
     draft = _mm.ensure_cached(LLAMA_CPP_MTP_DRAFT_MODEL, precision=LLAMA_CPP_MTP_DRAFT_PRECISION, hub='hf')
     return {'target': target, 'draft': draft}
