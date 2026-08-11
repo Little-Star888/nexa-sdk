@@ -31,7 +31,7 @@ The server runs on `http://127.0.0.1:18181` by default. Keep this terminal open 
 
 ## **POST /v1/chat/completions**
 
-Creates a model response for a conversation. Supports LLM (text-only) and VLM (image + text).
+Creates a model response for a conversation. Supports LLM (text-only) and VLM (text + image or audio).
 
 ### **LLM request**
 
@@ -65,34 +65,77 @@ Open `http://127.0.0.1:18181` in your browser to access the built-in Swagger UI.
 
 ### **VLM request**
 
-`image_url.url` accepts three formats:
+A VLM accepts multimodal content parts alongside text. Use `image_url` for images, and `input_audio` for audio on a model whose mmproj carries a conformer encoder (e.g. `google/gemma-4-E2B-it-qat-q4_0-gguf`). Both `image_url.url` and `input_audio.data` accept the same three formats:
 
-| Format | Example |
-|---|---|
-| Local file path (the `file://` prefix is optional) | `C:/Users/Username/Pictures/photo.jpg`, `file:///tmp/photo.jpg` |
-| HTTP / HTTPS URL — fetched by the server | `https://example.com/image.jpg` |
-| Base64 data URL — inline image bytes | `data:image/png;base64,iVBORw0KGgo...` |
+| Format | Image example | Audio example |
+|---|---|---|
+| Local file path (the `file://` prefix is optional) | `C:/Users/Username/Pictures/photo.jpg` | `/data/jfk.wav`, `file:///tmp/jfk.wav` |
+| HTTP / HTTPS URL — fetched by the server | `https://example.com/image.jpg` | `https://example.com/clip.mp3` |
+| Base64 data URL — inline bytes | `data:image/png;base64,iVBORw0KGgo...` | `data:audio/wav;base64,UklGR...` |
 
 <Note>
-**Running in Docker?** Local paths are resolved **inside the container**, not on your host. The install command already mounts `$PWD/data` to `/data` — drop your images there and pass `/data/cat.jpg`. Alternatively, use an HTTP URL or base64 data URL to skip the filesystem entirely.
+**Running in Docker?** Local paths are resolved **inside the container**, not on your host. The install command already mounts `$PWD/data` to `/data` — drop your images and audio files there and pass `/data/cat.jpg` / `/data/jfk.wav`. Alternatively, use an HTTP URL or base64 data URL to skip the filesystem entirely.
 </Note>
 
-```json Example Value
-{
-  "model": "ai-hub-models/Qwen2.5-VL-7B-Instruct",
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "Describe this image succinctly."},
-        {"type": "image_url", "image_url": {"url": "</path/to/image>"}}
-      ]
-    }
-  ]
-}
+<Warning>Audio input runs on the **llama.cpp** backend only. QAIRT models report `audio: false` and a QAIRT model given audio fails with `GenieXError(-201201): Multimodal generation failed`.</Warning>
+
+A single message can mix `image_url` and `input_audio` parts. Pull an audio-capable model and grab a sample clip:
+
+```bash
+geniex pull google/gemma-4-E2B-it-qat-q4_0-gguf
+curl -L -o jfk.wav https://github.com/ggml-org/whisper.cpp/raw/master/samples/jfk.wav
+curl -L -o landmark.jpg "https://images.pexels.com/photos/402028/pexels-photo-402028.jpeg?w=1024"
 ```
 
-In Swagger UI, replace the request body with this VLM payload, point `image_url.url` to a local image, then click **Execute**.
+```bash
+curl http://127.0.0.1:18181/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Describe the image, then transcribe the audio."},
+          {"type": "image_url", "image_url": {"url": "/full/path/to/landmark.jpg"}},
+          {"type": "input_audio", "input_audio": {"data": "/full/path/to/jfk.wav"}}
+        ]
+      }
+    ],
+    "max_tokens": 256
+  }'
+```
+
+The same request from the Python `openai` client:
+
+```python
+resp = client.chat.completions.create(
+    model="google/gemma-4-E2B-it-qat-q4_0-gguf",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe the image, then transcribe the audio."},
+                {"type": "image_url", "image_url": {"url": "/full/path/to/landmark.jpg"}},
+                {"type": "input_audio", "input_audio": {"data": "/full/path/to/jfk.wav"}},
+            ],
+        }
+    ],
+    max_tokens=256,
+)
+print(resp.choices[0].message.content)
+```
+
+Output (verified on `--compute npu`, Snapdragon X Elite):
+
+```text
+This is a photograph featuring a traditional Japanese temple ... In the background, there are softer, blue-toned mountains and a distant urban skyline.
+
+**Transcription:**
+And so my fellow Americans ask not what your country can do for you, ask what you can do for your country.
+```
+
+In Swagger UI, replace the request body with a VLM payload like the one above, point the paths at local files, then click **Execute**.
 
 ![Editing the VLM request body in Try-it-out mode before executing](/Images/server/curl-4.png)
 
