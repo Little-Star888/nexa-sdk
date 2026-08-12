@@ -75,17 +75,37 @@ geniex infer ai-hub-models/Qwen3-4B --compute npu
 
 ### **`geniex infer` — VLM**
 
-Run vision-language inference with text-only or image input:
+Run vision-language inference with text-only, image, or audio input:
 
 ```bash
-geniex infer ai-hub-models/Qwen2.5-VL-7B-Instruct-GGUF
+geniex infer google/gemma-4-E2B-it-qat-q4_0-gguf
 ```
 
-For text-only, just launch and chat. For image input, provide the **absolute path** or drag the file into your terminal:
+For text-only, just launch and chat. For image or audio input, provide the **absolute path** or drag the file into your terminal — image (`.jpg`, `.jpeg`, `.png`, `.webp`) and audio (`.wav`, `.mp3`) paths are auto-detected, and a single prompt can carry both. `google/gemma-4-E2B-it-qat-q4_0-gguf` ships an audio-capable mmproj (~4.0 GiB total: `Q4_0` weights + conformer mmproj, pulled together):
 
 ```bash
-Describe this picture </full/path/to/image.png>
+geniex pull google/gemma-4-E2B-it-qat-q4_0-gguf
+
+curl -L -o jfk.wav https://github.com/ggml-org/whisper.cpp/raw/master/samples/jfk.wav
+curl -L -o landmark.jpg "https://images.pexels.com/photos/402028/pexels-photo-402028.jpeg?w=1024"
+
+geniex infer google/gemma-4-E2B-it-qat-q4_0-gguf \
+  -p "Describe the image and transcribe the audio. Image: /full/path/to/landmark.jpg Audio: /full/path/to/jfk.wav"
 ```
+
+Output (verified on `--compute npu`, Snapdragon X Elite):
+
+```text
+**Image Description:**
+This is a scenic, panoramic photograph that features a traditional Japanese temple ... The overall mood of the image is serene and beautiful.
+
+**Audio Transcription:**
+"And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country."
+```
+
+<Warning>Audio input runs on the **llama.cpp** backend only and needs an audio-capable model (mmproj with a conformer encoder). Audio also runs on `--compute cpu` / `gpu`, but QAIRT models report `audio: false` and a QAIRT model given audio fails with `GenieXError(-201201): Multimodal generation failed`.</Warning>
+
+In an interactive session with an audio-capable model, `/mic` records a clip instead of loading one from disk — `Ctrl-C` stops the recording and transcribes it. This needs **SoX** on your `PATH` (`sudo apt install sox`, or `winget install --id=ChrisBagwell.SoX -e` on Windows); without it GenieX warns `SoX is not installed` at startup. See the [audio input tutorial](/en/tutorials/audio-input) for the full walkthrough.
 
 ## **`geniex serve`**
 
