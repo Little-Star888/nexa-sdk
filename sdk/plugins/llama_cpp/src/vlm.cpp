@@ -20,13 +20,21 @@
 namespace geniex {
 
 LlamaVlm::~LlamaVlm() {
+    // mtmd_context holds tensor pointers into `model`, so tear it down first.
+    if (this->ctx_vision) {
+        mtmd_free(this->ctx_vision);
+        this->ctx_vision = nullptr;
+    }
     if (this->ctx) {
         llama_free(this->ctx);
         this->ctx = nullptr;
     }
-    if (this->ctx_vision) {
-        mtmd_free(this->ctx_vision);
-        this->ctx_vision = nullptr;
+    // Missing model release leaked the whole llama_model on every VLM
+    // destroy, including its HTP-mapped tensors — enough to exhaust the
+    // CDSP fastrpc mmap budget after a single VLM npu load.
+    if (this->model) {
+        llama_model_free(this->model);
+        this->model = nullptr;
     }
 }
 
