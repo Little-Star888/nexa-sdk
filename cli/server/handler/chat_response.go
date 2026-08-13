@@ -141,6 +141,10 @@ func profile2Usage(p geniex_sdk.ProfileData) openai.CompletionUsage {
 		CompletionTokens: p.GeneratedTokens,
 		PromptTokens:     p.PromptTokens,
 		TotalTokens:      p.TotalTokens(),
+		CompletionTokensDetails: openai.CompletionUsageCompletionTokensDetails{
+			AcceptedPredictionTokens: p.DraftNAccepted,
+			RejectedPredictionTokens: p.DraftNTotal - p.DraftNAccepted,
+		},
 	}
 }
 
