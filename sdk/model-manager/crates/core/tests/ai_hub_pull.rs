@@ -131,7 +131,7 @@ async fn ai_hub_pull_writes_manifest_and_extracts_flat() {
           "assets": [
             {{
               "chipset": "SM8650",
-              "runtime": "RUNTIME_GENIE",
+              "runtime": "RUNTIME_GENIEX_QAIRT",
               "precision": "PRECISION_W4A16",
               "download_url": "{asset_url}",
               "uncompressed_size": {}
@@ -244,6 +244,8 @@ async fn ai_hub_pull_errors_when_chipset_unknown() {
         }}"#
     );
     let platform_json = r#"{ "chipsets": [ { "name": "SM8650", "aliases": [] } ] }"#;
+    // Legacy runtime enum on purpose: AI Hub still publishes `RUNTIME_GENIE`
+    // for some models, so the selector must keep accepting it.
     let release_assets_json = format!(
         r#"{{
           "model_id": "testnet",

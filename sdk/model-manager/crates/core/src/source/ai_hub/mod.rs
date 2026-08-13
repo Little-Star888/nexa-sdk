@@ -30,7 +30,9 @@ use self::dto::{
     ChipsetInfo, InfoJson, ManifestModelEntry, ModelReleaseAssets, PlatformInfo, ReleaseManifest,
 };
 use self::remote_zip::{fetch_central_directory, Method, ZipEntry};
-use self::selector::{match_asset, UnavailableChipset};
+// `is_qairt_runtime` is shared with the download selector so the listing
+// filter and the asset picker cannot drift apart.
+use self::selector::{is_qairt_runtime, match_asset, UnavailableChipset};
 
 use super::{basename, BytesSource, FileSpec, ModelSource, Plan};
 
@@ -162,9 +164,6 @@ pub async fn list_supported_chipsets(cfg: &AiHubConfig) -> Result<Vec<ChipsetInf
     Ok(chipsets)
 }
 
-/// Runtime string the public bucket uses for geniex's qairt (NPU) assets.
-const RUNTIME_GENIEX_QAIRT: &str = "RUNTIME_GENIEX_QAIRT";
-
 /// One AI Hub model geniex can run.
 #[derive(Debug, Clone)]
 pub struct HubModel {
@@ -174,7 +173,7 @@ pub struct HubModel {
     pub supported_chipsets: Vec<String>,
 }
 
-/// List AI Hub models with a `RUNTIME_GENIEX_QAIRT` asset, sorted by name.
+/// List AI Hub models with a QAIRT asset, sorted by name.
 /// `chipset` restricts to models compatible with it (any alias / display name
 /// from `platform.json`); `None` lists every one. Host detection is the
 /// caller's job — pass the chipset you want to match.
@@ -214,11 +213,7 @@ fn select_hub_models(manifest: ReleaseManifest, device_chipset: Option<&str>) ->
     let mut models: Vec<HubModel> = manifest
         .models
         .into_iter()
-        .filter(|m| {
-            m.supported_runtimes
-                .iter()
-                .any(|r| r == RUNTIME_GENIEX_QAIRT)
-        })
+        .filter(|m| m.supported_runtimes.iter().any(|r| is_qairt_runtime(r)))
         .filter(|m| match device_chipset {
             Some(chip) => m.supported_chipsets.iter().any(|c| c == chip),
             None => true,
@@ -757,6 +752,25 @@ mod tests {
         let out = select_hub_models(manifest, None);
         let ids: Vec<&str> = out.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, vec!["qairt_model"]);
+    }
+
+    /// `Phi-3.5-Mini-Instruct` (bucket v0.60.0) declares only the legacy
+    /// `RUNTIME_GENIE` enum, so filtering on `RUNTIME_GENIEX_QAIRT` alone
+    /// silently hid it from `list` even though its assets are installable.
+    #[test]
+    fn select_keeps_legacy_genie_only_models() {
+        let manifest = ReleaseManifest {
+            platform_url: String::new(),
+            models: vec![hub_entry(
+                "phi_3_5_mini_instruct",
+                &["RUNTIME_QNN_CONTEXT_BINARY", "RUNTIME_GENIE"],
+                &["qualcomm-snapdragon-x-elite"],
+                &[],
+            )],
+        };
+        let out = select_hub_models(manifest, None);
+        let ids: Vec<&str> = out.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["phi_3_5_mini_instruct"]);
     }
 
     #[test]
