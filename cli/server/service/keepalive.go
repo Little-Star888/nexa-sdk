@@ -8,13 +8,13 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
-	"sync"
 	"time"
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/internal/render"
 	"github.com/qualcomm/GenieX/cli/internal/types"
+	"github.com/qualcomm/GenieX/cli/server/middleware"
 )
 
 // ResolveModelParam turns the (nctx, ngl, compute) knobs into the ModelParam
@@ -119,12 +119,16 @@ func KeepAliveGet[T any](name string, param types.ModelParam, reset bool) (*T, e
 
 var keepAlive keepAliveService
 
-// current only support keepalive one model
+// keepAliveService caches a single model: geniex serve supports one model
+// architecture by design, so the cache is one slot and the request GIL
+// (middleware.GILock) is the only lock guarding it. Handlers hold the GIL
+// for the whole request via middleware.GIL; the cleanup goroutine takes it
+// before destroying, so a model is never destroyed mid-generation (#1322).
 type keepAliveService struct {
-	models map[string]*modelKeepInfo // Map of model name to model info
-	stopCh chan struct{}             // Channel to stop the cleanup goroutine
-
-	sync.Mutex // Protects concurrent access to models map
+	name    string         // name key of the cached model
+	model   *modelKeepInfo // the cached model; nil when none
+	sawBusy bool           // owned by the cleanup goroutine: last pass found a request in flight
+	stopCh  chan struct{}  // Channel to stop the cleanup goroutine
 }
 
 // modelKeepInfo holds metadata for a cached model instance
@@ -145,47 +149,65 @@ type keepResetable interface {
 	Reset() error
 }
 
-// start begins the background cleanup process that removes unused models
-// Runs a ticker every 5 seconds to check for models that exceed the keepalive timeout
+// start begins the background cleanup process that removes the unused model
+// Runs a ticker every 5 seconds to check whether it exceeds the keepalive timeout
 func (keepAlive *keepAliveService) start() {
-	keepAlive.models = make(map[string]*modelKeepInfo)
 	keepAlive.stopCh = make(chan struct{})
 
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		for {
 			select {
-			// Stop signal received - cleanup all models and exit
+			// Stop signal received - cleanup the model and exit
 			case <-keepAlive.stopCh:
-				keepAlive.Lock()
-				for name, model := range keepAlive.models {
-					model.model.Destroy()
-					delete(keepAlive.models, name)
+				middleware.GILock.Lock()
+				if keepAlive.model != nil {
+					keepAlive.model.model.Destroy()
+					keepAlive.model = nil
 				}
-				keepAlive.Unlock()
+				middleware.GILock.Unlock()
 				return
 
-			// Periodic cleanup - remove models that haven't been used recently
+			// Periodic cleanup - remove the model if it hasn't been used recently
 			case <-t.C:
-				keepAlive.Lock()
-				for name, model := range keepAlive.models {
-					if time.Since(model.lastTime).Milliseconds()/1000 > config.Get().KeepAlive {
-						model.model.Destroy()
-						delete(keepAlive.models, name)
-					}
-				}
-				keepAlive.Unlock()
+				keepAlive.sweep()
 			}
 		}
 	}()
 }
 
-// keepAliveGet retrieves a cached model or creates a new one if not found
-// Ensures only one model is kept in memory at a time by clearing others
-func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, error) {
-	keepAlive.Lock()
-	defer keepAlive.Unlock()
+// sweep destroys the cached model once it is idle past the keepalive
+// timeout. It shares the request GIL with the handlers (middleware.GIL):
+// while a request is in flight the pass is skipped, and the first pass
+// after a busy one only restarts the idle countdown. A model is therefore
+// never destroyed mid-generation, and a generation that outlives the
+// timeout does not consume its own keep-alive window (#1322).
+func (keepAlive *keepAliveService) sweep() {
+	if !middleware.GILock.TryLock() {
+		keepAlive.sawBusy = true
+		return
+	}
+	defer middleware.GILock.Unlock()
 
+	if keepAlive.model == nil {
+		keepAlive.sawBusy = false
+		return
+	}
+	if keepAlive.sawBusy {
+		keepAlive.sawBusy = false
+		keepAlive.model.lastTime = time.Now()
+		return
+	}
+	if time.Since(keepAlive.model.lastTime).Milliseconds()/1000 > config.Get().KeepAlive {
+		keepAlive.model.model.Destroy()
+		keepAlive.model = nil
+	}
+}
+
+// keepAliveGet retrieves the cached model or creates a new one if not found.
+// Callers must hold the request GIL; middleware.GIL does this for every
+// handler, so the single cache slot needs no lock of its own.
+func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, error) {
 	// The SDK resolves bare names / aliases and picks the default precision
 	// when none is given; pass the request string through verbatim.
 	paths, err := geniex_sdk.ModelGetPaths(name)
@@ -196,24 +218,23 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 
 	modelfile := paths.ModelPath
 
-	// Check if model already exists in cache
-	model, ok := keepAlive.models[name]
-	if ok && reflect.DeepEqual(model.param, param) {
+	// Reuse the cached model when the request matches it
+	if keepAlive.model != nil && keepAlive.name == name && reflect.DeepEqual(keepAlive.model.param, param) {
 		if reset {
-			if r, ok := model.model.(keepResetable); ok {
+			if r, ok := keepAlive.model.model.(keepResetable); ok {
 				r.Reset()
 			}
 		}
-		model.lastTime = time.Now()
-		return model.model, nil
+		keepAlive.model.lastTime = time.Now()
+		return keepAlive.model.model, nil
 	}
 
-	// Clear existing models to ensure only one is in memory
-	// This prevents memory overflow but limits to single model usage
+	// A different model or params were requested: destroy the current model
+	// first so only one is ever in memory
 	// TODO: unload model due to free ram/vram
-	for name, model := range keepAlive.models {
-		model.model.Destroy()
-		delete(keepAlive.models, name)
+	if keepAlive.model != nil {
+		keepAlive.model.model.Destroy()
+		keepAlive.model = nil
 	}
 
 	// param already carries the resolved NCtx / NGpuLayers / DeviceID (see
@@ -262,14 +283,14 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 	if e != nil {
 		return nil, e
 	}
-	model = &modelKeepInfo{
+	keepAlive.name = name
+	keepAlive.model = &modelKeepInfo{
 		model:    t,
 		param:    param,
 		lastTime: time.Now(),
 	}
-	keepAlive.models[name] = model
 
-	return model.model, nil
+	return keepAlive.model.model, nil
 }
 
 // stop signals the cleanup goroutine to terminate
