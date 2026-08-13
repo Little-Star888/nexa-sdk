@@ -33,6 +33,10 @@ BUNDLE=$TC/pkg-geniex
 PROMPTS=$TC/prompts
 
 mkdir -p "$LOG" "$OUT" "$MM_CACHE"
+# QDC reuses the same physical host across jobs, so $OUT can hold stale cell
+# JSON files from earlier sessions. Wipe them so log-upload can't ship them
+# back and pollute this job's cell set.
+rm -f "$OUT"/*.json 2>/dev/null || true
 exec > "$LOG/script.log" 2>&1
 date -u
 uname -a

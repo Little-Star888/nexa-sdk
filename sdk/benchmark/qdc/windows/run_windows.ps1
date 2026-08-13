@@ -33,6 +33,10 @@ $BUNDLE = "$TC\pkg-geniex"
 $PROMPTS = "$TC\prompts"
 
 New-Item -ItemType Directory -Force -Path $LOG, $OUT, $MM_CACHE | Out-Null
+# QDC reuses the same physical host across jobs, so $OUT can hold stale cell
+# JSON files from earlier sessions. Wipe them so log-upload can't ship them
+# back and pollute this job's cell set.
+Remove-Item -Path "$OUT\*.json" -Force -ErrorAction SilentlyContinue
 Start-Transcript -Path "$LOG\script.log" -Force | Out-Null
 
 # Trust the self-signed cert the HTP .cat catalogs are signed with, or the

@@ -221,11 +221,36 @@ BUILDERS = {
 }
 
 
-def download_cells(client, job_id: str, tmp: Path) -> list[dict]:
+def download_cells(
+    client, job_id: str, tmp: Path, model_names: list[str] | None = None
+) -> list[dict]:
+    """Return the cell JSONs QDC collected for ``job_id``.
+
+    QDC reuses physical hosts across jobs, so the log archive can carry
+    stale cell files from earlier sessions in addition to what this job
+    actually produced. When ``model_names`` is given, we keep only cells
+    whose ``cell_id`` starts with one of those names — cell_id is
+    ``{model}-{plugin}-{device}-c{ctx}`` on the device side, so a name
+    prefix is enough to disambiguate."""
     members = _qdc.download_log_members(
         client, job_id, tmp, lambda n: n.endswith(".json")
     )
     cells = [json.loads(data) for _, data in members]
+    if model_names:
+        prefixes = tuple(f"{n}-" for n in model_names)
+        kept, dropped = [], []
+        for c in cells:
+            (
+                kept if str(c.get("cell_id", "")).startswith(prefixes) else dropped
+            ).append(c)
+        if dropped:
+            log.warning(
+                "dropping %d stale cell(s) not in %s: %s",
+                len(dropped),
+                model_names,
+                [c.get("cell_id") for c in dropped],
+            )
+        cells = kept
     return sorted(cells, key=lambda c: c["cell_id"])
 
 
@@ -454,7 +479,9 @@ def main() -> int:
             zip_path=zip_path,
             timeout=args.job_timeout,
         )
-        cells = download_cells(client, job_id, tmp)
+        cells = download_cells(
+            client, job_id, tmp, model_names=[m["name"] for m in models]
+        )
 
     if args.cells_out:
         args.cells_out.write_text(json.dumps(cells))
