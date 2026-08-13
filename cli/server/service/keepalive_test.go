@@ -5,11 +5,11 @@ package service
 
 import (
 	"testing"
-	"time"
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/server/middleware"
 	"github.com/qualcomm/GenieX/cli/server/types"
+	"github.com/spf13/viper"
 )
 
 // ResolveModelParam receives already-resolved knobs (the handler prefills unset
@@ -82,37 +82,28 @@ type fakeModel struct{ destroyed int }
 func (f *fakeModel) Destroy() error { f.destroyed++; return nil }
 
 func TestSweepNeverDestroysMidRequest(t *testing.T) {
+	viper.Set("keepalive", -1) // any idle time counts as expired
+	defer viper.Set("keepalive", nil)
+
 	f := &fakeModel{}
 	keepAlive.name = "m"
-	keepAlive.model = &modelKeepInfo{model: f, lastTime: time.Now().Add(-time.Hour)}
-	keepAlive.sawBusy = false
+	keepAlive.model = f
+	defer keepAlive.destroy()
 
-	middleware.GILock.Lock() // a request is in flight
+	// A request in flight holds the GIL; the sweep must be a no-op.
+	middleware.GILock.Lock()
 	keepAlive.sweep()
 	middleware.GILock.Unlock()
 	if f.destroyed != 0 {
 		t.Fatal("sweep destroyed the model while a request was in flight")
 	}
 
-	// The first pass after a busy one only restarts the idle countdown...
-	keepAlive.sweep()
-	if f.destroyed != 0 {
-		t.Fatal("sweep destroyed a model that was in use moments ago")
-	}
-
-	// ...so the model survives the next pass as well...
-	keepAlive.sweep()
-	if f.destroyed != 0 {
-		t.Fatal("sweep ignored the restarted idle countdown")
-	}
-
-	// ...and is destroyed once genuinely idle past the timeout.
-	keepAlive.model.lastTime = time.Now().Add(-time.Hour)
+	// Idle past the timeout with no request in flight: the model is freed.
 	keepAlive.sweep()
 	if f.destroyed != 1 {
 		t.Fatal("sweep kept an idle model past the timeout")
 	}
 	if keepAlive.model != nil {
-		t.Fatal("destroyed model still cached")
+		t.Fatal("destroyed model was left in the cache")
 	}
 }
