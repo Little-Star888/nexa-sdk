@@ -18,6 +18,7 @@
 #include "build_config.h"
 #include "common.h"
 #include "ggml-backend.h"
+#include "htp_session.h"
 #include "llama.h"
 #include "llm.h"
 #include "logging.h"
@@ -142,6 +143,12 @@ class LlamaPlugin : public Plugin {
     ILlm* create_llm() override { return new geniex::LlamaLlm; }
 
     IVlm* create_vlm() override { return new geniex::LlamaVlm; }
+
+    // Yield the HTP FastRPC channels so the incoming plugin (typically QAIRT)
+    // can bring up its own dspqueue on the same CDSP domain without colliding
+    // with the still-open libggml-htp-vN.so / libdspqueue_rpc_skel.so handles.
+    // See htp_session.h for the collision symptom this avoids.
+    void on_foreign_plugin_load() override { htp::release_sessions_if_idle(); }
 };
 
 }  // namespace geniex

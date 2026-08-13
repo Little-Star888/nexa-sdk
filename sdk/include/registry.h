@@ -39,6 +39,11 @@ class PluginFactory {
 
     Plugin*         get_instance();  // return raw pointer, but internal manage lifecycle
     const PluginId& get_plugin_id() const { return plugin_id; }
+
+    // Returns the cached Plugin without constructing one. Used by Registry to
+    // notify already-instantiated foreign plugins of a handoff without
+    // eagerly spinning up plugins the caller hasn't asked for.
+    Plugin* peek_cached() const { return cached_plugin.get(); }
 };
 
 class PluginLoadException : public std::exception {};
@@ -50,9 +55,25 @@ class Registry {
     mutable std::unordered_map<PluginId, std::unique_ptr<PluginFactory>> plugins;
     mutable std::vector<std::string>                                     failed_plugins;
     mutable std::mutex                                                   mutex;
+    // Tracks the plugin_id from the last successful dispatch so we can fire
+    // Plugin::on_foreign_plugin_load on the yielding side of every handoff.
+    // Empty until the first dispatch.
+    PluginId last_dispatched_id;
 
     Registry()  = default;
     ~Registry() = default;
+
+    // Notifies every already-instantiated plugin whose id differs from
+    // `incoming_id` that a foreign plugin is about to run. Called under
+    // `mutex`; the callees must not re-enter Registry.
+    void notify_foreign_plugins_locked(const PluginId& incoming_id) {
+        for (auto& [id, factory] : plugins) {
+            if (id == incoming_id) continue;
+            if (Plugin* p = factory->peek_cached()) {
+                p->on_foreign_plugin_load();
+            }
+        }
+    }
 
    public:
     static Registry& instance();
@@ -80,6 +101,15 @@ class Registry {
             }
             throw PluginNotFoundException();
         }
+
+        // Fire the foreign-plugin-load hook on every other cached plugin so
+        // they can yield process-wide resources (e.g. llama.cpp releasing HTP
+        // FastRPC channels for QAIRT). Skip when the dispatch id is unchanged
+        // — sequential loads of the same plugin must not churn.
+        if (!last_dispatched_id.empty() && last_dispatched_id != plugin_id) {
+            notify_foreign_plugins_locked(plugin_id);
+        }
+        last_dispatched_id = plugin_id;
 
         Plugin* plugin = it->second->get_instance();
         if constexpr (std::is_same_v<M, Plugin>) {

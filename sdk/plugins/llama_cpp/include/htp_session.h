@@ -14,19 +14,16 @@ namespace geniex {
 // llama.cpp's still-open libggml-htp-vN.so / libdspqueue_rpc_skel.so handles —
 // QAIRT reports "Failed to create device: 1002" or 1007.
 //
-// Workaround: when the last HTP-bound llama.cpp object is destroyed, call
-// ggml_backend_hexagon_release_sessions (exposed by our llama.cpp patch) to
-// close those handles. Before the next llama.cpp load we call
-// ggml_backend_hexagon_reacquire_sessions so the cached device pointers in
-// ggml-backend-reg have live sessions again.
+// Handoff to another plugin closes those channels via
+// ggml_backend_hexagon_release_sessions (exposed by our llama.cpp patch).
+// Before the next llama.cpp load we call ggml_backend_hexagon_reacquire_sessions
+// so the cached device pointers in ggml-backend-reg have live sessions again.
 //
-// Classes that may load on HTP (LlamaLlm / LlamaVlm / LlamaCppEmbedding /
-// LlamaCppReranker) own an htp::SessionGuard with RAII semantics: call
-// reacquire_before_load() before llama_model_load_from_file, mark_htp() when
-// the HTP backend is registered, and the destructor releases when it was the
-// last live user. Tracking is registry-scoped (not device-scoped) because
-// llama.cpp opens HTP FastRPC channels at ggml_hexagon_registry construction
-// time regardless of per-load device_id/n_gpu_layers.
+// SessionGuard tracks live HTP users with a shared refcount but no longer
+// releases on destruction — each release/reacquire cycle leaves the DSP-side
+// dspqueue in a state that fails `dspqueue_read` (0x0d) after enough churn,
+// so the actual release is deferred to release_sessions_if_idle(), invoked
+// by the SDK only when a foreign plugin is about to load (Plugin::on_foreign_plugin_load).
 namespace htp {
 
 // Recreate any HTP sessions that were released by a prior handoff. No-op if
@@ -39,10 +36,18 @@ void reacquire_before_load();
 // torn down before a QAIRT plugin can take over.
 bool htp_backend_present();
 
+// Close all HTP sessions iff no SessionGuard is currently holding a
+// reference. Called from LlamaPlugin::on_foreign_plugin_load when another
+// plugin (QAIRT) is about to run, so its own HTP init isn't poisoned. No-op
+// if the HTP backend is absent, sessions are already released, or any
+// llama.cpp handle is still using HTP (the foreign plugin will collide, but
+// that's caller error).
+void release_sessions_if_idle();
+
 class SessionGuard {
    public:
     SessionGuard() = default;
-    ~SessionGuard() { release_if_last(); }
+    ~SessionGuard() { release_ref(); }
 
     SessionGuard(const SessionGuard&)            = delete;
     SessionGuard& operator=(const SessionGuard&) = delete;
@@ -55,7 +60,10 @@ class SessionGuard {
     bool uses_htp() const { return uses_htp_; }
 
    private:
-    void release_if_last();
+    // Decrement the shared refcount. Does NOT close sessions — release is
+    // driven by release_sessions_if_idle() so sequential llama.cpp loads
+    // keep the same HTP sessions warm.
+    void release_ref();
 
     bool uses_htp_ = false;
 };

@@ -26,6 +26,14 @@ class Plugin {
     }
     virtual ILlm* create_llm() { return nullptr; }
     virtual IVlm* create_vlm() { return nullptr; }
+
+    // Called by Registry just before it dispatches to a different plugin.
+    // Lets the yielding plugin (e.g. the llama.cpp plugin releasing its
+    // HTP FastRPC channels so QAIRT's HTP init isn't poisoned) tear down
+    // resources that would otherwise collide across plugin boundaries.
+    // Default no-op. Called on every already-instantiated Plugin whose id
+    // differs from the one being handed out.
+    virtual void on_foreign_plugin_load() {}
 };
 
 }  // namespace geniex
