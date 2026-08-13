@@ -96,7 +96,7 @@
   {
     "name": "gemma-4-E4B-it",
     "plugin": "llama_cpp",
-    "devices": ["cpu", "npu", "hybrid"],
+    "devices": ["cpu", "npu", "gpu", "hybrid"],
     "model_id": "unsloth/gemma-4-E4B-it-GGUF:Q4_0",
     "hub": "hf",
     "url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf",
@@ -107,7 +107,7 @@
   {
     "name": "gemma-4-E2B-it",
     "plugin": "llama_cpp",
-    "devices": ["cpu", "npu", "hybrid"],
+    "devices": ["cpu", "npu", "gpu", "hybrid"],
     "model_id": "unsloth/gemma-4-E2B-it-GGUF:Q4_0",
     "hub": "hf",
     "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_0.gguf",
