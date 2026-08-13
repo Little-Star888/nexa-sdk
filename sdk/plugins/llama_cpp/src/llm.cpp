@@ -335,7 +335,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         if (spec_prefill) {
             llama_batch batch = llama_batch_init(n_tokens, /*embd=*/0, /*n_seq_max=*/1);
             for (int i = 0; i < n_tokens; ++i) {
-                common_batch_add(batch, tokens[i], this->n_past + i, {0}, /*logits=*/true);
+                common_batch_add(batch, tokens[i], this->n_past + i, {0}, /*logits=*/i == n_tokens - 1);
             }
             rc = llama_decode(this->ctx, batch);
             while (rc == 1 && can_shift && slide_window(n_tokens) > 0) {
