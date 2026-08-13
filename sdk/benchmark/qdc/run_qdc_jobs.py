@@ -145,18 +145,66 @@ def model_rows(models: list[dict], device: str) -> list[str]:
     return rows
 
 
+DEFAULT_CTX = [512, 1024, 4096]
+DEFAULT_TG_PER_CELL = 128
+
+
+def _parse_int_list(s: str) -> list[int]:
+    return [int(x.strip()) for x in s.split(",") if x.strip()]
+
+
+def resolve_sweep(
+    ctx_arg: str, pp_arg: str, tg_arg: str
+) -> tuple[list[int], list[int], list[int]]:
+    """Turn the workflow's raw --ctx/--pp/--tg strings into three parallel
+    int lists of equal length. Empty --ctx picks {512, 1024, 4096}; empty
+    --tg picks 128 per cell; empty --pp derives ctx-tg per cell."""
+    ctx = _parse_int_list(ctx_arg) or list(DEFAULT_CTX)
+    tg = _parse_int_list(tg_arg) or [DEFAULT_TG_PER_CELL] * len(ctx)
+    pp = _parse_int_list(pp_arg) or [c - t for c, t in zip(ctx, tg)]
+    if len(pp) != len(ctx) or len(tg) != len(ctx):
+        raise SystemExit(f"--ctx/--pp/--tg length mismatch: ctx={ctx} pp={pp} tg={tg}")
+    if any(p < 1 for p in pp):
+        raise SystemExit(
+            f"derived pp has non-positive value: pp={pp} (ctx={ctx}, tg={tg})"
+        )
+    return ctx, pp, tg
+
+
+def _sweep_placeholders(ctx: list[int], pp: list[int], tg: list[int]) -> dict[str, str]:
+    """Comma-separated sweep lists shared by both bash and PowerShell templates
+    (both parse the same string form)."""
+    return {
+        "{CTX_LIST}": ",".join(map(str, ctx)),
+        "{PP_LIST}": ",".join(map(str, pp)),
+        "{TG_LIST}": ",".join(map(str, tg)),
+    }
+
+
+def _apply_substitutions(text: str, subs: dict[str, str]) -> str:
+    for k, v in subs.items():
+        text = text.replace(k, v)
+    return text
+
+
 def build_linux_artifact(
-    pkg_dir: Path, models: list[dict], device: str, tmp: Path
+    pkg_dir: Path,
+    models: list[dict],
+    device: str,
+    tmp: Path,
+    ctx: list[int],
+    pp: list[int],
+    tg: list[int],
 ) -> Path:
     stage = tmp / "stage"
     shutil.copytree(pkg_dir, stage / "pkg-geniex")
 
-    script = (
-        (HERE / "linux" / "run_linux.sh")
-        .read_text()
-        .replace("{MODELS}", "\n".join(model_rows(models, device)))
-        .replace("{CHIPSET}", CHIPSET.get(device, ""))
-    )
+    subs = {
+        "{MODELS}": "\n".join(model_rows(models, device)),
+        "{CHIPSET}": CHIPSET.get(device, ""),
+        **_sweep_placeholders(ctx, pp, tg),
+    }
+    script = _apply_substitutions((HERE / "linux" / "run_linux.sh").read_text(), subs)
     script_path = stage / "run_linux.sh"
     script_path.write_text(script, newline="\n")
     script_path.chmod(0o755)
@@ -168,16 +216,24 @@ def build_linux_artifact(
 
 
 def build_windows_artifact(
-    pkg_dir: Path, models: list[dict], device: str, tmp: Path
+    pkg_dir: Path,
+    models: list[dict],
+    device: str,
+    tmp: Path,
+    ctx: list[int],
+    pp: list[int],
+    tg: list[int],
 ) -> Path:
     stage = tmp / "stage"
     shutil.copytree(pkg_dir, stage / "pkg-geniex")
 
-    script = (
-        (HERE / "windows" / "run_windows.ps1")
-        .read_text()
-        .replace("{MODELS}", "\n".join(model_rows(models, device)))
-        .replace("{CHIPSET}", CHIPSET.get(device, ""))
+    subs = {
+        "{MODELS}": "\n".join(model_rows(models, device)),
+        "{CHIPSET}": CHIPSET.get(device, ""),
+        **_sweep_placeholders(ctx, pp, tg),
+    }
+    script = _apply_substitutions(
+        (HERE / "windows" / "run_windows.ps1").read_text(), subs
     )
     (stage / "run_windows.ps1").write_text(script, newline="\r\n")
 
@@ -191,7 +247,13 @@ def build_windows_artifact(
 
 
 def build_android_artifact(
-    pkg_dir: Path, models: list[dict], device: str, tmp: Path
+    pkg_dir: Path,
+    models: list[dict],
+    device: str,
+    tmp: Path,
+    ctx: list[int],
+    pp: list[int],
+    tg: list[int],
 ) -> Path:
     # Phones lack python3/curl, so the appium pytest harness on the QDC host
     # fetches+extracts each model and adb-pushes it, then runs geniex-bench
@@ -419,6 +481,21 @@ def main() -> int:
         help="comma-separated compute filter (cpu/gpu/npu/hybrid); "
         "empty keeps every compute unit declared on the model",
     )
+    p.add_argument(
+        "--ctx",
+        default="",
+        help="comma-separated ctx sizes (empty = 512,1024,4096)",
+    )
+    p.add_argument(
+        "--pp",
+        default="",
+        help="comma-separated prefill lengths matching --ctx (empty = ctx-tg per cell)",
+    )
+    p.add_argument(
+        "--tg",
+        default="",
+        help="comma-separated decode lengths matching --ctx (empty = 128 per cell)",
+    )
     p.add_argument("--cells-out", type=Path, help="write the per-cell JSON list here")
     p.add_argument("--render-dir", type=Path, help="render mode: aggregate JSON here")
     p.add_argument("--job-timeout", type=int, default=7200)
@@ -464,12 +541,17 @@ def main() -> int:
             raise SystemExit(
                 f"no model in {args.models_file} runs any of --compute={compute_pick}"
             )
+    ctx_list, pp_list, tg_list = resolve_sweep(args.ctx, args.pp, args.tg)
+    log.info("sweep: ctx=%s pp=%s tg=%s", ctx_list, pp_list, tg_list)
+
     client = _qdc.make_client(api_key)
     target_id = _qdc.resolve_target(client, args.device)
 
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        zip_path = BUILDERS[platform](args.pkg_dir, models, args.device, tmp)
+        zip_path = BUILDERS[platform](
+            args.pkg_dir, models, args.device, tmp, ctx_list, pp_list, tg_list
+        )
         job_id = _qdc.submit_and_wait(
             client,
             target_id=target_id,
