@@ -8,39 +8,19 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
-	"sync"
 	"time"
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/internal/render"
-	"github.com/qualcomm/GenieX/cli/internal/types"
+	"github.com/qualcomm/GenieX/cli/server/middleware"
+	"github.com/qualcomm/GenieX/cli/server/types"
 )
 
-// ResolveModelParam turns the (nctx, ngl, compute) knobs into the ModelParam
-// the keep-alive cache keys on. The caller passes already-resolved values (the
-// handler prefills unset request fields with the server-wide --nctx / --ngl /
-// --compute defaults). NCtx / NGpuLayers are meaningful only for llama_cpp; for
-// other plugins (e.g. qairt) NCtx is zeroed here and the SDK zeroes ngl so the
-// plugin's param-guard is not tripped. Compute is resolved to a concrete
-// DeviceID by the SDK (sdk/src/device.cpp); any coercion warning is logged and
-// printed to stdout.
-// SpecParam bundles the speculative-decoding knobs sourced from a request; all
-// zero-values mean "spec disabled". Only llama_cpp consumes these fields.
-type SpecParam struct {
-	Type       string
-	DraftModel string
-	NMax       int32
-	NMin       int32
-	PMin       float32
-}
-
-// resolveDraftModelPath maps a request's spec_draft_model value to an absolute
-// GGUF path. An existing filesystem path is returned as-is; anything else is
-// treated as a catalogue name (optionally suffixed with :precision) and looked
-// up in the local cache. A missing cache entry returns an error - the caller
-// is expected to `geniex pull` the draft model beforehand, matching how the
-// target model is handled (server never auto-pulls; it consumes what's cached).
+// resolveDraftModelPath maps a spec_draft_model value to an absolute GGUF path:
+// an existing filesystem path is returned as-is, otherwise it is a catalogue
+// name (optionally :precision) looked up in the local cache. A cache miss is an
+// error — the server never auto-pulls, so the draft must be pulled beforehand.
 func resolveDraftModelPath(draft string) (string, error) {
 	if draft == "" {
 		return "", nil
@@ -60,11 +40,12 @@ func resolveDraftModelPath(draft string) (string, error) {
 	return paths.ModelPath, nil
 }
 
-func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute, chipset string, spec SpecParam) (types.ModelParam, error) {
-	// nctx / ngl / compute already carry the resolved value (explicit request
-	// or the server default prefilled by the handler). Non-llama_cpp plugins
-	// (e.g. qairt) reject non-zero nctx, so zero it for them; the SDK does the
-	// same for ngl in geniex_resolve_device.
+// ResolveModelParam turns the already-resolved (nctx, ngl, compute) knobs into
+// the ModelParam the cache keys on. Compute is resolved to a DeviceID by the
+// SDK; nctx/ngl are llama_cpp-only and zeroed for other plugins.
+func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute, chipset string, spec types.SpecParam) (types.ModelParam, error) {
+	// Non-llama_cpp plugins (e.g. qairt) reject non-zero nctx; the SDK zeroes
+	// ngl for them in geniex_resolve_device.
 	nctx, ngl := reqNCtx, reqNgl
 	if runtimeID != geniex_sdk.RuntimeLlamaCpp {
 		nctx = 0
@@ -97,45 +78,38 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 		NGpuLayers: resolved.Ngl,
 		DeviceID:   resolved.DeviceID,
 	}
+	// Spec is llama_cpp-only; leave it zero (disabled) for other plugins.
 	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
-		mp.SpecType = spec.Type
-		mp.SpecDraftModel = spec.DraftModel
-		mp.SpecNMax = spec.NMax
-		mp.SpecNMin = spec.NMin
-		mp.SpecPMin = spec.PMin
+		mp.Spec = spec
 	}
 	return mp, nil
 }
 
-// KeepAliveGet retrieves a model from the keepalive cache or creates it if not found
-// This avoids the overhead of repeatedly loading/unloading models from disk
+// KeepAliveGet returns the cached model of type T, loading it if needed, to
+// avoid reloading from disk on every request.
 func KeepAliveGet[T any](name string, param types.ModelParam, reset bool) (*T, error) {
 	t, err := keepAliveGet[T](name, param, reset)
 	if err != nil {
 		return nil, err
 	}
+	// Stamp the idle timer at request end (only model requests reach here).
+	middleware.RunOnRelease(func() { keepAlive.lastActivity = time.Now() })
 	return t.(*T), nil
 }
 
 var keepAlive keepAliveService
 
-// current only support keepalive one model
+// keepAliveService caches a single loaded model. All access is under the
+// request GIL (middleware.GILock), so it needs no lock of its own.
 type keepAliveService struct {
-	models map[string]*modelKeepInfo // Map of model name to model info
-	stopCh chan struct{}             // Channel to stop the cleanup goroutine
-
-	sync.Mutex // Protects concurrent access to models map
+	name         string           // cache key of the loaded model, "" when none
+	model        keepable         // nil when none
+	param        types.ModelParam // params the cache keys on
+	lastActivity time.Time        // when the last model request finished
+	stopCh       chan struct{}
 }
 
-// modelKeepInfo holds metadata for a cached model instance
-type modelKeepInfo struct {
-	model    keepable
-	param    types.ModelParam
-	lastTime time.Time
-}
-
-// keepable interface defines objects that can be managed by the keepalive service
-// Objects must support cleanup and reset operations
+// keepable is a model the cache can free; keepResetable can also be reset.
 type keepable interface {
 	Destroy() error
 }
@@ -145,47 +119,54 @@ type keepResetable interface {
 	Reset() error
 }
 
-// start begins the background cleanup process that removes unused models
-// Runs a ticker every 5 seconds to check for models that exceed the keepalive timeout
+// start runs the background sweep every 5 seconds until stopped.
 func (keepAlive *keepAliveService) start() {
-	keepAlive.models = make(map[string]*modelKeepInfo)
+	keepAlive.lastActivity = time.Now()
 	keepAlive.stopCh = make(chan struct{})
 
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		for {
 			select {
-			// Stop signal received - cleanup all models and exit
 			case <-keepAlive.stopCh:
-				keepAlive.Lock()
-				for name, model := range keepAlive.models {
-					model.model.Destroy()
-					delete(keepAlive.models, name)
-				}
-				keepAlive.Unlock()
+				middleware.GILock.Lock()
+				keepAlive.destroy()
+				middleware.GILock.Unlock()
 				return
 
-			// Periodic cleanup - remove models that haven't been used recently
 			case <-t.C:
-				keepAlive.Lock()
-				for name, model := range keepAlive.models {
-					if time.Since(model.lastTime).Milliseconds()/1000 > config.Get().KeepAlive {
-						model.model.Destroy()
-						delete(keepAlive.models, name)
-					}
-				}
-				keepAlive.Unlock()
+				keepAlive.sweep()
 			}
 		}
 	}()
 }
 
-// keepAliveGet retrieves a cached model or creates a new one if not found
-// Ensures only one model is kept in memory at a time by clearing others
-func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, error) {
-	keepAlive.Lock()
-	defer keepAlive.Unlock()
+// sweep frees the model once idle past the timeout. It runs only when it can
+// take the GIL, so an in-flight request defers it and the model is never freed
+// mid-generation; idle is measured from the last model request's end (#1322).
+func (keepAlive *keepAliveService) sweep() {
+	if !middleware.GILock.TryLock() {
+		return
+	}
+	defer middleware.GILock.Unlock()
 
+	if time.Since(keepAlive.lastActivity).Milliseconds()/1000 > config.Get().KeepAlive {
+		keepAlive.destroy()
+	}
+}
+
+// destroy frees the cached model, if any. Caller holds GILock.
+func (keepAlive *keepAliveService) destroy() {
+	if keepAlive.model != nil {
+		keepAlive.model.Destroy()
+		keepAlive.model = nil
+		keepAlive.name = ""
+	}
+}
+
+// keepAliveGet reuses the cached model when name and params match, otherwise
+// loads a fresh one. Runs under the request GIL, so no locking here.
+func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, error) {
 	// The SDK resolves bare names / aliases and picks the default precision
 	// when none is given; pass the request string through verbatim.
 	paths, err := geniex_sdk.ModelGetPaths(name)
@@ -196,36 +177,28 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 
 	modelfile := paths.ModelPath
 
-	// Check if model already exists in cache
-	model, ok := keepAlive.models[name]
-	if ok && reflect.DeepEqual(model.param, param) {
+	if keepAlive.name == name && reflect.DeepEqual(keepAlive.param, param) {
 		if reset {
-			if r, ok := model.model.(keepResetable); ok {
+			if r, ok := keepAlive.model.(keepResetable); ok {
 				r.Reset()
 			}
 		}
-		model.lastTime = time.Now()
-		return model.model, nil
+		return keepAlive.model, nil
 	}
 
-	// Clear existing models to ensure only one is in memory
-	// This prevents memory overflow but limits to single model usage
+	// Drop the current model so only one stays in memory.
 	// TODO: unload model due to free ram/vram
-	for name, model := range keepAlive.models {
-		model.model.Destroy()
-		delete(keepAlive.models, name)
-	}
+	keepAlive.destroy()
 
-	// param already carries the resolved NCtx / NGpuLayers / DeviceID (see
-	// resolveServeModelParam in the chat handler); the cache keys on it, so no
-	// further resolution happens here.
+	// param already carries the resolved NCtx / NGpuLayers / DeviceID; the
+	// cache keys on it, so no further resolution here.
 	var t keepable
 	var e error
 	switch reflect.TypeFor[T]() {
 	case reflect.TypeFor[geniex_sdk.LLM]():
 		draftPath := ""
-		if param.SpecType != "" && param.SpecDraftModel != "" {
-			p, perr := resolveDraftModelPath(param.SpecDraftModel)
+		if param.Spec.Type != "" && param.Spec.DraftModel != "" {
+			p, perr := resolveDraftModelPath(param.Spec.DraftModel)
 			if perr != nil {
 				return nil, perr
 			}
@@ -237,11 +210,11 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 			Config: geniex_sdk.ModelConfig{
 				NCtx:           param.NCtx,
 				NGpuLayers:     param.NGpuLayers,
-				SpecType:       param.SpecType,
+				SpecType:       param.Spec.Type,
 				SpecDraftModel: draftPath,
-				SpecNMax:       param.SpecNMax,
-				SpecNMin:       param.SpecNMin,
-				SpecPMin:       param.SpecPMin,
+				SpecNMax:       param.Spec.NMax,
+				SpecNMin:       param.Spec.NMin,
+				SpecPMin:       param.Spec.PMin,
 			},
 			RuntimeID: paths.RuntimeID,
 		})
@@ -262,17 +235,14 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 	if e != nil {
 		return nil, e
 	}
-	model = &modelKeepInfo{
-		model:    t,
-		param:    param,
-		lastTime: time.Now(),
-	}
-	keepAlive.models[name] = model
+	keepAlive.name = name
+	keepAlive.model = t
+	keepAlive.param = param
 
-	return model.model, nil
+	return t, nil
 }
 
-// stop signals the cleanup goroutine to terminate
+// stop signals the sweep goroutine to terminate.
 func (keepAlive *keepAliveService) stop() {
 	keepAlive.stopCh <- struct{}{}
 }

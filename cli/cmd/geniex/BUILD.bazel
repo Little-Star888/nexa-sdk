@@ -54,7 +54,6 @@ go_cgo_test(
     ],
     deps = [
         "//cli/internal/testutil",
-        "//cli/internal/types",
     ],
 )
 

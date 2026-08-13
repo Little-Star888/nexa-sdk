@@ -10,10 +10,15 @@ type ModelParam struct {
 	NCtx       int32
 	NGpuLayers int32
 	DeviceID   string
+	Spec       SpecParam
+}
 
-	SpecType       string
-	SpecDraftModel string
-	SpecNMax       int32
-	SpecNMin       int32
-	SpecPMin       float32
+// SpecParam bundles the speculative-decoding knobs sourced from a request; all
+// zero-values mean "spec disabled". Only llama_cpp consumes these fields.
+type SpecParam struct {
+	Type       string
+	DraftModel string
+	NMax       int32
+	NMin       int32
+	PMin       float32
 }
