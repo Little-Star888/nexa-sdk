@@ -11,6 +11,10 @@ on:
         description: "Model names from bench-models.json, comma-separated (blank = all)"
         type: string
         default: ""
+      compute:
+        description: "Compute units to run per model, comma-separated: cpu/gpu/npu/hybrid (blank = every unit declared on the model)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -101,11 +105,13 @@ jobs:
       - env:
           DEVICE: ${{ matrix.device }}
           MODEL_NAME: ${{ matrix.model.name }}
+          COMPUTE: ${{ github.event.inputs.compute }}
         run: |
           python sdk/benchmark/qdc/run_qdc_jobs.py \
             --pkg-dir pkg-geniex \
             --device "$DEVICE" \
             --model-name "$MODEL_NAME" \
+            --compute "$COMPUTE" \
             --cells-out "$DEVICE-$MODEL_NAME.json"
       - uses: actions/upload-artifact@v7
         if: always()

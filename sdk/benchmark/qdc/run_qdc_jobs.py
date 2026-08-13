@@ -388,6 +388,12 @@ def main() -> int:
     p.add_argument("--device", default="QCS9075M")
     p.add_argument("--models-file", type=Path, default=HERE / "bench-models.json")
     p.add_argument("--model-name", help="run only this model from --models-file")
+    p.add_argument(
+        "--compute",
+        default="",
+        help="comma-separated compute filter (cpu/gpu/npu/hybrid); "
+        "empty keeps every compute unit declared on the model",
+    )
     p.add_argument("--cells-out", type=Path, help="write the per-cell JSON list here")
     p.add_argument("--render-dir", type=Path, help="render mode: aggregate JSON here")
     p.add_argument("--job-timeout", type=int, default=7200)
@@ -413,6 +419,26 @@ def main() -> int:
         models = [m for m in models if m["name"] == args.model_name]
         if not models:
             raise SystemExit(f"model {args.model_name!r} not in {args.models_file}")
+
+    compute_pick = [c.strip() for c in args.compute.split(",") if c.strip()]
+    if compute_pick:
+        kept = []
+        for m in models:
+            devs = [d for d in m["devices"] if d in compute_pick]
+            if not devs:
+                log.warning(
+                    "%s declares %s, none match --compute=%s, skipping",
+                    m["name"],
+                    m["devices"],
+                    compute_pick,
+                )
+                continue
+            kept.append({**m, "devices": devs})
+        models = kept
+        if not models:
+            raise SystemExit(
+                f"no model in {args.models_file} runs any of --compute={compute_pick}"
+            )
     client = _qdc.make_client(api_key)
     target_id = _qdc.resolve_target(client, args.device)
 
