@@ -27,12 +27,9 @@ class Plugin {
     virtual ILlm* create_llm() { return nullptr; }
     virtual IVlm* create_vlm() { return nullptr; }
 
-    // Called by Registry just before it dispatches to a different plugin.
-    // Lets the yielding plugin (e.g. the llama.cpp plugin releasing its
-    // HTP FastRPC channels so QAIRT's HTP init isn't poisoned) tear down
-    // resources that would otherwise collide across plugin boundaries.
-    // Default no-op. Called on every already-instantiated Plugin whose id
-    // differs from the one being handed out.
+    // Called on every already-cached plugin when Registry dispatches to a
+    // plugin with a different id, so the yielding side can release process-
+    // wide resources (e.g. HTP FastRPC channels) that would collide.
     virtual void on_foreign_plugin_load() {}
 };
 
