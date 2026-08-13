@@ -13,27 +13,9 @@ import (
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/internal/render"
-	"github.com/qualcomm/GenieX/cli/internal/types"
 	"github.com/qualcomm/GenieX/cli/server/middleware"
+	"github.com/qualcomm/GenieX/cli/server/types"
 )
-
-// ResolveModelParam turns the (nctx, ngl, compute) knobs into the ModelParam
-// the keep-alive cache keys on. The caller passes already-resolved values (the
-// handler prefills unset request fields with the server-wide --nctx / --ngl /
-// --compute defaults). NCtx / NGpuLayers are meaningful only for llama_cpp; for
-// other plugins (e.g. qairt) NCtx is zeroed here and the SDK zeroes ngl so the
-// plugin's param-guard is not tripped. Compute is resolved to a concrete
-// DeviceID by the SDK (sdk/src/device.cpp); any coercion warning is logged and
-// printed to stdout.
-// SpecParam bundles the speculative-decoding knobs sourced from a request; all
-// zero-values mean "spec disabled". Only llama_cpp consumes these fields.
-type SpecParam struct {
-	Type       string
-	DraftModel string
-	NMax       int32
-	NMin       int32
-	PMin       float32
-}
 
 // resolveDraftModelPath maps a request's spec_draft_model value to an absolute
 // GGUF path. An existing filesystem path is returned as-is; anything else is
@@ -60,7 +42,15 @@ func resolveDraftModelPath(draft string) (string, error) {
 	return paths.ModelPath, nil
 }
 
-func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute, chipset string, spec SpecParam) (types.ModelParam, error) {
+// ResolveModelParam turns the (nctx, ngl, compute) knobs into the ModelParam
+// the keep-alive cache keys on. The caller passes already-resolved values (the
+// handler prefills unset request fields with the server-wide --nctx / --ngl /
+// --compute defaults). NCtx / NGpuLayers are meaningful only for llama_cpp; for
+// other plugins (e.g. qairt) NCtx is zeroed here and the SDK zeroes ngl so the
+// plugin's param-guard is not tripped. Compute is resolved to a concrete
+// DeviceID by the SDK (sdk/src/device.cpp); any coercion warning is logged and
+// printed to stdout.
+func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute, chipset string, spec types.SpecParam) (types.ModelParam, error) {
 	// nctx / ngl / compute already carry the resolved value (explicit request
 	// or the server default prefilled by the handler). Non-llama_cpp plugins
 	// (e.g. qairt) reject non-zero nctx, so zero it for them; the SDK does the
@@ -98,11 +88,7 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 		DeviceID:   resolved.DeviceID,
 	}
 	if runtimeID == geniex_sdk.RuntimeLlamaCpp {
-		mp.SpecType = spec.Type
-		mp.SpecDraftModel = spec.DraftModel
-		mp.SpecNMax = spec.NMax
-		mp.SpecNMin = spec.NMin
-		mp.SpecPMin = spec.PMin
+		mp.Spec = spec
 	}
 	return mp, nil
 }
@@ -245,8 +231,8 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 	switch reflect.TypeFor[T]() {
 	case reflect.TypeFor[geniex_sdk.LLM]():
 		draftPath := ""
-		if param.SpecType != "" && param.SpecDraftModel != "" {
-			p, perr := resolveDraftModelPath(param.SpecDraftModel)
+		if param.Spec.Type != "" && param.Spec.DraftModel != "" {
+			p, perr := resolveDraftModelPath(param.Spec.DraftModel)
 			if perr != nil {
 				return nil, perr
 			}
@@ -258,11 +244,11 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 			Config: geniex_sdk.ModelConfig{
 				NCtx:           param.NCtx,
 				NGpuLayers:     param.NGpuLayers,
-				SpecType:       param.SpecType,
+				SpecType:       param.Spec.Type,
 				SpecDraftModel: draftPath,
-				SpecNMax:       param.SpecNMax,
-				SpecNMin:       param.SpecNMin,
-				SpecPMin:       param.SpecPMin,
+				SpecNMax:       param.Spec.NMax,
+				SpecNMin:       param.Spec.NMin,
+				SpecPMin:       param.Spec.PMin,
 			},
 			RuntimeID: paths.RuntimeID,
 		})
