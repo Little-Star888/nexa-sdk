@@ -129,16 +129,18 @@ for ($i = 0; $i -lt $ctxList.Count; $i++) {
     $specTsv = $tsvByPluginCtx["spec-$ctx"]
     if ((Test-Path $specTsv) -and ((Get-Item $specTsv).Length -gt 0)) {
         $sp = $specParamsByCtx["$ctx"]
-        Write-Output "=== matrix spec ctx=$ctx pp=$pp tg=$tg type=$($sp.type) draft=$($sp.draft) n_max=$($sp.tokens) (random-ids prefill) ==="
+        # Spec-decoding needs `--draft-tokens` extra KV slots on the last
+        # decode step (target + draft), or llama.cpp trips
+        # "decode: failed to find a memory slot for batch of size N+1".
+        # Bench defaults pp+tg = ctx exactly, so trim tg by that margin.
+        $draftHeadroom = if ($sp.tokens) { [int]$sp.tokens + 1 } else { 4 }
+        $specTg = [Math]::Max(1, [int]$tg - $draftHeadroom)
+        Write-Output "=== matrix spec ctx=$ctx pp=$pp tg=$specTg type=$($sp.type) draft=$($sp.draft) n_max=$($sp.tokens) (random-ids prefill) ==="
         Get-Content $specTsv
         $extra = @()
         if ($sp.tokens) { $extra += @("--draft-tokens", $sp.tokens) }
-        # -r 1 --no-warmup: llama.cpp spec-decoding leaks KV between runs
-        # (batch-of-4 draft+target trips 'no memory slot' on the 2nd run),
-        # and bench.c exit(1)s on generate failure — so a multi-run spec
-        # cell writes 0 JSON. Single measured run keeps the JSON coming.
         & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $specTsv --output-json-dir "$OUT" -r 1 --no-warmup `
-            -c $ctx -p $pp -n $tg `
+            -c $ctx -p $pp -n $specTg `
             --spec-type $sp.type --draft-model $sp.draft @extra `
             --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
         Write-Output "rc=$LASTEXITCODE  ($((Get-ChildItem $OUT).Count) cell json files so far)"
