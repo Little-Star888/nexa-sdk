@@ -637,8 +637,10 @@ def main() -> int:
                 f"no model in {args.models_file} runs any of --compute={compute_pick}"
             )
     ctx_arg = args.ctx
-    if not ctx_arg and len(models) == 1 and models[0].get("ctx"):
-        ctx_arg = ",".join(str(x) for x in models[0]["ctx"])
+    if not ctx_arg:
+        active = [m for m in models if m.get("devices")]
+        if len(active) == 1 and active[0].get("ctx"):
+            ctx_arg = ",".join(str(x) for x in active[0]["ctx"])
     ctx_list, pp_list, tg_list = resolve_sweep(ctx_arg, args.pp, args.tg)
     log.info("sweep: ctx=%s pp=%s tg=%s", ctx_list, pp_list, tg_list)
 

@@ -133,7 +133,11 @@ for ($i = 0; $i -lt $ctxList.Count; $i++) {
         Get-Content $specTsv
         $extra = @()
         if ($sp.tokens) { $extra += @("--draft-tokens", $sp.tokens) }
-        & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $specTsv --output-json-dir "$OUT" -r 3 `
+        # -r 1 --no-warmup: llama.cpp spec-decoding leaks KV between runs
+        # (batch-of-4 draft+target trips 'no memory slot' on the 2nd run),
+        # and bench.c exit(1)s on generate failure — so a multi-run spec
+        # cell writes 0 JSON. Single measured run keeps the JSON coming.
+        & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $specTsv --output-json-dir "$OUT" -r 1 --no-warmup `
             -c $ctx -p $pp -n $tg `
             --spec-type $sp.type --draft-model $sp.draft @extra `
             --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
