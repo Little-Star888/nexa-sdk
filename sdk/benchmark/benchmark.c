@@ -152,8 +152,10 @@ typedef struct {
     int64_t     gen_tokens;
     double      prefill_tps;
     double      decode_tps;
-    const char* stop_reason; /* not freed; lifetime tied to SDK output */
-    int32_t     status;      /* 0 ok */
+    int64_t     draft_n_total;    /* 0 when spec-decoding is off */
+    int64_t     draft_n_accepted; /* 0 when spec-decoding is off */
+    const char* stop_reason;      /* not freed; lifetime tied to SDK output */
+    int32_t     status;           /* 0 ok */
     char        err[256];
 } run_result_t;
 
@@ -1230,16 +1232,18 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
             if (!is_warmup) {
                 run_result_t* r = &out[run_idx];
                 memset(r, 0, sizeof(*r));
-                r->run_idx        = run_idx;
-                r->ttft_us        = gout.profile_data.ttft;
-                r->prompt_time_us = gout.profile_data.prompt_time;
-                r->decode_time_us = gout.profile_data.decode_time;
-                r->prompt_tokens  = gout.profile_data.prompt_tokens;
-                r->gen_tokens     = gout.profile_data.generated_tokens;
-                r->prefill_tps    = gout.profile_data.prefill_speed;
-                r->decode_tps     = gout.profile_data.decoding_speed;
-                r->stop_reason    = gout.profile_data.stop_reason;
-                r->status         = 0;
+                r->run_idx          = run_idx;
+                r->ttft_us          = gout.profile_data.ttft;
+                r->prompt_time_us   = gout.profile_data.prompt_time;
+                r->decode_time_us   = gout.profile_data.decode_time;
+                r->prompt_tokens    = gout.profile_data.prompt_tokens;
+                r->gen_tokens       = gout.profile_data.generated_tokens;
+                r->prefill_tps      = gout.profile_data.prefill_speed;
+                r->decode_tps       = gout.profile_data.decoding_speed;
+                r->draft_n_total    = gout.profile_data.draft_n_total;
+                r->draft_n_accepted = gout.profile_data.draft_n_accepted;
+                r->stop_reason      = gout.profile_data.stop_reason;
+                r->status           = 0;
                 normalize_prefill_metrics(r, o->plugin);
             }
 
@@ -1383,16 +1387,18 @@ static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_
             if (!is_warmup) {
                 run_result_t* r = &out[run_idx];
                 memset(r, 0, sizeof(*r));
-                r->run_idx        = run_idx;
-                r->ttft_us        = gout.profile_data.ttft;
-                r->prompt_time_us = gout.profile_data.prompt_time;
-                r->decode_time_us = gout.profile_data.decode_time;
-                r->prompt_tokens  = gout.profile_data.prompt_tokens;
-                r->gen_tokens     = gout.profile_data.generated_tokens;
-                r->prefill_tps    = gout.profile_data.prefill_speed;
-                r->decode_tps     = gout.profile_data.decoding_speed;
-                r->stop_reason    = gout.profile_data.stop_reason;
-                r->status         = 0;
+                r->run_idx          = run_idx;
+                r->ttft_us          = gout.profile_data.ttft;
+                r->prompt_time_us   = gout.profile_data.prompt_time;
+                r->decode_time_us   = gout.profile_data.decode_time;
+                r->prompt_tokens    = gout.profile_data.prompt_tokens;
+                r->gen_tokens       = gout.profile_data.generated_tokens;
+                r->prefill_tps      = gout.profile_data.prefill_speed;
+                r->decode_tps       = gout.profile_data.decoding_speed;
+                r->draft_n_total    = gout.profile_data.draft_n_total;
+                r->draft_n_accepted = gout.profile_data.draft_n_accepted;
+                r->stop_reason      = gout.profile_data.stop_reason;
+                r->status           = 0;
                 normalize_prefill_metrics(r, o->plugin);
             }
 
@@ -1529,7 +1535,7 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
     fprintf(f, "    \"params\": {\n");
     fprintf(f,
         "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
-        "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d\n",
+        "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d",
         o->warmup,
         o->repeat,
         o->n_prompt,
@@ -1539,14 +1545,25 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         o->n_ctx,
         o->n_threads,
         ngl);
-    fprintf(f, "    },\n");
+    if (o->spec_type) {
+        fprintf(f, ",\n      \"spec_type\": ");
+        json_write_quoted(f, o->spec_type);
+        if (o->draft_model) {
+            fprintf(f, ",\n      \"draft_model\": ");
+            json_write_quoted(f, o->draft_model);
+        }
+        fprintf(f, ",\n      \"draft_tokens\": %d", o->draft_tokens);
+    }
+    fprintf(f, "\n    },\n");
     fprintf(f, "    \"runs\": [\n");
     for (int i = 0; i < o->repeat; ++i) {
         const run_result_t* r = &runs[i];
         fprintf(f,
             "      {\"run_idx\": %d, \"ttft_us\": %lld, \"prompt_tokens\": %lld, "
             "\"gen_tokens\": %lld, \"prefill_tps\": %.6f, \"decode_tps\": %.6f, "
-            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, \"stop_reason\": %s%s%s}%s\n",
+            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, "
+            "\"draft_n_total\": %lld, \"draft_n_accepted\": %lld, "
+            "\"stop_reason\": %s%s%s}%s\n",
             r->run_idx,
             (long long)r->ttft_us,
             (long long)r->prompt_tokens,
@@ -1555,6 +1572,8 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
             r->decode_tps,
             (long long)r->prompt_time_us,
             (long long)r->decode_time_us,
+            (long long)r->draft_n_total,
+            (long long)r->draft_n_accepted,
             r->stop_reason ? "\"" : "null",
             r->stop_reason ? r->stop_reason : "",
             r->stop_reason ? "\"" : "",
@@ -1584,8 +1603,19 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         a->decode_mean,
         a->decode_sd);
     fprintf(f, "      \"gen_tokens\":  {\"median\": %.6f},\n", a->gen_tokens_med);
-    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f}\n", a->prompt_tokens_med);
-    fprintf(f, "    }\n");
+    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f}", a->prompt_tokens_med);
+    int64_t sum_draft_total = 0, sum_draft_accepted = 0;
+    for (int i = 0; i < o->repeat; ++i) {
+        sum_draft_total += runs[i].draft_n_total;
+        sum_draft_accepted += runs[i].draft_n_accepted;
+    }
+    if (sum_draft_total > 0) {
+        fprintf(f, ",\n      \"draft_n_total\":     {\"total\": %lld},\n", (long long)sum_draft_total);
+        fprintf(f, "      \"draft_n_accepted\":  {\"total\": %lld},\n", (long long)sum_draft_accepted);
+        fprintf(
+            f, "      \"draft_accept_rate\": {\"value\": %.6f}", (double)sum_draft_accepted / (double)sum_draft_total);
+    }
+    fprintf(f, "\n    }\n");
     fprintf(f, "}\n");
     fclose(f);
     /* keep static-analysis happy */

@@ -85,6 +85,14 @@ jobs:
   bench:
     name: ${{ matrix.device }} · ${{ matrix.model.plugin }} · ${{ matrix.model.name }}
     needs: [build-sdk, load-models]
+    # Catalog-only rows (empty devices, e.g. spec draft models) never run
+    # standalone — they're pulled by the target row via --draft-model. Spec
+    # rows currently only run on SC8480XP; other chipsets are skipped.
+    if: >-
+      ${{
+        matrix.model.devices != null && toJson(matrix.model.devices) != '[]'
+        && (!matrix.model.spec || matrix.device == 'SC8480XP')
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:

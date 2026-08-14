@@ -59,7 +59,7 @@ for ctx in "${CTX_ARR[@]}"; do
   : > "/data/local/tmp/matrix-qairt-${ctx}.tsv"
 done
 
-while IFS='|' read -r name plugin devs model_id vlm image; do
+while IFS='|' read -r name plugin devs model_id vlm image _spec_type _draft_id _draft_tokens; do
   [ -z "$name" ] && continue
   echo "=== plan $name id=$model_id ==="
   case "$plugin" in

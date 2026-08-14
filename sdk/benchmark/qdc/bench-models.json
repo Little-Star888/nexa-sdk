@@ -127,6 +127,28 @@
     "image": true
   },
   {
+    "name": "gemma-4-26B-A4B-it-assistant",
+    "plugin": "llama_cpp",
+    "devices": [],
+    "model_id": "RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0",
+    "hub": "hf",
+    "url": "https://huggingface.co/RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf/resolve/main/gemma-4-26b-A4B-it-assistant-Q4_0.gguf"
+  },
+  {
+    "name": "gemma-4-26B-A4B-it-mtp",
+    "plugin": "llama_cpp",
+    "devices": ["npu", "hybrid"],
+    "model_id": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0",
+    "hub": "hf",
+    "url": "https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf",
+    "ctx": [512, 1024, 4096, 8192],
+    "spec": {
+      "type": "draft-mtp",
+      "draft": "gemma-4-26B-A4B-it-assistant",
+      "n_max": 3
+    }
+  },
+  {
     "name": "Qwen3.5-2B",
     "plugin": "llama_cpp",
     "devices": ["cpu", "npu", "hybrid"],

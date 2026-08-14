@@ -116,16 +116,36 @@ def resolve_model_url(m: dict, device: str) -> str | None:
     return m.get("url")
 
 
+def _resolve_draft_model_id(models: list[dict], draft_name: str) -> str:
+    """Look up a draft model's model_id by name inside the same bench-models.json.
+    Draft models are declared as catalog-only entries (empty ``devices``) and
+    referenced from a target row's ``spec.draft`` field."""
+    for m in models:
+        if m["name"] == draft_name:
+            return m["model_id"]
+    raise SystemExit(f"draft model {draft_name!r} not found in bench-models.json")
+
+
 def model_rows(models: list[dict], device: str) -> list[str]:
     """One pipe-delimited row per model, consumed by the device-side run
     scripts. Schema:
 
         name | plugin | csv_devices | model_id | vlm | image
+             | spec_type | draft_model_id | draft_tokens
+
+    The trailing three fields are non-empty only for spec-decoding rows;
+    non-spec rows carry empty strings there so every script parses the
+    same column count.
 
     The host passes the chipset slug as a single shared --chipset flag to
     geniex-bench; the model-manager hub auto-routes "qualcomm/*" to
     AI Hub and everything else to HuggingFace, so per-row hub overrides
     aren't needed. mmproj/tokenizer paths come back from get_paths.
+
+    Entries with empty ``devices`` are catalog-only (e.g. spec draft
+    models) and are skipped here — they exist in bench-models.json so
+    other rows can reference them by name and the aggregate report can
+    resolve their download URL.
 
     Rows for AI Hub models whose chipset isn't advertised are dropped
     upfront so the device doesn't waste time on a guaranteed-fail pull."""
@@ -133,14 +153,20 @@ def model_rows(models: list[dict], device: str) -> list[str]:
     for m in models:
         if "model_id" not in m:
             raise SystemExit(f"{m['name']}: missing model_id in bench-models.json")
+        if not m["devices"]:
+            continue
         if m.get("hub") == "aihub" and not _aihub_chipset_supported(m, device):
             log.warning("no %s asset for %s, skipping", device, m["name"])
             continue
         vlm = "1" if m.get("vlm") else ""
         image = "1" if m.get("image") else ""
+        spec = m.get("spec") or {}
+        spec_type = spec.get("type", "")
+        draft_id = _resolve_draft_model_id(models, spec["draft"]) if spec else ""
+        draft_tokens = str(spec.get("n_max", "")) if spec else ""
         rows.append(
             f"{m['name']}|{m['plugin']}|{','.join(m['devices'])}|{m['model_id']}"
-            f"|{vlm}|{image}"
+            f"|{vlm}|{image}|{spec_type}|{draft_id}|{draft_tokens}"
         )
     return rows
 
@@ -398,6 +424,79 @@ def _details_block(
     return lines
 
 
+def _is_spec_cell(c: dict) -> bool:
+    return bool((c.get("params") or {}).get("spec_type"))
+
+
+def _render_mtp_table(cells: list[dict], models: list[dict] | None) -> list[str]:
+    """Standalone MTP table pairing each spec cell with its no-spec baseline
+    on (target model_id, device, ctx). Emits nothing when no spec cells or
+    no matching baseline row is registered in bench-models.json."""
+    if not models:
+        return []
+    spec_entries = [m for m in models if m.get("spec")]
+    if not spec_entries:
+        return []
+    by_name_key: dict[str, dict[tuple[str, int], dict]] = {}
+    for c in cells:
+        by_name_key.setdefault(_model_label(c), {})[
+            (c["device"], _ctx_from_cell(c))
+        ] = c
+    rows: list[str] = []
+    for spec_m in spec_entries:
+        baseline = next(
+            (
+                m
+                for m in models
+                if m["model_id"] == spec_m["model_id"]
+                and not m.get("spec")
+                and m.get("devices")
+            ),
+            None,
+        )
+        draft_m = next(
+            (m for m in models if m["name"] == spec_m["spec"]["draft"]), None
+        )
+        spec_cells = by_name_key.get(spec_m["name"], {})
+        base_cells = by_name_key.get(baseline["name"], {}) if baseline else {}
+        for (dev, ctx), sc in sorted(spec_cells.items()):
+            agg = sc.get("agg") or {}
+            accept = (agg.get("draft_accept_rate") or {}).get("value")
+            accept_s = f"{100 * accept:.1f}%" if accept is not None else "-"
+            s_dec = (agg.get("decode_tps") or {}).get("median")
+            bc = base_cells.get((dev, ctx))
+            b_dec = (
+                ((bc.get("agg") or {}).get("decode_tps") or {}).get("median")
+                if bc
+                else None
+            )
+            uplift = f"{s_dec / b_dec:.2f}x" if s_dec and b_dec else "-"
+            p_med = (agg.get("prompt_tokens") or {}).get("median")
+            g_med = (agg.get("gen_tokens") or {}).get("median")
+            test = (
+                f"pp{int(p_med)}+tg{int(g_med)}"
+                if p_med is not None and g_med is not None
+                else "-"
+            )
+            rows.append(
+                f"| {spec_m['name']} | {draft_m['name'] if draft_m else '-'} | "
+                f"{dev} | {ctx} | {test} | {accept_s} | "
+                f"{_fmt_med_sd(agg, 'decode_tps')} | "
+                f"{_fmt_med_sd((bc or {}).get('agg') or {}, 'decode_tps')} | "
+                f"{uplift} |"
+            )
+    if not rows:
+        return []
+    return [
+        "",
+        "## MTP (speculative decoding)",
+        "",
+        "| Target | Draft | Device | Ctx | Test | Accept% | Decode (mtp) | Decode (baseline) | Uplift |",
+        "|--------|-------|--------|----:|------|--------:|-------------:|------------------:|-------:|",
+        *rows,
+    ]
+
+
 def render(
     cells: list[dict],
     device: str,
@@ -412,6 +511,8 @@ def render(
     ]
     sort_key = lambda c: (_model_label(c), c["plugin"], c["device"], _ctx_from_cell(c))  # noqa: E731
     for c in sorted(cells, key=sort_key):
+        if _is_spec_cell(c):
+            continue
         agg = c.get("agg") or {}
         params = c.get("params") or {}
         model = _model_label(c)
@@ -431,6 +532,7 @@ def render(
             f"{_fmt_med_sd(agg, 'ttft_ms')} | {_fmt_med_sd(agg, 'prefill_tps')} | "
             f"{_fmt_med_sd(agg, 'decode_tps')} |"
         )
+    lines += _render_mtp_table(cells, models)
     return "\n".join(lines) + "\n"
 
 
@@ -541,7 +643,10 @@ def main() -> int:
             raise SystemExit(
                 f"no model in {args.models_file} runs any of --compute={compute_pick}"
             )
-    ctx_list, pp_list, tg_list = resolve_sweep(args.ctx, args.pp, args.tg)
+    ctx_arg = args.ctx
+    if not ctx_arg and len(models) == 1 and models[0].get("ctx"):
+        ctx_arg = ",".join(str(x) for x in models[0]["ctx"])
+    ctx_list, pp_list, tg_list = resolve_sweep(ctx_arg, args.pp, args.tg)
     log.info("sweep: ctx=%s pp=%s tg=%s", ctx_list, pp_list, tg_list)
 
     client = _qdc.make_client(api_key)
