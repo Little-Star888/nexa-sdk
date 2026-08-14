@@ -6,6 +6,7 @@ package utils
 import (
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/ast"
@@ -96,9 +97,14 @@ func parseToolCallObject(obj string) (openai.ChatCompletionMessageFunctionToolCa
 	return toolCall, nil
 }
 
-// ParseToolCalls returns the first balanced {...} object in resp that decodes
-// into a valid tool call, skipping any malformed or non-tool-call objects.
+// ParseToolCalls returns the first tool call in resp. Gemma 4's non-JSON
+// `<|tool_call>call:...` syntax is detected by its marker; every other model
+// wraps a `{"name":..., "arguments":...}` JSON object we scan for directly.
 func ParseToolCalls(resp string) (openai.ChatCompletionMessageFunctionToolCallFunction, error) {
+	if strings.Contains(resp, gemma4ToolCallOpen) {
+		return parseToolCallsGemma4(resp)
+	}
+
 	for _, obj := range extractJSONObjects(resp) {
 		if toolCall, err := parseToolCallObject(obj); err == nil {
 			slog.Debug("Parsed tool call", "tool_call", toolCall)
