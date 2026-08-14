@@ -62,13 +62,14 @@ done
 while IFS='|' read -r name plugin devs model_id vlm image; do
   [ -z "$name" ] && continue
   echo "=== plan $name id=$model_id ==="
-  imgpath=""
-  [ "$image" = "1" ] && imgpath="$IMG"
   case "$plugin" in
     qairt)     bucket=qairt ;;
     llama_cpp) bucket=llama ;;
     *) echo "WARN: unknown plugin $plugin in $name, skipping"; continue ;;
   esac
+  [ "$bucket" != "qairt" ] && { vlm=""; image=""; }
+  imgpath=""
+  [ "$image" = "1" ] && imgpath="$IMG"
   IFS=','
   for d in $devs; do
     for ctx in "${CTX_ARR[@]}"; do

@@ -52,6 +52,8 @@ def test_bench():
         name, plugin, devs, model_id, vlm, image = row.split("|")
         if plugin not in ("llama_cpp", "qairt"):
             continue
+        if plugin != "qairt":
+            vlm = image = ""
         imgpath = IMAGE_PATH if image == "1" else ""
         for d in devs.split(","):
             for ctx in CTXS:
