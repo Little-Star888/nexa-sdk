@@ -73,12 +73,13 @@ foreach ($plugin in @("llama", "qairt")) {
 foreach ($row in $rows) {
     $name, $plugin, $devs, $model_id, $vlm, $image = $row -split '\|'
     Write-Output "=== plan $name id=$model_id ==="
-    $imgpath = if ($image -eq "1") { $IMG } else { "" }
     $bucket = if ($plugin -eq "qairt") { "qairt" } elseif ($plugin -eq "llama_cpp") { "llama" } else { "" }
     if (-not $bucket) {
         Write-Output "WARN: unknown plugin $plugin in $name, skipping"
         continue
     }
+    if ($bucket -ne "qairt") { $vlm = ""; $image = "" }
+    $imgpath = if ($image -eq "1") { $IMG } else { "" }
     foreach ($d in $devs -split ',') {
         foreach ($ctx in $ctxList) {
             # Columns 5/6 (tokenizer/mmproj) intentionally blank: the model
