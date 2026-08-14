@@ -84,6 +84,7 @@ llama_context_params build_context_params(const geniex_ModelConfig& config, int3
     bool     fa     = fa_matrix[static_cast<int>(kHostPlatform)][static_cast<int>(device)];
 
     llama_context_params cpar = llama_context_default_params();
+    cpar.swa_full             = false;
     cpar.n_ctx                = config.n_ctx > 0 ? config.n_ctx : n_ctx_default;
     cpar.n_batch              = config.n_batch > 0 ? config.n_batch : 2048;
     cpar.n_ubatch             = config.n_ubatch > 0 ? config.n_ubatch : ubatch;
