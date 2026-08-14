@@ -461,8 +461,6 @@ def _render_mtp_table(cells: list[dict], models: list[dict] | None) -> list[str]
         base_cells = by_name_key.get(baseline["name"], {}) if baseline else {}
         for (dev, ctx), sc in sorted(spec_cells.items()):
             agg = sc.get("agg") or {}
-            accept = (agg.get("draft_accept_rate") or {}).get("value")
-            accept_s = f"{100 * accept:.1f}%" if accept is not None else "-"
             s_dec = (agg.get("decode_tps") or {}).get("median")
             bc = base_cells.get((dev, ctx))
             b_dec = (
@@ -480,7 +478,7 @@ def _render_mtp_table(cells: list[dict], models: list[dict] | None) -> list[str]
             )
             rows.append(
                 f"| {spec_m['name']} | {draft_m['name'] if draft_m else '-'} | "
-                f"{dev} | {ctx} | {test} | {accept_s} | "
+                f"{dev} | {ctx} | {test} | "
                 f"{_fmt_med_sd(agg, 'decode_tps')} | "
                 f"{_fmt_med_sd((bc or {}).get('agg') or {}, 'decode_tps')} | "
                 f"{uplift} |"
@@ -491,8 +489,8 @@ def _render_mtp_table(cells: list[dict], models: list[dict] | None) -> list[str]
         "",
         "## MTP (speculative decoding)",
         "",
-        "| Target | Draft | Device | Ctx | Test | Accept% | Decode (mtp) | Decode (baseline) | Uplift |",
-        "|--------|-------|--------|----:|------|--------:|-------------:|------------------:|-------:|",
+        "| Target | Draft | Device | Ctx | Test | Decode (mtp) | Decode (baseline) | Uplift |",
+        "|--------|-------|--------|----:|------|-------------:|------------------:|-------:|",
         *rows,
     ]
 

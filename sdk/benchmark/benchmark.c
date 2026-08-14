@@ -86,9 +86,13 @@ typedef struct {
     const char* mmproj_path;
     /* Heap-owned copies populated when the model is resolved through the
      * model manager; freed at the end of run_one_cell. */
-    char*       mm_model_path;
-    char*       mm_mmproj;
-    char*       mm_tokenizer;
+    char* mm_model_path;
+    char* mm_mmproj;
+    char* mm_tokenizer;
+    /* Heap-owned local path for the speculative-decoding draft when
+     * --draft-model is a model-manager id rather than a filesystem path;
+     * kept for cleanup and shadows draft_model for the plugin call. */
+    char*       mm_draft_model;
     bool        force_vlm; /* run VLM path even without an mmproj (QAIRT bundles) */
     bool        mm_is_vlm; /* manager classified the resolved model as VLM (geniex_ModelType) */
     const char* image_paths[MAX_PATHS];
@@ -152,10 +156,8 @@ typedef struct {
     int64_t     gen_tokens;
     double      prefill_tps;
     double      decode_tps;
-    int64_t     draft_n_total;    /* 0 when spec-decoding is off */
-    int64_t     draft_n_accepted; /* 0 when spec-decoding is off */
-    const char* stop_reason;      /* not freed; lifetime tied to SDK output */
-    int32_t     status;           /* 0 ok */
+    const char* stop_reason; /* not freed; lifetime tied to SDK output */
+    int32_t     status;      /* 0 ok */
     char        err[256];
 } run_result_t;
 
@@ -516,6 +518,67 @@ static int resolve_via_mm(options_t* o, const char* id_in) {
     return 0;
 }
 
+/* Resolve --draft-model when it looks like a model-manager id (not a
+ * filesystem path). Populates o->mm_draft_model (heap-owned, freed by
+ * run_one_cell) and rewrites o->draft_model to point at it. Without this
+ * the llama_cpp plugin gets a raw id like "org/repo:Q4_0", fails to open
+ * it as a file, and silently falls back to non-speculative decode —
+ * draft_n_total stays 0 and the whole spec bench is meaningless. */
+static int resolve_draft_via_mm(options_t* o) {
+    if (!o->draft_model || looks_like_path(o->draft_model)) return 0;
+    if (!g_mm_inited) {
+        int32_t rc = geniex_model_init(o->mm_data_dir);
+        if (rc != GENIEX_SUCCESS) {
+            const char* m = geniex_model_last_error_message();
+            fprintf(stderr, "ERROR: geniex_model_init: %s (%d)\n", m ? m : "?", rc);
+            return 1;
+        }
+        g_mm_inited = true;
+    }
+    size_t n   = strlen(o->draft_model);
+    char*  buf = (char*)malloc(n + 1);
+    if (!buf) return 1;
+    memcpy(buf, o->draft_model, n + 1);
+    const char* name;
+    const char* quant;
+    split_id(buf, &name, &quant);
+    geniex_ModelPaths paths;
+    memset(&paths, 0, sizeof(paths));
+    int32_t rc = geniex_model_get_paths(o->draft_model, &paths);
+    if (rc != GENIEX_SUCCESS) {
+        geniex_ModelPullInput in;
+        memset(&in, 0, sizeof(in));
+        in.struct_size = (uint32_t)sizeof(in);
+        in.model_name  = name;
+        in.quant       = quant;
+        in.hub         = parse_hub(o->mm_hub);
+        in.chipset     = o->mm_chipset;
+        in.model_type  = GENIEX_MODEL_TYPE_AUTO;
+        fprintf(stderr, "[mm  ] pulling draft %s%s%s ...\n", name, quant ? ":" : "", quant ? quant : "");
+        rc = geniex_model_pull(&in);
+        if (rc != GENIEX_SUCCESS) {
+            const char* m = geniex_model_last_error_message();
+            fprintf(stderr, "ERROR: geniex_model_pull(%s): %s (%d)\n", o->draft_model, m ? m : "?", rc);
+            free(buf);
+            return 1;
+        }
+        rc = geniex_model_get_paths(o->draft_model, &paths);
+        if (rc != GENIEX_SUCCESS) {
+            const char* m = geniex_model_last_error_message();
+            fprintf(stderr, "ERROR: geniex_model_get_paths(%s): %s (%d)\n", o->draft_model, m ? m : "?", rc);
+            free(buf);
+            return 1;
+        }
+    }
+    free(buf);
+    o->mm_draft_model = paths.model_path;
+    paths.model_path  = NULL;
+    geniex_model_paths_free(&paths);
+    o->draft_model = o->mm_draft_model;
+    fprintf(stderr, "[mm  ] resolved draft %s -> %s\n", o->draft_model, o->mm_draft_model);
+    return 0;
+}
+
 /* If `path` is a directory, return a heap-allocated path to a regular file
  * inside it (preferring `tokenizer.json`, otherwise the lexicographically
  * first regular file). The SDK derives the model dir via `parent_path()`,
@@ -660,6 +723,7 @@ static void parse_args(int argc, char** argv, options_t* o) {
     o->mm_model_path      = NULL;
     o->mm_mmproj          = NULL;
     o->mm_tokenizer       = NULL;
+    o->mm_draft_model     = NULL;
     o->force_vlm          = false;
     o->mm_is_vlm          = false;
     o->image_count        = 0;
@@ -1232,18 +1296,16 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
             if (!is_warmup) {
                 run_result_t* r = &out[run_idx];
                 memset(r, 0, sizeof(*r));
-                r->run_idx          = run_idx;
-                r->ttft_us          = gout.profile_data.ttft;
-                r->prompt_time_us   = gout.profile_data.prompt_time;
-                r->decode_time_us   = gout.profile_data.decode_time;
-                r->prompt_tokens    = gout.profile_data.prompt_tokens;
-                r->gen_tokens       = gout.profile_data.generated_tokens;
-                r->prefill_tps      = gout.profile_data.prefill_speed;
-                r->decode_tps       = gout.profile_data.decoding_speed;
-                r->draft_n_total    = gout.profile_data.draft_n_total;
-                r->draft_n_accepted = gout.profile_data.draft_n_accepted;
-                r->stop_reason      = gout.profile_data.stop_reason;
-                r->status           = 0;
+                r->run_idx        = run_idx;
+                r->ttft_us        = gout.profile_data.ttft;
+                r->prompt_time_us = gout.profile_data.prompt_time;
+                r->decode_time_us = gout.profile_data.decode_time;
+                r->prompt_tokens  = gout.profile_data.prompt_tokens;
+                r->gen_tokens     = gout.profile_data.generated_tokens;
+                r->prefill_tps    = gout.profile_data.prefill_speed;
+                r->decode_tps     = gout.profile_data.decoding_speed;
+                r->stop_reason    = gout.profile_data.stop_reason;
+                r->status         = 0;
                 normalize_prefill_metrics(r, o->plugin);
             }
 
@@ -1387,18 +1449,16 @@ static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_
             if (!is_warmup) {
                 run_result_t* r = &out[run_idx];
                 memset(r, 0, sizeof(*r));
-                r->run_idx          = run_idx;
-                r->ttft_us          = gout.profile_data.ttft;
-                r->prompt_time_us   = gout.profile_data.prompt_time;
-                r->decode_time_us   = gout.profile_data.decode_time;
-                r->prompt_tokens    = gout.profile_data.prompt_tokens;
-                r->gen_tokens       = gout.profile_data.generated_tokens;
-                r->prefill_tps      = gout.profile_data.prefill_speed;
-                r->decode_tps       = gout.profile_data.decoding_speed;
-                r->draft_n_total    = gout.profile_data.draft_n_total;
-                r->draft_n_accepted = gout.profile_data.draft_n_accepted;
-                r->stop_reason      = gout.profile_data.stop_reason;
-                r->status           = 0;
+                r->run_idx        = run_idx;
+                r->ttft_us        = gout.profile_data.ttft;
+                r->prompt_time_us = gout.profile_data.prompt_time;
+                r->decode_time_us = gout.profile_data.decode_time;
+                r->prompt_tokens  = gout.profile_data.prompt_tokens;
+                r->gen_tokens     = gout.profile_data.generated_tokens;
+                r->prefill_tps    = gout.profile_data.prefill_speed;
+                r->decode_tps     = gout.profile_data.decoding_speed;
+                r->stop_reason    = gout.profile_data.stop_reason;
+                r->status         = 0;
                 normalize_prefill_metrics(r, o->plugin);
             }
 
@@ -1561,9 +1621,7 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         fprintf(f,
             "      {\"run_idx\": %d, \"ttft_us\": %lld, \"prompt_tokens\": %lld, "
             "\"gen_tokens\": %lld, \"prefill_tps\": %.6f, \"decode_tps\": %.6f, "
-            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, "
-            "\"draft_n_total\": %lld, \"draft_n_accepted\": %lld, "
-            "\"stop_reason\": %s%s%s}%s\n",
+            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, \"stop_reason\": %s%s%s}%s\n",
             r->run_idx,
             (long long)r->ttft_us,
             (long long)r->prompt_tokens,
@@ -1572,8 +1630,6 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
             r->decode_tps,
             (long long)r->prompt_time_us,
             (long long)r->decode_time_us,
-            (long long)r->draft_n_total,
-            (long long)r->draft_n_accepted,
             r->stop_reason ? "\"" : "null",
             r->stop_reason ? r->stop_reason : "",
             r->stop_reason ? "\"" : "",
@@ -1603,19 +1659,8 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         a->decode_mean,
         a->decode_sd);
     fprintf(f, "      \"gen_tokens\":  {\"median\": %.6f},\n", a->gen_tokens_med);
-    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f}", a->prompt_tokens_med);
-    int64_t sum_draft_total = 0, sum_draft_accepted = 0;
-    for (int i = 0; i < o->repeat; ++i) {
-        sum_draft_total += runs[i].draft_n_total;
-        sum_draft_accepted += runs[i].draft_n_accepted;
-    }
-    if (sum_draft_total > 0) {
-        fprintf(f, ",\n      \"draft_n_total\":     {\"total\": %lld},\n", (long long)sum_draft_total);
-        fprintf(f, "      \"draft_n_accepted\":  {\"total\": %lld},\n", (long long)sum_draft_accepted);
-        fprintf(
-            f, "      \"draft_accept_rate\": {\"value\": %.6f}", (double)sum_draft_accepted / (double)sum_draft_total);
-    }
-    fprintf(f, "\n    }\n");
+    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f}\n", a->prompt_tokens_med);
+    fprintf(f, "    }\n");
     fprintf(f, "}\n");
     fclose(f);
     /* keep static-analysis happy */
@@ -1876,6 +1921,10 @@ static int run_one_cell(options_t* o) {
         o->force_vlm = true;
     }
 
+    if (resolve_draft_via_mm(o) != 0) {
+        return 1;
+    }
+
     char* anchored = resolve_local_anchor(o->model_path);
     if (anchored) {
         fprintf(stderr, "[info] resolved model dir to anchor: %s\n", anchored);
@@ -1942,6 +1991,10 @@ static int run_one_cell(options_t* o) {
             geniex_free(o->mm_tokenizer);
             o->mm_tokenizer = NULL;
         }
+        if (o->mm_draft_model) {
+            geniex_free(o->mm_draft_model);
+            o->mm_draft_model = NULL;
+        }
         return 0;
     }
 
@@ -1984,6 +2037,10 @@ static int run_one_cell(options_t* o) {
     if (o->mm_tokenizer) {
         geniex_free(o->mm_tokenizer);
         o->mm_tokenizer = NULL;
+    }
+    if (o->mm_draft_model) {
+        geniex_free(o->mm_draft_model);
+        o->mm_draft_model = NULL;
     }
     return 0;
 }

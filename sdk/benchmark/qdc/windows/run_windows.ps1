@@ -21,11 +21,12 @@
 #   - qairt cells go through prompt_utf8 (the plugin doesn't accept
 #     pre-tokenized input_ids — see issue #1008), with a pre-trimmed
 #     `sample_prompt_${ctx}.txt` per ctx so prompt length is bounded.
-#   - spec (llama_cpp speculative-decoding) cells force `--prompt-file`
-#     because random ids collapse draft acceptance to ~0% — the number
-#     would only reflect scheduling overhead, not MTP benefit. Spec cells
-#     also pass --spec-type/--draft-model/--draft-tokens as CLI-level
-#     flags, so each spec matrix invocation runs its own bench call.
+#   - spec (llama_cpp speculative-decoding) cells share the random-ids
+#     prefill of the plain llama_cpp bucket — we only care about mechanical
+#     decode throughput with the spec path enabled, not real-world draft
+#     acceptance. Spec cells additionally pass --spec-type/--draft-model/
+#     --draft-tokens as CLI-level flags, so each spec matrix invocation
+#     runs its own bench call.
 # Each bucket gets its own per-ctx TSV so the invocations don't mix.
 
 $ErrorActionPreference = "Continue"
@@ -136,12 +137,12 @@ for ($i = 0; $i -lt $ctxList.Count; $i++) {
     $specTsv = $tsvByPluginCtx["spec-$ctx"]
     if ((Test-Path $specTsv) -and ((Get-Item $specTsv).Length -gt 0)) {
         $sp = $specParamsByCtx["$ctx"]
-        Write-Output "=== matrix spec ctx=$ctx tg=$tg type=$($sp.type) draft=$($sp.draft) n_max=$($sp.tokens) (prompt-file) ==="
+        Write-Output "=== matrix spec ctx=$ctx pp=$pp tg=$tg type=$($sp.type) draft=$($sp.draft) n_max=$($sp.tokens) (random-ids prefill) ==="
         Get-Content $specTsv
         $extra = @()
         if ($sp.tokens) { $extra += @("--draft-tokens", $sp.tokens) }
         & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $specTsv --output-json-dir "$OUT" -r 3 `
-            -c $ctx -n $tg --prompt-file "$PROMPTS\sample_prompt_$ctx.txt" `
+            -c $ctx -p $pp -n $tg `
             --spec-type $sp.type --draft-model $sp.draft @extra `
             --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
         Write-Output "rc=$LASTEXITCODE  ($((Get-ChildItem $OUT).Count) cell json files so far)"
