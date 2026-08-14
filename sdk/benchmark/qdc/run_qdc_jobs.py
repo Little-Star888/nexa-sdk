@@ -618,11 +618,21 @@ def main() -> int:
     if platform not in BUILDERS:
         raise SystemExit(f"{platform} not implemented yet")
 
-    models = json.loads(args.models_file.read_text())
+    all_models = json.loads(args.models_file.read_text())
     if args.model_name:
-        models = [m for m in models if m["name"] == args.model_name]
+        models = [m for m in all_models if m["name"] == args.model_name]
         if not models:
             raise SystemExit(f"model {args.model_name!r} not in {args.models_file}")
+        # Pull in every spec.draft dependency so _resolve_draft_model_id can
+        # still find it after --model-name has trimmed the list to one row.
+        needed = {m["spec"]["draft"] for m in models if m.get("spec")}
+        for name in needed - {m["name"] for m in models}:
+            entry = next((m for m in all_models if m["name"] == name), None)
+            if entry is None:
+                raise SystemExit(f"draft {name!r} not in {args.models_file}")
+            models.append(entry)
+    else:
+        models = all_models
 
     compute_pick = [c.strip() for c in args.compute.split(",") if c.strip()]
     if compute_pick:
