@@ -33,6 +33,10 @@ $BUNDLE = "$TC\pkg-geniex"
 $PROMPTS = "$TC\prompts"
 
 New-Item -ItemType Directory -Force -Path $LOG, $OUT, $MM_CACHE | Out-Null
+# QDC reuses the same physical host across jobs, so $OUT can hold stale cell
+# JSON files from earlier sessions. Wipe them so log-upload can't ship them
+# back and pollute this job's cell set.
+Remove-Item -Path "$OUT\*.json" -Force -ErrorAction SilentlyContinue
 Start-Transcript -Path "$LOG\script.log" -Force | Out-Null
 
 # Trust the self-signed cert the HTP .cat catalogs are signed with, or the
@@ -53,7 +57,11 @@ $rows = @'
 
 $IMG = "$TC/test.png" -replace '\\', '/'
 
-$ctxList = @(512, 1024, 4096)
+# Sweep dimensions come from workflow inputs (with defaults filled host-side).
+# ctxList / ppList / tgList are parallel arrays of equal length.
+$ctxList = @({CTX_LIST})
+$ppList  = @({PP_LIST})
+$tgList  = @({TG_LIST})
 $tsvByPluginCtx = @{}
 foreach ($plugin in @("llama", "qairt")) {
     foreach ($ctx in $ctxList) {
@@ -82,24 +90,27 @@ foreach ($row in $rows) {
     }
 }
 
-foreach ($ctx in $ctxList) {
+for ($i = 0; $i -lt $ctxList.Count; $i++) {
+    $ctx = $ctxList[$i]
+    $pp  = $ppList[$i]
+    $tg  = $tgList[$i]
     $llamaTsv = $tsvByPluginCtx["llama-$ctx"]
     $qairtTsv = $tsvByPluginCtx["qairt-$ctx"]
 
     if ((Test-Path $llamaTsv) -and ((Get-Item $llamaTsv).Length -gt 0)) {
-        Write-Output "=== matrix llama_cpp ctx=$ctx (random-ids prefill) ==="
+        Write-Output "=== matrix llama_cpp ctx=$ctx pp=$pp tg=$tg (random-ids prefill) ==="
         Get-Content $llamaTsv
         & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $llamaTsv --output-json-dir "$OUT" -r 3 `
-            -c $ctx -p $ctx `
+            -c $ctx -p $pp -n $tg `
             --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
         Write-Output "rc=$LASTEXITCODE  ($((Get-ChildItem $OUT).Count) cell json files so far)"
     }
 
     if ((Test-Path $qairtTsv) -and ((Get-Item $qairtTsv).Length -gt 0)) {
-        Write-Output "=== matrix qairt ctx=$ctx (prompt-file) ==="
+        Write-Output "=== matrix qairt ctx=$ctx tg=$tg (prompt-file) ==="
         Get-Content $qairtTsv
         & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $qairtTsv --output-json-dir "$OUT" -r 3 `
-            -c $ctx --prompt-file "$PROMPTS\sample_prompt_$ctx.txt" `
+            -c $ctx -n $tg --prompt-file "$PROMPTS\sample_prompt_$ctx.txt" `
             --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
         Write-Output "rc=$LASTEXITCODE  ($((Get-ChildItem $OUT).Count) cell json files so far)"
     }
