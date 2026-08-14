@@ -117,9 +117,6 @@ def resolve_model_url(m: dict, device: str) -> str | None:
 
 
 def _resolve_draft_model_id(models: list[dict], draft_name: str) -> str:
-    """Look up a draft model's model_id by name inside the same bench-models.json.
-    Draft models are declared as catalog-only entries (empty ``devices``) and
-    referenced from a target row's ``spec.draft`` field."""
     for m in models:
         if m["name"] == draft_name:
             return m["model_id"]
@@ -133,20 +130,9 @@ def model_rows(models: list[dict], device: str) -> list[str]:
         name | plugin | csv_devices | model_id | vlm | image
              | spec_type | draft_model_id | draft_tokens
 
-    The trailing three fields are non-empty only for spec-decoding rows;
-    non-spec rows carry empty strings there so every script parses the
-    same column count.
-
-    The host passes the chipset slug as a single shared --chipset flag to
-    geniex-bench; the model-manager hub auto-routes "qualcomm/*" to
-    AI Hub and everything else to HuggingFace, so per-row hub overrides
-    aren't needed. mmproj/tokenizer paths come back from get_paths.
-
-    Entries with empty ``devices`` are catalog-only (e.g. spec draft
-    models) and are skipped here — they exist in bench-models.json so
-    other rows can reference them by name and the aggregate report can
-    resolve their download URL.
-
+    Trailing three fields carry spec-decoding params or empty strings so
+    every script parses the same column count. Entries with empty
+    ``devices`` are catalog-only (e.g. spec draft models) and skipped.
     Rows for AI Hub models whose chipset isn't advertised are dropped
     upfront so the device doesn't waste time on a guaranteed-fail pull."""
     rows = []
@@ -429,9 +415,8 @@ def _is_spec_cell(c: dict) -> bool:
 
 
 def _render_mtp_table(cells: list[dict], models: list[dict] | None) -> list[str]:
-    """Standalone MTP table pairing each spec cell with its no-spec baseline
-    on (target model_id, device, ctx). Emits nothing when no spec cells or
-    no matching baseline row is registered in bench-models.json."""
+    """Pair each spec cell with its no-spec baseline on (target model_id,
+    device, ctx). Emits nothing when no spec cells are present."""
     if not models:
         return []
     spec_entries = [m for m in models if m.get("spec")]

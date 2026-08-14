@@ -86,12 +86,9 @@ typedef struct {
     const char* mmproj_path;
     /* Heap-owned copies populated when the model is resolved through the
      * model manager; freed at the end of run_one_cell. */
-    char* mm_model_path;
-    char* mm_mmproj;
-    char* mm_tokenizer;
-    /* Heap-owned local path for the speculative-decoding draft when
-     * --draft-model is a model-manager id rather than a filesystem path;
-     * kept for cleanup and shadows draft_model for the plugin call. */
+    char*       mm_model_path;
+    char*       mm_mmproj;
+    char*       mm_tokenizer;
     char*       mm_draft_model;
     bool        force_vlm; /* run VLM path even without an mmproj (QAIRT bundles) */
     bool        mm_is_vlm; /* manager classified the resolved model as VLM (geniex_ModelType) */
@@ -518,12 +515,8 @@ static int resolve_via_mm(options_t* o, const char* id_in) {
     return 0;
 }
 
-/* Resolve --draft-model when it looks like a model-manager id (not a
- * filesystem path). Populates o->mm_draft_model (heap-owned, freed by
- * run_one_cell) and rewrites o->draft_model to point at it. Without this
- * the llama_cpp plugin gets a raw id like "org/repo:Q4_0", fails to open
- * it as a file, and silently falls back to non-speculative decode —
- * draft_n_total stays 0 and the whole spec bench is meaningless. */
+/* Without this the plugin gets a raw id like "org/repo:Q4_0", fails to
+ * open it as a file, and silently falls back to non-speculative decode. */
 static int resolve_draft_via_mm(options_t* o) {
     if (!o->draft_model || looks_like_path(o->draft_model)) return 0;
     if (!g_mm_inited) {

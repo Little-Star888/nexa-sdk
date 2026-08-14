@@ -65,9 +65,7 @@ jobs:
           fi
           echo "devices=$devices" >> "$GITHUB_OUTPUT"
 
-          # Catalog-only rows (empty `devices`, e.g. spec draft models) are
-          # never dispatched as their own bench cell — they exist so target
-          # rows can reference them by name via `spec.draft`.
+          # Catalog-only rows (empty `devices`) are never dispatched.
           if [ -n "$PICK_MODEL" ]; then
             matrix=$(jq -c --arg s "$PICK_MODEL" '
               ($s | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0))) as $pick
@@ -87,10 +85,7 @@ jobs:
           fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-          # Spec-decoding rows only run on SC8480XP today (target+draft mem
-          # footprint eliminates the other chipsets). Emit dynamic exclude
-          # combos so the bench matrix drops spec × non-SC8480XP without
-          # burning a runner slot per skip.
+          # Spec-decoding rows only run on SC8480XP; drop the other combos.
           excludes=$(jq -c -n --argjson devices "$devices" --argjson models "$matrix" '
             [ $devices[] as $d | $models[] as $m
               | select(($m.spec // null) != null and $d != "SC8480XP")

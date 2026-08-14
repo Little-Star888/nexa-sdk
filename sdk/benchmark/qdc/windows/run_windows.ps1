@@ -15,19 +15,14 @@
 # >~7 GB GGUFs on X2 Elite).
 #
 # We sweep ctx in {512, 1024, 4096} per cell to align with test-llama.cpp's
-# PERFORMANCE SESSION. Three prefill modes coexist:
-#   - llama_cpp cells use random-ids prefill (`-p N`, mirrors llama-bench
-#     `pp{N}`), so reported pp is exactly the ctx value;
-#   - qairt cells go through prompt_utf8 (the plugin doesn't accept
-#     pre-tokenized input_ids — see issue #1008), with a pre-trimmed
-#     `sample_prompt_${ctx}.txt` per ctx so prompt length is bounded.
-#   - spec (llama_cpp speculative-decoding) cells share the random-ids
-#     prefill of the plain llama_cpp bucket — we only care about mechanical
-#     decode throughput with the spec path enabled, not real-world draft
-#     acceptance. Spec cells additionally pass --spec-type/--draft-model/
-#     --draft-tokens as CLI-level flags, so each spec matrix invocation
-#     runs its own bench call.
-# Each bucket gets its own per-ctx TSV so the invocations don't mix.
+# PERFORMANCE SESSION. Three buckets, each with its own per-ctx TSV so
+# their invocations don't mix:
+#   - llama_cpp cells use random-ids prefill (`-p N`);
+#   - qairt cells go through prompt_utf8 with `sample_prompt_${ctx}.txt`
+#     because the plugin doesn't accept pre-tokenized input_ids (#1008);
+#   - spec (llama_cpp speculative-decoding) cells share random-ids
+#     prefill and additionally pass --spec-type/--draft-model/--draft-tokens
+#     as CLI-level flags per matrix invocation.
 
 $ErrorActionPreference = "Continue"
 
@@ -75,10 +70,7 @@ foreach ($plugin in @("llama", "qairt", "spec")) {
         Remove-Item $tsvByPluginCtx["$plugin-$ctx"] -ErrorAction SilentlyContinue
     }
 }
-# Spec CLI parameters share one value across all cells inside a single
-# bench invocation. This map holds them keyed by "$ctx" for the second
-# pass below; every spec row is expected to agree on (type, draft, tokens)
-# per ctx since we only ship one draft model per target today.
+# Spec CLI params are per-invocation, not per-cell. Keyed by "$ctx".
 $specParamsByCtx = @{}
 
 foreach ($row in $rows) {
