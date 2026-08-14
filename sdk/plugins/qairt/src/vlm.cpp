@@ -304,6 +304,10 @@ int32_t QairtVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
         output->profile_data.stop_reason = "length";
         GENIEX_LOG_WARN("QAIRT VLM generate: context length exceeded (partial result populated)");
         return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+    } else if (result.stop_reason == "prompt_too_long") {
+        output->profile_data.stop_reason = "length";
+        GENIEX_LOG_WARN("QAIRT VLM generate: prompt exceeds max context length");
+        return GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG;
     } else if (result.stop_reason == "error") {
         output->profile_data.stop_reason = "eos";
         GENIEX_LOG_ERROR("QAIRT VLM generate failed during prompt processing (empty result)");

@@ -59,6 +59,7 @@ var (
 	ErrCommonRateLimited            = SDKError(C.GENIEX_ERROR_COMMON_RATE_LIMITED)
 	ErrCommonHubServer              = SDKError(C.GENIEX_ERROR_COMMON_HUB_SERVER)
 	ErrLlmTokenizationContextLength = SDKError(C.GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH)
+	ErrLlmGenerationPromptTooLong   = SDKError(C.GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG)
 )
 
 // Init must be called before any other SDK function.

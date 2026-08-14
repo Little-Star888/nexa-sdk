@@ -224,11 +224,14 @@ func Completions(c *gin.Context) {
 			PromptUTF8: prompt,
 			Config:     genConfig,
 		})
-		if errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
-			writeCompletionContextLengthExceeded(c, echo+out.FullText, out.ProfileData)
+		// A prompt that never fit is a client error (400). A window exhausted
+		// mid-generation is a normal truncated completion (finish_reason=length),
+		// so it falls through to the regular response below.
+		if errors.Is(err, geniex_sdk.ErrLlmGenerationPromptTooLong) {
+			writeCompletionPromptTooLong(c, out.ProfileData)
 			return
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
 			c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return
 		}
@@ -284,7 +287,10 @@ func streamCompletion(c *gin.Context, dataCh <-chan string, wait func() error, i
 			c.SSEvent("", completionTextChunk(r))
 			return true
 		}
-		if err := wait(); err != nil {
+		// A context window exhausted mid-stream is a normal truncated completion
+		// (finish_reason=length): fall through to the finish chunk. Other errors
+		// (including a too-long prompt) are surfaced as an error event.
+		if err := wait(); err != nil && !errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
@@ -322,16 +328,15 @@ func writeCompletionResponse(c *gin.Context, text string, profile geniex_sdk.Pro
 	})
 }
 
-// OpenAI's 400 body, plus the partial generation under `choices` so clients can
-// recover the truncated output.
-func writeCompletionContextLengthExceeded(c *gin.Context, text string, profile geniex_sdk.ProfileData) {
+// OpenAI's 400 body for a prompt that is longer than the context window. No
+// partial output exists (nothing was generated), so this returns only the error.
+func writeCompletionPromptTooLong(c *gin.Context, profile geniex_sdk.ProfileData) {
 	c.JSON(http.StatusBadRequest, map[string]any{
 		"error": map[string]any{
-			"message": "model context window exceeded; output truncated",
+			"message": "prompt is longer than the model's context window",
 			"type":    "invalid_request_error",
 			"code":    "context_length_exceeded",
 		},
-		"choices": []completionChoice{{Text: text, FinishReason: "length"}},
-		"usage":   profile2Usage(profile),
+		"usage": profile2Usage(profile),
 	})
 }

@@ -329,8 +329,10 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
 
     const bool spec_prefill = this->spec != nullptr && (this->draft_ctx != nullptr);
 
-    // Decode one batch (caller chunks long inputs) and advance n_past.
-    auto process = [&](const llama_token* tokens, int n_tokens) -> int32_t {
+    // Decode one batch (caller chunks long inputs) and advance n_past. overflow_err
+    // is returned when the context is exhausted even after shifting, letting the
+    // caller distinguish a too-long prompt (prefill) from a full window (decode).
+    auto process = [&](const llama_token* tokens, int n_tokens, int32_t overflow_err) -> int32_t {
         int rc;
         if (spec_prefill) {
             llama_batch batch = llama_batch_init(n_tokens, /*embd=*/0, /*n_seq_max=*/1);
@@ -356,7 +358,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
             case 0:
                 break;
             case 1:
-                return GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+                return overflow_err;
             default:
                 return GENIEX_ERROR_LLM_GENERATION_FAILED;
         }
@@ -370,9 +372,13 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
         common_sampler_accept(this->sampler, id, /* accept_grammar= */ false);
     }
 
+    // A context overflow during prefill means the prompt itself doesn't fit,
+    // even after any context shift (or the model can't shift at all); during
+    // decode it means the window filled up mid-generation. Distinct causes, so
+    // process() reports the one matching the phase.
     for (int i = 0; i < (int)embd_inp.size() && res == GENIEX_SUCCESS; i += n_batch) {
         int n_eval = std::min(n_batch, (int)embd_inp.size() - i);
-        res        = process(embd_inp.data() + i, n_eval);
+        res        = process(embd_inp.data() + i, n_eval, GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG);
     }
 
     profiler.prompt_end();
@@ -438,7 +444,7 @@ int32_t LlamaLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
                 break;
             }
 
-            res = process(&id, 1);
+            res = process(&id, 1, GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH);
         }
     }
 
