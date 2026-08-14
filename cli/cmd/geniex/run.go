@@ -228,6 +228,9 @@ func runCompletions(ctx context.Context, name string, modelType geniex_sdk.Model
 				if chunk.Usage.PromptTokens > 0 {
 					profileData.PromptTokens = chunk.Usage.PromptTokens
 					profileData.GeneratedTokens = chunk.Usage.CompletionTokens
+					det := chunk.Usage.CompletionTokensDetails
+					profileData.DraftNAccepted = det.AcceptedPredictionTokens
+					profileData.DraftNTotal = det.AcceptedPredictionTokens + det.RejectedPredictionTokens
 				}
 			}
 
