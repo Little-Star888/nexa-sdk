@@ -662,6 +662,15 @@ def main() -> int:
         cells = download_cells(
             client, job_id, tmp, model_names=[m["name"] for m in models]
         )
+        if not cells:
+            for name, data in _qdc.download_log_members(
+                client, job_id, tmp, lambda n: n.endswith((".log", ".stdout", ".txt"))
+            ):
+                print(f"===== QDC log: {name} =====")
+                try:
+                    print(data.decode("utf-8", errors="replace"))
+                except Exception as e:
+                    print(f"[decode failed: {e}]")
 
     if args.cells_out:
         args.cells_out.write_text(json.dumps(cells))
