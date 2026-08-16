@@ -138,11 +138,15 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if err := exec.Command(dst).Start(); err != nil {
+	if err := updateInstallerCmd(dst).Start(); err != nil {
 		return err
 	}
 	fmt.Println("update package is ready to install")
 	return nil
+}
+
+func updateInstallerCmd(dst string) *exec.Cmd {
+	return exec.Command(dst, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
 }
 
 // S3 release index & manifests

@@ -77,7 +77,7 @@ begin
     Exit;
   end;
 
-  if (not Exec(RemoveQuotes(UninstallString), '/SILENT', '', SW_SHOW, ewWaitUntilTerminated, ResultCode))
+  if (not Exec(RemoveQuotes(UninstallString), '/VERYSILENT', '', SW_HIDE, ewWaitUntilTerminated, ResultCode))
      or (ResultCode <> 0) then
   begin
     MsgBox(Format('Uninstall failed (ErrCode: %d).', [ResultCode]), mbError, MB_OK);

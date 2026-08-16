@@ -4,8 +4,19 @@
 package main
 
 import (
+	"path/filepath"
+	"slices"
 	"testing"
 )
+
+func TestUpdateInstallerCmd(t *testing.T) {
+	dst := filepath.Join("temp", "geniex-cli-setup.exe")
+	cmd := updateInstallerCmd(dst)
+	want := []string{dst, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"}
+	if !slices.Equal(cmd.Args, want) {
+		t.Fatalf("updateInstallerCmd(%q) args = %v, want %v", dst, cmd.Args, want)
+	}
+}
 
 func TestCompareVersion(t *testing.T) {
 	tests := []struct {
