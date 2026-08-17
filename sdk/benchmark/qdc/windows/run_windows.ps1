@@ -15,13 +15,14 @@
 # >~7 GB GGUFs on X2 Elite).
 #
 # We sweep ctx in {512, 1024, 4096} per cell to align with test-llama.cpp's
-# PERFORMANCE SESSION. Two prefill modes coexist:
-#   - llama_cpp cells use random-ids prefill (`-p N`, mirrors llama-bench
-#     `pp{N}`), so reported pp is exactly the ctx value;
-#   - qairt cells go through prompt_utf8 (the plugin doesn't accept
-#     pre-tokenized input_ids — see issue #1008), with a pre-trimmed
-#     `sample_prompt_${ctx}.txt` per ctx so prompt length is bounded.
-# Each plugin gets its own per-ctx TSV so the two invocations don't mix.
+# PERFORMANCE SESSION. Three buckets, each with its own per-ctx TSV so
+# their invocations don't mix:
+#   - llama_cpp cells use random-ids prefill (`-p N`);
+#   - qairt cells go through prompt_utf8 with `sample_prompt_${ctx}.txt`
+#     because the plugin doesn't accept pre-tokenized input_ids (#1008);
+#   - spec (llama_cpp speculative-decoding) cells share random-ids
+#     prefill and additionally pass --spec-type/--draft-model/--draft-tokens
+#     as CLI-level flags per matrix invocation.
 
 $ErrorActionPreference = "Continue"
 
@@ -63,17 +64,19 @@ $ctxList = @({CTX_LIST})
 $ppList  = @({PP_LIST})
 $tgList  = @({TG_LIST})
 $tsvByPluginCtx = @{}
-foreach ($plugin in @("llama", "qairt")) {
+foreach ($plugin in @("llama", "qairt", "spec")) {
     foreach ($ctx in $ctxList) {
         $tsvByPluginCtx["$plugin-$ctx"] = "C:\Temp\matrix-$plugin-$ctx.tsv"
         Remove-Item $tsvByPluginCtx["$plugin-$ctx"] -ErrorAction SilentlyContinue
     }
 }
+# Spec CLI params are per-invocation, not per-cell. Keyed by "$ctx".
+$specParamsByCtx = @{}
 
 foreach ($row in $rows) {
-    $name, $plugin, $devs, $model_id, $vlm, $image = $row -split '\|'
+    $name, $plugin, $devs, $model_id, $vlm, $image, $spec_type, $draft_model_id, $draft_tokens = $row -split '\|'
     Write-Output "=== plan $name id=$model_id ==="
-    $bucket = if ($plugin -eq "qairt") { "qairt" } elseif ($plugin -eq "llama_cpp") { "llama" } else { "" }
+    $bucket = if ($spec_type) { "spec" } elseif ($plugin -eq "qairt") { "qairt" } elseif ($plugin -eq "llama_cpp") { "llama" } else { "" }
     if (-not $bucket) {
         Write-Output "WARN: unknown plugin $plugin in $name, skipping"
         continue
@@ -87,6 +90,13 @@ foreach ($row in $rows) {
             "{0}-{1}-{2}-c{3}`t{1}`t{2}`t{4}`t`t`t{5}`t{6}" -f `
                 $name, $plugin, $d, $ctx, $model_id, $imgpath, $vlm `
                 | Add-Content $tsvByPluginCtx["$bucket-$ctx"]
+            if ($bucket -eq "spec") {
+                $specParamsByCtx["$ctx"] = @{
+                    type   = $spec_type
+                    draft  = $draft_model_id
+                    tokens = $draft_tokens
+                }
+            }
         }
     }
 }
@@ -112,6 +122,26 @@ for ($i = 0; $i -lt $ctxList.Count; $i++) {
         Get-Content $qairtTsv
         & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $qairtTsv --output-json-dir "$OUT" -r 3 `
             -c $ctx -n $tg --prompt-file "$PROMPTS\sample_prompt_$ctx.txt" `
+            --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
+        Write-Output "rc=$LASTEXITCODE  ($((Get-ChildItem $OUT).Count) cell json files so far)"
+    }
+
+    $specTsv = $tsvByPluginCtx["spec-$ctx"]
+    if ((Test-Path $specTsv) -and ((Get-Item $specTsv).Length -gt 0)) {
+        $sp = $specParamsByCtx["$ctx"]
+        # Spec-decoding needs `--draft-tokens` extra KV slots on the last
+        # decode step (target + draft), or llama.cpp trips
+        # "decode: failed to find a memory slot for batch of size N+1".
+        # Bench defaults pp+tg = ctx exactly, so trim tg by that margin.
+        $draftHeadroom = if ($sp.tokens) { [int]$sp.tokens + 1 } else { 4 }
+        $specTg = [Math]::Max(1, [int]$tg - $draftHeadroom)
+        Write-Output "=== matrix spec ctx=$ctx pp=$pp tg=$specTg type=$($sp.type) draft=$($sp.draft) n_max=$($sp.tokens) (random-ids prefill) ==="
+        Get-Content $specTsv
+        $extra = @()
+        if ($sp.tokens) { $extra += @("--draft-tokens", $sp.tokens) }
+        & "$BUNDLE\bin\geniex-bench.exe" --matrix-file $specTsv --output-json-dir "$OUT" -r 1 --no-warmup `
+            -c $ctx -p $pp -n $specTg `
+            --spec-type $sp.type --draft-model $sp.draft @extra `
             --mm-data-dir $MM_CACHE --chipset "{CHIPSET}"
         Write-Output "rc=$LASTEXITCODE  ($((Get-ChildItem $OUT).Count) cell json files so far)"
     }

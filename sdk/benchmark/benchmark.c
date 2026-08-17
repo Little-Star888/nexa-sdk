@@ -89,6 +89,7 @@ typedef struct {
     char*       mm_model_path;
     char*       mm_mmproj;
     char*       mm_tokenizer;
+    char*       mm_draft_model;
     bool        force_vlm; /* run VLM path even without an mmproj (QAIRT bundles) */
     bool        mm_is_vlm; /* manager classified the resolved model as VLM (geniex_ModelType) */
     const char* image_paths[MAX_PATHS];
@@ -514,6 +515,63 @@ static int resolve_via_mm(options_t* o, const char* id_in) {
     return 0;
 }
 
+/* Without this the plugin gets a raw id like "org/repo:Q4_0", fails to
+ * open it as a file, and silently falls back to non-speculative decode. */
+static int resolve_draft_via_mm(options_t* o) {
+    if (!o->draft_model || looks_like_path(o->draft_model)) return 0;
+    if (!g_mm_inited) {
+        int32_t rc = geniex_model_init(o->mm_data_dir);
+        if (rc != GENIEX_SUCCESS) {
+            const char* m = geniex_model_last_error_message();
+            fprintf(stderr, "ERROR: geniex_model_init: %s (%d)\n", m ? m : "?", rc);
+            return 1;
+        }
+        g_mm_inited = true;
+    }
+    size_t n   = strlen(o->draft_model);
+    char*  buf = (char*)malloc(n + 1);
+    if (!buf) return 1;
+    memcpy(buf, o->draft_model, n + 1);
+    const char* name;
+    const char* quant;
+    split_id(buf, &name, &quant);
+    geniex_ModelPaths paths;
+    memset(&paths, 0, sizeof(paths));
+    int32_t rc = geniex_model_get_paths(o->draft_model, &paths);
+    if (rc != GENIEX_SUCCESS) {
+        geniex_ModelPullInput in;
+        memset(&in, 0, sizeof(in));
+        in.struct_size = (uint32_t)sizeof(in);
+        in.model_name  = name;
+        in.quant       = quant;
+        in.hub         = parse_hub(o->mm_hub);
+        in.chipset     = o->mm_chipset;
+        in.model_type  = GENIEX_MODEL_TYPE_AUTO;
+        fprintf(stderr, "[mm  ] pulling draft %s%s%s ...\n", name, quant ? ":" : "", quant ? quant : "");
+        rc = geniex_model_pull(&in);
+        if (rc != GENIEX_SUCCESS) {
+            const char* m = geniex_model_last_error_message();
+            fprintf(stderr, "ERROR: geniex_model_pull(%s): %s (%d)\n", o->draft_model, m ? m : "?", rc);
+            free(buf);
+            return 1;
+        }
+        rc = geniex_model_get_paths(o->draft_model, &paths);
+        if (rc != GENIEX_SUCCESS) {
+            const char* m = geniex_model_last_error_message();
+            fprintf(stderr, "ERROR: geniex_model_get_paths(%s): %s (%d)\n", o->draft_model, m ? m : "?", rc);
+            free(buf);
+            return 1;
+        }
+    }
+    free(buf);
+    o->mm_draft_model = paths.model_path;
+    paths.model_path  = NULL;
+    geniex_model_paths_free(&paths);
+    o->draft_model = o->mm_draft_model;
+    fprintf(stderr, "[mm  ] resolved draft %s -> %s\n", o->draft_model, o->mm_draft_model);
+    return 0;
+}
+
 /* If `path` is a directory, return a heap-allocated path to a regular file
  * inside it (preferring `tokenizer.json`, otherwise the lexicographically
  * first regular file). The SDK derives the model dir via `parent_path()`,
@@ -658,6 +716,7 @@ static void parse_args(int argc, char** argv, options_t* o) {
     o->mm_model_path      = NULL;
     o->mm_mmproj          = NULL;
     o->mm_tokenizer       = NULL;
+    o->mm_draft_model     = NULL;
     o->force_vlm          = false;
     o->mm_is_vlm          = false;
     o->image_count        = 0;
@@ -1529,7 +1588,7 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
     fprintf(f, "    \"params\": {\n");
     fprintf(f,
         "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
-        "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d\n",
+        "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d",
         o->warmup,
         o->repeat,
         o->n_prompt,
@@ -1539,7 +1598,16 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         o->n_ctx,
         o->n_threads,
         ngl);
-    fprintf(f, "    },\n");
+    if (o->spec_type) {
+        fprintf(f, ",\n      \"spec_type\": ");
+        json_write_quoted(f, o->spec_type);
+        if (o->draft_model) {
+            fprintf(f, ",\n      \"draft_model\": ");
+            json_write_quoted(f, o->draft_model);
+        }
+        fprintf(f, ",\n      \"draft_tokens\": %d", o->draft_tokens);
+    }
+    fprintf(f, "\n    },\n");
     fprintf(f, "    \"runs\": [\n");
     for (int i = 0; i < o->repeat; ++i) {
         const run_result_t* r = &runs[i];
@@ -1846,6 +1914,10 @@ static int run_one_cell(options_t* o) {
         o->force_vlm = true;
     }
 
+    if (resolve_draft_via_mm(o) != 0) {
+        return 1;
+    }
+
     char* anchored = resolve_local_anchor(o->model_path);
     if (anchored) {
         fprintf(stderr, "[info] resolved model dir to anchor: %s\n", anchored);
@@ -1912,6 +1984,10 @@ static int run_one_cell(options_t* o) {
             geniex_free(o->mm_tokenizer);
             o->mm_tokenizer = NULL;
         }
+        if (o->mm_draft_model) {
+            geniex_free(o->mm_draft_model);
+            o->mm_draft_model = NULL;
+        }
         return 0;
     }
 
@@ -1954,6 +2030,10 @@ static int run_one_cell(options_t* o) {
     if (o->mm_tokenizer) {
         geniex_free(o->mm_tokenizer);
         o->mm_tokenizer = NULL;
+    }
+    if (o->mm_draft_model) {
+        geniex_free(o->mm_draft_model);
+        o->mm_draft_model = NULL;
     }
     return 0;
 }

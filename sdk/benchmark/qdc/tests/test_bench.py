@@ -49,7 +49,7 @@ def test_bench():
         (plugin, ctx): [] for plugin in ("llama_cpp", "qairt") for ctx in CTXS
     }
     for row in rows:
-        name, plugin, devs, model_id, vlm, image = row.split("|")
+        name, plugin, devs, model_id, vlm, image, *_spec = row.split("|")
         if plugin not in ("llama_cpp", "qairt"):
             continue
         if plugin != "qairt":

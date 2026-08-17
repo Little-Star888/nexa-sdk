@@ -45,6 +45,7 @@ jobs:
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
       devices: ${{ steps.set.outputs.devices }}
+      excludes: ${{ steps.set.outputs.excludes }}
     steps:
       - uses: actions/checkout@v7
       - id: set
@@ -64,23 +65,34 @@ jobs:
           fi
           echo "devices=$devices" >> "$GITHUB_OUTPUT"
 
+          # Catalog-only rows (empty `devices`) are never dispatched.
           if [ -n "$PICK_MODEL" ]; then
             matrix=$(jq -c --arg s "$PICK_MODEL" '
               ($s | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0))) as $pick
               | map(select(.name as $n | $pick | index($n)))
+              | map(select(.devices != []))
             ' "$MODELS_FILE")
             picked_n=$(jq 'length' <<<"$matrix")
             want_n=$(jq -n --arg s "$PICK_MODEL" \
               '$s | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | length')
             if [ "$picked_n" != "$want_n" ]; then
-              echo "::error::model input has unknown name(s): $PICK_MODEL"
-              echo "::error::available: $(jq -r '.[].name' "$MODELS_FILE" | paste -sd, -)"
+              echo "::error::model input has unknown or catalog-only name(s): $PICK_MODEL"
+              echo "::error::available: $(jq -r '.[] | select(.devices != []) | .name' "$MODELS_FILE" | paste -sd, -)"
               exit 1
             fi
           else
-            matrix=$(jq -c . "$MODELS_FILE")
+            matrix=$(jq -c '[.[] | select(.devices != [])]' "$MODELS_FILE")
           fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          # Spec-decoding rows only run on SC8480XP; drop the other combos.
+          excludes=$(jq -c -n --argjson devices "$devices" --argjson models "$matrix" '
+            [ $devices[] as $d | $models[] as $m
+              | select(($m.spec // null) != null and $d != "SC8480XP")
+              | {device: $d, model: {name: $m.name}}
+            ]
+          ')
+          echo "excludes=$excludes" >> "$GITHUB_OUTPUT"
 
   bench:
     name: ${{ matrix.device }} · ${{ matrix.model.plugin }} · ${{ matrix.model.name }}
@@ -93,6 +105,7 @@ jobs:
       matrix:
         device: ${{ fromJson(needs.load-models.outputs.devices) }}
         model: ${{ fromJson(needs.load-models.outputs.matrix) }}
+        exclude: ${{ fromJson(needs.load-models.outputs.excludes) }}
     env:
       QDC_API_KEY: ${{ secrets.QDC_API_KEY }}
     steps:
