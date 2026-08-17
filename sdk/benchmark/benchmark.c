@@ -160,13 +160,11 @@ typedef struct {
 } run_result_t;
 
 /* Adjust the reported prefill metrics for the engine's real prefill work.
- * QAIRT pads the (text) prompt to a QAIRT_PREFILL_CHUNK multiple before prefill,
- * so prompt_tokens/prefill_tps should reflect that padded length (#1194);
- * recomputing the rate over the padded count keeps rate == prompt_tokens /
- * prompt_time consistent. Media tokens are encoded separately and are not
- * chunk-padded, so they are excluded from prompt_tokens (see the SDK's split of
- * media out of prefill). llama_cpp does no such padding, so its metrics are left
- * as the SDK reported them. */
+ * QAIRT pads the prompt to a QAIRT_PREFILL_CHUNK multiple before prefill, so
+ * prompt_tokens/prefill_tps should reflect that padded length (#1194). Padding
+ * the full count is correct: prompt_tokens already includes the media tokens,
+ * which are prefilled through the same chunked path. llama_cpp does no such
+ * padding, so its metrics are left as the SDK reported them. */
 static void normalize_prefill_metrics(run_result_t* r, const char* plugin) {
     if (!plugin || strcmp(plugin, "qairt") != 0 || r->prompt_tokens <= 0) return;
     int64_t padded   = ((r->prompt_tokens + QAIRT_PREFILL_CHUNK - 1) / QAIRT_PREFILL_CHUNK) * QAIRT_PREFILL_CHUNK;

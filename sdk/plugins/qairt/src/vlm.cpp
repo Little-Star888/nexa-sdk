@@ -284,10 +284,10 @@ int32_t QairtVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
     output->full_text = portable_strdup(result.full_text.c_str());
     if (!output->full_text) return GENIEX_ERROR_COMMON_MEMORY_ALLOCATION;
 
-    // Profile data (convert ms → µs to match geniex_ProfileData convention).
-    // media_time is the vision/audio encoder wall time only; prefilling the
-    // resulting media tokens stays in prompt_time (= ttft − encoder), same as
-    // text. prompt_tokens counts text + media tokens.
+    // Profile data (ms → µs). media_time is the encoder only; the media-token
+    // prefill stays in prompt_time, derived as ttft − encoder since QAIRT exposes
+    // no separate prefill number. When the encoder dominates ttft the subtraction
+    // clamps to 0, so prefill_speed reports 0 (unknown) rather than a bogus rate.
     const int64_t media_us  = static_cast<int64_t>(result.media_ms * 1000.0);
     const int64_t prompt_us = std::max<int64_t>(static_cast<int64_t>(result.ttft_ms * 1000.0) - media_us, 0);
 

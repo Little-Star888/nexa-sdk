@@ -235,5 +235,5 @@ Key points:
 
 Both runtimes measure `media_time` at the same boundary (encoder wall time only), so the numbers are comparable across plugins:
 
-- **llama.cpp** — timed per-chunk. For a media chunk the encode (`mtmd_encode_chunk`) is timed as `media_time`; prefilling the resulting embeddings (`mtmd_helper_decode_image_chunk` → `llama_decode`) is counted in `prompt_time` alongside the text chunks. The split is exact and `ttft ≈ media_time + prompt_time` holds tightly.
+- **llama.cpp** — timed per-chunk: the encode (`mtmd_encode_chunk`) is `media_time`; prefilling the embeddings (`mtmd_helper_decode_image_chunk` → `llama_decode`) goes to `prompt_time`, same as text chunks. Bitmap loading and tokenization are timed by neither, so they fall only in `ttft`; `ttft ≈ media_time + prompt_time` up to that overhead.
 - **QAIRT** — `media_time` is the encoder wall time (`encodeVision`); the media-token NPU prefill stays in `prompt_time` (= `ttft − media_time`). QAIRT's `prompt_time` is derived from `ttft`, so treat it as indicative, not exact. The encoder number itself is directly measured.
