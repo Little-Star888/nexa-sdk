@@ -32,6 +32,7 @@ geniex_token_callback = CFUNCTYPE(c_bool, c_char_p, c_void_p)
 class geniex_ProfileData(Structure):
     _fields_ = [
         ('ttft', c_int64),
+        ('media_time', c_int64),
         ('prompt_time', c_int64),
         ('decode_time', c_int64),
         ('prompt_tokens', c_int64),

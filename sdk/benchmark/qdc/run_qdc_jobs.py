@@ -489,8 +489,8 @@ def render(
     lines = [f"## QDC Bench — {device} — {label}", ""]
     lines += _details_block(cells, device, label, models)
     lines += [
-        "| Model | Backend | Device | Ctx | ngl | Test | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) |",
-        "|-------|---------|--------|----:|----:|------|----------:|----------------:|---------------:|",
+        "| Model | Backend | Device | Ctx | ngl | Test | TTFT (ms) | Media enc (ms) | Prefill (tok/s) | Decode (tok/s) |",
+        "|-------|---------|--------|----:|----:|------|----------:|---------------:|----------------:|---------------:|",
     ]
     sort_key = lambda c: (_model_label(c), c["plugin"], c["device"], _ctx_from_cell(c))  # noqa: E731
     for c in sorted(cells, key=sort_key):
@@ -505,14 +505,16 @@ def render(
         ctx_s = str(ctx) if ctx else "-"
         p_med = (agg.get("prompt_tokens") or {}).get("median")
         g_med = (agg.get("gen_tokens") or {}).get("median")
-        test = (
-            f"pp{int(p_med)}+tg{int(g_med)}"
-            if p_med is not None and g_med is not None
-            else "-"
-        )
+        menc_med = (agg.get("media_ms") or {}).get("median")
+        has_media = menc_med is not None and menc_med > 0
+        if p_med is not None and g_med is not None:
+            test = f"pp{int(p_med)}+tg{int(g_med)}"
+        else:
+            test = "-"
+        media_enc = f"{menc_med:.1f}" if has_media and menc_med is not None else "-"
         lines.append(
             f"| {model} | {c['plugin']} | {c['device']} | {ctx_s} | {ngl} | {test} | "
-            f"{_fmt_med_sd(agg, 'ttft_ms')} | {_fmt_med_sd(agg, 'prefill_tps')} | "
+            f"{_fmt_med_sd(agg, 'ttft_ms')} | {media_enc} | {_fmt_med_sd(agg, 'prefill_tps')} | "
             f"{_fmt_med_sd(agg, 'decode_tps')} |"
         )
     lines += _render_mtp_table(cells, models)

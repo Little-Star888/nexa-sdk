@@ -234,6 +234,19 @@ func (p *Processor) printProfile(pd geniex_sdk.ProfileData) {
 			strings.TrimSpace(`
 total time:     %fs
 ttft:           %fs
+			`),
+			float64(pd.TotalTimeUs())/1e6,
+			float64(pd.TTFT)/1e6,
+		)
+
+		// media time is part of ttft (ttft ≈ media time + prompt time),
+		// so it precedes the prefill lines to match the time order.
+		if pd.MediaTime > 0 {
+			text += fmt.Sprintf("\nmedia time:     %fs", float64(pd.MediaTime)/1e6)
+		}
+
+		text += "\n" + fmt.Sprintf(
+			strings.TrimSpace(`
 prompt time:    %fs
 prompt tokens:  %d token(s)
 prompt speed:   %f tok/s
@@ -242,8 +255,6 @@ decode tokens:  %d token(s)
 decode speed:   %f tok/s
 stop reason:    %s
 			`),
-			float64(pd.TotalTimeUs())/1e6,
-			float64(pd.TTFT)/1e6,
 			float64(pd.PromptTime)/1e6,
 			pd.PromptTokens,
 			pd.PrefillSpeed,

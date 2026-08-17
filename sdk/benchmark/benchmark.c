@@ -147,9 +147,10 @@ typedef struct {
     int32_t     run_idx;
     bool        is_warmup;
     int64_t     ttft_us;
+    int64_t     media_us; /* image/audio encoder time; 0 for text-only */
     int64_t     prompt_time_us;
     int64_t     decode_time_us;
-    int64_t     prompt_tokens;
+    int64_t     prompt_tokens; /* text + media tokens */
     int64_t     gen_tokens;
     double      prefill_tps;
     double      decode_tps;
@@ -159,11 +160,13 @@ typedef struct {
 } run_result_t;
 
 /* Adjust the reported prefill metrics for the engine's real prefill work.
- * QAIRT pads the prompt to a QAIRT_PREFILL_CHUNK multiple before prefill, so
- * prompt_tokens/prefill_tps should reflect that padded length (#1194); QAIRT's
- * prompt_time equals ttft, so recomputing the rate over the padded count keeps
- * rate == prompt_tokens / prompt_time consistent. llama_cpp does no such
- * padding, so its metrics are left as the SDK reported them. */
+ * QAIRT pads the (text) prompt to a QAIRT_PREFILL_CHUNK multiple before prefill,
+ * so prompt_tokens/prefill_tps should reflect that padded length (#1194);
+ * recomputing the rate over the padded count keeps rate == prompt_tokens /
+ * prompt_time consistent. Media tokens are encoded separately and are not
+ * chunk-padded, so they are excluded from prompt_tokens (see the SDK's split of
+ * media out of prefill). llama_cpp does no such padding, so its metrics are left
+ * as the SDK reported them. */
 static void normalize_prefill_metrics(run_result_t* r, const char* plugin) {
     if (!plugin || strcmp(plugin, "qairt") != 0 || r->prompt_tokens <= 0) return;
     int64_t padded   = ((r->prompt_tokens + QAIRT_PREFILL_CHUNK - 1) / QAIRT_PREFILL_CHUNK) * QAIRT_PREFILL_CHUNK;
@@ -1291,6 +1294,7 @@ static void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_
                 memset(r, 0, sizeof(*r));
                 r->run_idx        = run_idx;
                 r->ttft_us        = gout.profile_data.ttft;
+                r->media_us       = gout.profile_data.media_time;
                 r->prompt_time_us = gout.profile_data.prompt_time;
                 r->decode_time_us = gout.profile_data.decode_time;
                 r->prompt_tokens  = gout.profile_data.prompt_tokens;
@@ -1444,6 +1448,7 @@ static void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_
                 memset(r, 0, sizeof(*r));
                 r->run_idx        = run_idx;
                 r->ttft_us        = gout.profile_data.ttft;
+                r->media_us       = gout.profile_data.media_time;
                 r->prompt_time_us = gout.profile_data.prompt_time;
                 r->decode_time_us = gout.profile_data.decode_time;
                 r->prompt_tokens  = gout.profile_data.prompt_tokens;
@@ -1477,6 +1482,7 @@ typedef struct {
     double decode_med, decode_lo, decode_hi, decode_mean, decode_sd;
     double gen_tokens_med;
     double prompt_tokens_med;
+    double media_ms_med;
 } agg_t;
 
 static void aggregate(const run_result_t* runs, int n, agg_t* a) {
@@ -1500,6 +1506,9 @@ static void aggregate(const run_result_t* runs, int n, agg_t* a) {
     for (int i = 0; i < n; ++i) tmp[i] = (double)runs[i].prompt_tokens;
     summarize(tmp, n, &med, &lo, &hi);
     a->prompt_tokens_med = med;
+    for (int i = 0; i < n; ++i) tmp[i] = (double)runs[i].media_us / 1000.0;
+    summarize(tmp, n, &med, &lo, &hi);
+    a->media_ms_med = med;
     free(tmp);
 }
 
@@ -1576,7 +1585,7 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         exit(1);
     }
     fprintf(f, "{\n");
-    json_field_str(f, "schema_version", "3", false);
+    json_field_str(f, "schema_version", "4", false);
     json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
     json_field_str(f, "plugin", o->plugin, false);
     json_field_str(f, "device", o->device, false);
@@ -1612,17 +1621,19 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
     for (int i = 0; i < o->repeat; ++i) {
         const run_result_t* r = &runs[i];
         fprintf(f,
-            "      {\"run_idx\": %d, \"ttft_us\": %lld, \"prompt_tokens\": %lld, "
-            "\"gen_tokens\": %lld, \"prefill_tps\": %.6f, \"decode_tps\": %.6f, "
-            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, \"stop_reason\": %s%s%s}%s\n",
+            "      {\"run_idx\": %d, \"ttft_us\": %lld, \"media_us\": %lld, "
+            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, "
+            "\"prompt_tokens\": %lld, \"gen_tokens\": %lld, "
+            "\"prefill_tps\": %.6f, \"decode_tps\": %.6f, \"stop_reason\": %s%s%s}%s\n",
             r->run_idx,
             (long long)r->ttft_us,
+            (long long)r->media_us,
+            (long long)r->prompt_time_us,
+            (long long)r->decode_time_us,
             (long long)r->prompt_tokens,
             (long long)r->gen_tokens,
             r->prefill_tps,
             r->decode_tps,
-            (long long)r->prompt_time_us,
-            (long long)r->decode_time_us,
             r->stop_reason ? "\"" : "null",
             r->stop_reason ? r->stop_reason : "",
             r->stop_reason ? "\"" : "",
@@ -1652,7 +1663,8 @@ static void write_json(const options_t* o, const char* device_id, int32_t ngl, i
         a->decode_mean,
         a->decode_sd);
     fprintf(f, "      \"gen_tokens\":  {\"median\": %.6f},\n", a->gen_tokens_med);
-    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f}\n", a->prompt_tokens_med);
+    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f},\n", a->prompt_tokens_med);
+    fprintf(f, "      \"media_ms\":{\"median\": %.6f}\n", a->media_ms_med);
     fprintf(f, "    }\n");
     fprintf(f, "}\n");
     fclose(f);
@@ -1770,8 +1782,10 @@ static void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_byt
     }
     if (first) {
         fprintf(f,
-            "| Model | Size | Backend | Device | ngl | Test | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) |\n"
-            "|-------|-----:|---------|--------|----:|------|----------:|----------------:|---------------:|\n");
+            "| Model | Size | Backend | Device | ngl | Test | TTFT (ms) | Media enc (ms) | Prefill (tok/s) | "
+            "Decode (tok/s) |\n"
+            "|-------|-----:|---------|--------|----:|------|----------:|---------------:|----------------:|"
+            "---------------:|\n");
     }
 
     char  size_buf[32];
@@ -1787,8 +1801,14 @@ static void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_byt
     snprintf(
         test_buf, sizeof(test_buf), "pp%lld+tg%lld", (long long)a->prompt_tokens_med, (long long)a->gen_tokens_med);
 
+    char media_buf[24];
+    if (a->media_ms_med > 0)
+        snprintf(media_buf, sizeof(media_buf), "%.1f", a->media_ms_med);
+    else
+        snprintf(media_buf, sizeof(media_buf), "-");
+
     fprintf(f,
-        "| %s | %s | %s | %s | %s | %s | %.1f ± %.1f | %.1f ± %.1f | %.1f ± %.1f |\n",
+        "| %s | %s | %s | %s | %s | %s | %.1f ± %.1f | %s | %.1f ± %.1f | %.1f ± %.1f |\n",
         model ? model : (o->cell_id ? o->cell_id : "cell"),
         size_buf,
         o->plugin,
@@ -1797,6 +1817,7 @@ static void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_byt
         test_buf,
         a->ttft_ms_med,
         a->ttft_ms_sd,
+        media_buf,
         a->prefill_med,
         a->prefill_sd,
         a->decode_med,

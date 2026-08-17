@@ -45,7 +45,11 @@ On-device, all platforms perform the same work:
 2. Invoke `geniex-bench --matrix-file <tsv> --output-json-dir <out> --chipset <chip>`.
 3. The benchmark binary (`sdk/benchmark/benchmark.c`) runs each cell:
    1 warmup + 3 measured repetitions, writing a per-cell JSON with aggregated
-   stats (median / stdev / min / max for TTFT, prefill tok/s, decode tok/s).
+   stats (median / stdev / min / max for TTFT, prefill tok/s, decode tok/s;
+   median-only for `media_ms`, non-zero on VLM cells).
+   For VLM cells `prefill_tps` is the full prefill (text + media tokens); only
+   the encoder time is split out into `media_ms` — see
+   [run.md § Performance metrics](run.md#performance-metrics).
 4. Results land in `QDC_logs/results/` which QDC auto-collects.
 
 ## 3. Result collection & bench report rendering
@@ -75,8 +79,11 @@ Example output:
 - **Matrix-driven** — model x device pairs run in parallel on QDC.
 - **Platform isolation** — differences are confined to artifact-building and entry
   scripts; the on-device benchmark binary and JSON schema are shared.
-- **Common per-cell JSON schema** — every platform produces the same v2 schema,
-  so the aggregator renders uniformly regardless of origin.
+- **Common per-cell JSON schema** — every platform produces the same schema
+  (`schema_version` `4`), so the aggregator renders uniformly regardless of
+  origin. v4 added the `media_us` per-run encoder time and its `media_ms` agg
+  median. On a VLM run `prompt_tokens` counts text + media tokens, so
+  `prefill_tps` reflects the full prefill.
 
 ## Downloading geniex-bench
 

@@ -25,6 +25,8 @@ class Profiler {
    public:
     Profiler() { start(); }
 
+    void       media_start();
+    void       media_end();
     void       prompt_start();
     void       prompt_end();
     void       decode_start();
@@ -46,8 +48,8 @@ class Profiler {
     void           start();
 
     timestamp start_time{};
+    timestamp media_start_time{};
     timestamp prompt_start_time{};
-    timestamp prompt_end_time{};
     timestamp decode_start_time{};
     timestamp decode_end_time{};
     timestamp first_token_time{};
@@ -55,6 +57,8 @@ class Profiler {
 
     bool       ttft_recorded    = false;
     StopReason stop_reason      = StopReason::GENIEX_STOP_REASON_UNKNOWN;
+    int64_t    media_us         = 0;  // encoder time, accumulated across all media chunks
+    int64_t    prompt_us        = 0;  // prefill time, accumulated across all chunks
     uint32_t   prompt_tokens    = 0;
     uint32_t   generated_tokens = 0;
     int64_t    draft_n_total    = 0;

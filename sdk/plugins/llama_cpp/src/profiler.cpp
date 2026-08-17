@@ -24,9 +24,23 @@ static const char* stop_reason_to_string(StopReason reason) {
 
 void Profiler::start() { start_time = clock::now(); }
 
+void Profiler::media_start() { media_start_time = clock::now(); }
+
+void Profiler::media_end() {
+    if (media_start_time != timestamp{}) {
+        media_us += to_us(clock::now() - media_start_time);
+        media_start_time = timestamp{};
+    }
+}
+
 void Profiler::prompt_start() { prompt_start_time = clock::now(); }
 
-void Profiler::prompt_end() { prompt_end_time = clock::now(); }
+void Profiler::prompt_end() {
+    if (prompt_start_time != timestamp{}) {
+        prompt_us += to_us(clock::now() - prompt_start_time);
+        prompt_start_time = timestamp{};
+    }
+}
 
 void Profiler::decode_start() { decode_start_time = clock::now(); }
 
@@ -61,9 +75,8 @@ void Profiler::to_profile_data(ProfileData& pd) {
         pd.ttft = to_us(first_token_time - start_time);
     }
 
-    if (prompt_start_time != timestamp{} && prompt_end_time != timestamp{}) {
-        pd.prompt_time = to_us(prompt_end_time - prompt_start_time);
-    }
+    pd.media_time  = media_us;
+    pd.prompt_time = prompt_us;
 
     if (decode_start_time != timestamp{} && decode_end_time != timestamp{}) {
         pd.decode_time = to_us(decode_end_time - decode_start_time);
