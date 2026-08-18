@@ -15,9 +15,10 @@
 #define portable_strdup strdup
 #endif
 
-#include "dispatch.h"             // provided by geniex-qairt/models/
-#include "geniex-proc/types.h"    // ChatMessage, MMContent, Role::, Modality::
-#include "llm/llm_spec_loader.h"  // parseGenieSamplerConfig
+#include "dispatch.h"               // provided by geniex-qairt/models/
+#include "geniex-proc/tokenizer.h"  // ApplyChatTemplateOptions
+#include "geniex-proc/types.h"      // ChatMessage, MMContent, Role::, Modality::
+#include "llm/llm_spec_loader.h"    // parseGenieSamplerConfig
 #include "logging.h"
 #include "path_utils.h"
 #include "pipeline/vlm_pipeline.h"
@@ -234,8 +235,21 @@ int32_t QairtVlm::apply_chat_template(
     // Record pending size — committed to history_size_ only after a successful generate().
     pending_history_size_ = messages.size();
 
-    // TODO: honor input->enable_thinking once VisionProcessor exposes it.
-    std::string formatted = pipeline_->applyChatTemplate(new_messages, /*add_generation_prompt=*/true);
+    // Tools are injected on the first turn only, matching the LLM path.
+    ApplyChatTemplateOptions opts;
+    opts.add_generation_prompt = true;
+    if (history_size_ == 0 && input->tools && input->tools[0] != '\0') {
+        opts.tools_json = input->tools;
+    }
+    opts.enable_thinking = input->enable_thinking;
+
+    std::string formatted;
+    try {
+        formatted = pipeline_->applyChatTemplate(new_messages, opts);
+    } catch (const std::exception& e) {
+        GENIEX_LOG_ERROR("applyChatTemplate failed: {}", e.what());
+        return GENIEX_ERROR_COMMON_INVALID_INPUT;
+    }
 
     output->formatted_text = portable_strdup(formatted.c_str());
     if (!output->formatted_text) return GENIEX_ERROR_COMMON_MEMORY_ALLOCATION;
