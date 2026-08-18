@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import platform
 from pathlib import Path
 
 import geniex
@@ -38,6 +39,7 @@ from _quality_data import (
 _LLM_BACKENDS = ['cpu', 'gpu', 'npu']
 _VLM_BACKENDS = ['cpu', 'gpu', 'npu']
 _PARITY_CANDIDATES = ['gpu', 'npu', 'hybrid']
+_IS_QCS9075M = platform.system() == 'Linux' and platform.machine().lower() in ('aarch64', 'arm64')
 
 
 def test_model_manager_pull(llama_cpp_llm_paths, llama_cpp_vlm_paths, llama_cpp_mtp_paths):
@@ -211,6 +213,7 @@ def test_llm_logits_parity(llama_cpp_llm_paths, device_map):
 
 @pytest.mark.llm
 @pytest.mark.parametrize('device_map', ['npu'])
+@pytest.mark.skipif(_IS_QCS9075M, reason='draft-mtp not yet supported upstream on QCS9075M / HTP')
 def test_mtp_multi_turn(llama_cpp_mtp_paths, device_map):
     # Local paths route through model_name= so the model-manager sees the
     # catalogue id; positional-arg would push the path into resolved_name and
