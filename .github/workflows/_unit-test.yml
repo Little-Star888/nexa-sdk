@@ -185,7 +185,7 @@ jobs:
           python -m pip install "pytest>=7.0" "tqdm>=4.65"
           python -c "import geniex; geniex.init(); geniex.deinit()"
           if [ "$LANGUAGE" = "sdk" ]; then
-            python -m pytest tests -m api -v | tee .pytest-api.log
+            python -m pytest tests -m "api or (llama_cpp and device_cpu)" -v | tee .pytest-api.log
           else
             python -m pytest bindings/python/tests/unit -v | tee .pytest-unit.log
             python -m pytest bindings/python/tests --ignore=bindings/python/tests/unit -v | tee .pytest-int.log
@@ -211,7 +211,7 @@ jobs:
             python -m pip install "pytest>=7.0" "tqdm>=4.65"
             status=0
             if [ "$LANGUAGE" = "sdk" ]; then
-              python -m pytest tests -m api -v | tee .pytest-api.log || status=$?
+              python -m pytest tests -m "api or (llama_cpp and device_cpu)" -v | tee .pytest-api.log || status=$?
             else
               # python: run both phases so phase 2 still surfaces if phase 1 regresses.
               python -m pytest bindings/python/tests/unit -v | tee .pytest-unit.log || status=$?

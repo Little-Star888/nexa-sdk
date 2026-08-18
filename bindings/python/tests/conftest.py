@@ -30,9 +30,6 @@ else:
 LLAMA_CPP_MODEL = 'bartowski/Qwen_Qwen3-0.6B-GGUF'
 LLAMA_CPP_QUANT = 'Q4_0'
 
-LLAMA_CPP_VLM_MODEL = 'ggml-org/SmolVLM-256M-Instruct-GGUF'
-LLAMA_CPP_VLM_QUANT = 'Q8_0'
-
 
 @pytest.fixture(scope='session')
 def geniex_session():
@@ -50,11 +47,3 @@ def llama_cpp_paths(geniex_session):
         return _mm.ensure_cached(LLAMA_CPP_MODEL, precision=LLAMA_CPP_QUANT, hub='hf')
     except geniex.GenieXError as e:
         pytest.skip(f'could not pull {LLAMA_CPP_MODEL}: {e}')
-
-
-@pytest.fixture(scope='session')
-def llama_cpp_vlm_paths(geniex_session):
-    try:
-        return _mm.ensure_cached(LLAMA_CPP_VLM_MODEL, precision=LLAMA_CPP_VLM_QUANT, hub='hf')
-    except geniex.GenieXError as e:
-        pytest.skip(f'could not pull {LLAMA_CPP_VLM_MODEL}: {e}')

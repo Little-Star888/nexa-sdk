@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import geniex
@@ -165,3 +166,73 @@ def test_vlm_quality_keywords(qairt_vlm_paths, quality_image, device_map):
             f'device_map={device_map!r} keywords={VLM_QUALITY_KEYWORDS} '
             f'got={out.text!r}'
         )
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['npu'])
+def test_chat_template_roles_and_sentinels(qairt_llm_paths, device_map):
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        QAIRT_LLM_MODEL,
+        device_map=device_map,
+    ) as llm:
+        prompt = llm.tokenizer.apply_chat_template(
+            [
+                {'role': 'system', 'content': 'You are a helpful assistant.'},
+                {'role': 'user', 'content': 'hi'},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    assert '<|im_start|>system' in prompt
+    assert '<|im_start|>user' in prompt
+    assert prompt.rstrip().endswith('<|im_start|>assistant')
+    assert prompt.index('<|im_start|>system') < prompt.index('<|im_start|>user')
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['npu'])
+def test_chat_template_enable_thinking(qairt_llm_paths, device_map):
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        QAIRT_LLM_MODEL,
+        device_map=device_map,
+    ) as llm:
+        msgs = [{'role': 'user', 'content': 'hi'}]
+        with_think = llm.tokenizer.apply_chat_template(msgs, tokenize=False, enable_thinking=True)
+        without_think = llm.tokenizer.apply_chat_template(msgs, tokenize=False, enable_thinking=False)
+        default_think = llm.tokenizer.apply_chat_template(msgs, tokenize=False)
+    assert (
+        default_think == with_think
+    ), 'default enable_thinking should auto-resolve to True on a thinking-capable model'
+    assert with_think != without_think, f'enable_thinking flag did not reach the template: {with_think!r}'
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['npu'])
+def test_chat_template_tools_list_and_json_string_equivalent(qairt_llm_paths, device_map):
+    tool = {
+        'type': 'function',
+        'function': {
+            'name': 'get_weather',
+            'description': 'Get current weather.',
+            'parameters': {
+                'type': 'object',
+                'properties': {'city': {'type': 'string'}},
+                'required': ['city'],
+            },
+        },
+    }
+    msgs = [{'role': 'user', 'content': "what's the weather in Paris?"}]
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        QAIRT_LLM_MODEL,
+        device_map=device_map,
+    ) as llm:
+        from_list = llm.tokenizer.apply_chat_template(msgs, tokenize=False, tools=[tool])
+        from_str = llm.tokenizer.apply_chat_template(msgs, tokenize=False, tools=json.dumps([tool]))
+    assert from_list == from_str, 'tools=list[dict] and tools=json.dumps(list[dict]) should render identically'
+    assert 'get_weather' in from_list
+
+
+# NOTE: no `test_chat_template_content_load_override` mirror here — the QAIRT plugin
+# silently retains its baked ChatML template when `chat_template_content=` is passed
+# to `from_pretrained`, while llama_cpp honours the override. Tracked as a plugin
+# asymmetry to close separately; adding an xfail here would only clutter the suite.

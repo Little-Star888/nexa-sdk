@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import geniex
@@ -198,3 +199,204 @@ def test_mtp_multi_turn(llama_cpp_mtp_paths, device_map):
     assert (
         'alice' in replies[-1].lower()
     ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+
+
+_MEDIA_MARKER = '<__media__>'
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_chat_template_roles_and_sentinels(llama_cpp_llm_paths, device_map):
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+    ) as llm:
+        prompt = llm.tokenizer.apply_chat_template(
+            [
+                {'role': 'system', 'content': 'You are a helpful assistant.'},
+                {'role': 'user', 'content': 'hi'},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    assert '<|im_start|>system' in prompt
+    assert '<|im_start|>user' in prompt
+    assert prompt.rstrip().endswith('<|im_start|>assistant')
+    assert prompt.index('<|im_start|>system') < prompt.index('<|im_start|>user')
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_chat_template_enable_thinking(llama_cpp_llm_paths, device_map):
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+    ) as llm:
+        msgs = [{'role': 'user', 'content': 'hi'}]
+        with_think = llm.tokenizer.apply_chat_template(msgs, tokenize=False, enable_thinking=True)
+        without_think = llm.tokenizer.apply_chat_template(msgs, tokenize=False, enable_thinking=False)
+        default_think = llm.tokenizer.apply_chat_template(msgs, tokenize=False)
+    assert (
+        default_think == with_think
+    ), 'default enable_thinking should auto-resolve to True on a thinking-capable model'
+    assert with_think != without_think, f'enable_thinking flag did not reach the template: {with_think!r}'
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_chat_template_tools_list_and_json_string_equivalent(llama_cpp_llm_paths, device_map):
+    tool = {
+        'type': 'function',
+        'function': {
+            'name': 'get_weather',
+            'description': 'Get current weather.',
+            'parameters': {
+                'type': 'object',
+                'properties': {'city': {'type': 'string'}},
+                'required': ['city'],
+            },
+        },
+    }
+    msgs = [{'role': 'user', 'content': "what's the weather in Paris?"}]
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+    ) as llm:
+        from_list = llm.tokenizer.apply_chat_template(msgs, tokenize=False, tools=[tool])
+        from_str = llm.tokenizer.apply_chat_template(msgs, tokenize=False, tools=json.dumps([tool]))
+    assert from_list == from_str, 'tools=list[dict] and tools=json.dumps(list[dict]) should render identically'
+    assert 'get_weather' in from_list
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_chat_template_content_load_override(llama_cpp_llm_paths, device_map):
+    jinja = (
+        '{% for m in messages %}[{{ m.role }}] {{ m.content }}\n{% endfor %}'
+        '{% if add_generation_prompt %}[assistant] {% endif %}'
+    )
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+        chat_template_content=jinja,
+    ) as llm:
+        prompt = llm.tokenizer.apply_chat_template(
+            [
+                {'role': 'system', 'content': 'be terse'},
+                {'role': 'user', 'content': 'hello'},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    assert prompt == '[system] be terse\n[user] hello\n[assistant] '
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_context_shift_fires_on_decode_overflow(llama_cpp_llm_paths, device_map):
+    # n_ctx small enough that prompt (~200 tokens) + max_new_tokens exceeds it,
+    # forcing slide_window to rotate during decode. Prompt tokens are anchored
+    # by n_keep=4 and the rest of the past is compacted to make room.
+    n_ctx = 256
+    prompt_body = ' '.join(['banana'] * 200)
+    prompt = f'Repeat the following words verbatim: {prompt_body}\n\nAnswer: '
+
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+        n_ctx=n_ctx,
+    ) as llm:
+        out = llm.generate(prompt, max_new_tokens=120, temperature=0.0, seed=0)
+
+    assert out.profile.stop_reason != 'context_length', f'context shift did not save the run: {out.profile}'
+    assert out.profile.generated_tokens > 0
+    assert out.profile.prompt_tokens + out.profile.generated_tokens > n_ctx
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_context_shift_not_triggered_when_nctx_is_ample(llama_cpp_llm_paths, device_map):
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+        n_ctx=2048,
+    ) as llm:
+        out = llm.generate('Say hi in one word.', max_new_tokens=8, temperature=0.0, seed=0)
+
+    assert out.profile.stop_reason in {'eos', 'length', 'completed'}, out.profile
+    assert out.profile.generated_tokens > 0
+
+
+@pytest.mark.vlm
+@pytest.mark.parametrize('device_map', ['cpu'])
+@pytest.mark.parametrize('n_images', [0, 1, 2])
+def test_mtmd_marker_prepended_per_image(llama_cpp_vlm_paths, test_image, quality_image, device_map, n_images):
+    content: list[dict] = [
+        {'type': 'image', 'image': test_image},
+        {'type': 'image', 'image': quality_image},
+    ][:n_images]
+    content.append({'type': 'text', 'text': 'describe the picture'})
+
+    with geniex.AutoModelForVision2Seq.from_pretrained(
+        LLAMA_CPP_VLM_MODEL,
+        precision=LLAMA_CPP_VLM_PRECISION,
+        device_map=device_map,
+    ) as vlm:
+        prompt = vlm.tokenizer.apply_chat_template(
+            [{'role': 'user', 'content': content}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    assert prompt.count(_MEDIA_MARKER) == n_images
+    assert 'describe the picture' in prompt
+
+
+@pytest.mark.vlm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_mtmd_marker_absent_on_text_only_message(llama_cpp_vlm_paths, device_map):
+    with geniex.AutoModelForVision2Seq.from_pretrained(
+        LLAMA_CPP_VLM_MODEL,
+        precision=LLAMA_CPP_VLM_PRECISION,
+        device_map=device_map,
+    ) as vlm:
+        prompt = vlm.tokenizer.apply_chat_template(
+            [{'role': 'user', 'content': 'plain text, no image'}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    assert _MEDIA_MARKER not in prompt
+    assert 'plain text, no image' in prompt
+
+
+@pytest.mark.vlm
+@pytest.mark.parametrize('device_map', ['cpu'])
+def test_mtmd_generate_rejects_missing_image_path(llama_cpp_vlm_paths, test_image, device_map):
+    # apply_chat_template records that content referenced an image, then
+    # generate() validates the images=[...] list against the filesystem.
+    missing = str(Path(test_image).parent / 'does-not-exist.png')
+    with geniex.AutoModelForVision2Seq.from_pretrained(
+        LLAMA_CPP_VLM_MODEL,
+        precision=LLAMA_CPP_VLM_PRECISION,
+        device_map=device_map,
+    ) as vlm:
+        vlm.tokenizer.apply_chat_template(
+            [
+                {
+                    'role': 'user',
+                    'content': [
+                        {'type': 'image', 'image': test_image},
+                        {'type': 'text', 'text': 'hi'},
+                    ],
+                }
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        with pytest.raises(FileNotFoundError):
+            vlm.generate('irrelevant', images=[missing])
