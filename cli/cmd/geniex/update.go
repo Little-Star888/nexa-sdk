@@ -48,18 +48,21 @@ const (
 )
 
 func update() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		GroupID: "management",
 		Use:     "update",
 		Short:   "update geniex",
 		Long:    "Update geniex to the latest version",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(cmd, args)
+			silent, _ := cmd.Flags().GetBool("silent")
+			return runUpdate(silent)
 		},
 	}
+	cmd.Flags().Bool("silent", false, "run the installer silently (no prompts or progress UI)")
+	return cmd
 }
 
-func runUpdate(_ *cobra.Command, _ []string) error {
+func runUpdate(silent bool) error {
 	latest, err := getLatestVersion()
 	if err != nil {
 		return err
@@ -138,7 +141,14 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if err := exec.Command(dst).Start(); err != nil {
+	var installArgs []string
+	if silent {
+		installArgs = []string{"/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"}
+	}
+	// dst is a local file downloaded from the official release S3 bucket and
+	// verified against its published SHA256 above, so executing it is safe.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	if err := exec.Command(dst, installArgs...).Start(); err != nil {
 		return err
 	}
 	fmt.Println("update package is ready to install")
