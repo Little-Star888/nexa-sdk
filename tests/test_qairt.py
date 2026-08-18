@@ -16,11 +16,15 @@ from _quality_data import (
     LLM_QUALITY_PROMPTS,
     LLM_QUALITY_SEED,
     LLM_QUALITY_TEMPERATURE,
+    PARITY_INPUT_IDS,
+    PARITY_QAIRT_KL_MAX,
     VLM_QUALITY_KEYWORDS,
     VLM_QUALITY_MAX_NEW_TOKENS,
     VLM_QUALITY_PROMPT,
     VLM_QUALITY_SEED,
     VLM_QUALITY_TEMPERATURE,
+    parity_kl_divergence,
+    parity_top1_agreement,
 )
 
 
@@ -141,6 +145,26 @@ def test_llm_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
         assert matched, (
             f'prompt={prompt!r} expected_substring={expected!r} ' f'device_map={device_map!r} got={out.text!r}'
         )
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', ['npu'])
+def test_llm_logits_self_consistency(qairt_llm_paths, device_map):
+    def _forward() -> tuple[list[list[tuple[int, float]]], list[float]]:
+        with geniex.AutoModelForCausalLM.from_pretrained(
+            QAIRT_LLM_MODEL,
+            device_map=device_map,
+        ) as llm:
+            top1_rows = llm.forward_logits(PARITY_INPUT_IDS, all_positions=True, top_n=1)
+            last_row = llm.forward_logits(PARITY_INPUT_IDS, all_positions=False, top_n=0)[0]
+        return top1_rows, last_row
+
+    ref_top1, ref_last = _forward()
+    cand_top1, cand_last = _forward()
+    agree = parity_top1_agreement(ref_top1, cand_top1)
+    kl = parity_kl_divergence(ref_last, cand_last)
+    assert agree == 1.0, f'device_map={device_map!r} top1={agree:.3f} != 1.0'
+    assert kl <= PARITY_QAIRT_KL_MAX, f'device_map={device_map!r} KL={kl:.6f} > {PARITY_QAIRT_KL_MAX}'
 
 
 @pytest.mark.vlm
