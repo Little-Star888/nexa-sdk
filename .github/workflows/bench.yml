@@ -98,7 +98,7 @@ jobs:
     name: ${{ matrix.device }} · ${{ matrix.model.plugin }} · ${{ matrix.model.name }}
     needs: [build-sdk, load-models]
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 355 # just under the GitHub-hosted 6h job hard cap
     strategy:
       fail-fast: false
       max-parallel: 4
