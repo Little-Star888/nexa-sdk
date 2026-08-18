@@ -29,50 +29,6 @@ void throw_runtime_exception(JNIEnv *env, const char *_Nonnull format, ...) {
     }
 }
 
-jobject create_java_profile_data(JNIEnv *env, geniex_ProfileData data) {
-    jclass cls = env->FindClass("com/geniex/sdk/bean/ProfilingData");
-    if (!cls) return nullptr;
-
-    // (DDDJJDDLjava/lang/String;)V
-    jmethodID ctor = env->GetMethodID(cls, "<init>", "(DDDJJDDLjava/lang/String;)V");
-    if (!ctor) return nullptr;
-
-    const auto ttft_ms   = static_cast<jdouble>(data.ttft / 1000.0);
-    const auto prompt_ms = static_cast<jdouble>(data.prompt_time / 1000.0);
-    const auto decode_ms = static_cast<jdouble>(data.decode_time / 1000.0);
-
-    const auto prompt_tokens = static_cast<jlong>(data.prompt_tokens);
-    const auto gen_tokens    = static_cast<jlong>(data.generated_tokens);
-
-    // ---- compute speeds locally (tokens/sec) ----
-    auto tok_per_s = [](int64_t tokens, int64_t time_us) -> jdouble {
-        if (time_us <= 0) return 0.0;
-        return static_cast<jdouble>(tokens) * 1e6 / static_cast<jdouble>(time_us);
-    };
-
-    const jdouble prefill_speed  = tok_per_s(data.prompt_tokens, data.prompt_time);
-    const jdouble decoding_speed = tok_per_s(data.generated_tokens, data.decode_time);
-
-    LOGd("prefill_speed=%.6f tok/s, decoding_speed=%.6f tok/s", prefill_speed, decoding_speed);
-
-    jstring jStopReason = env->NewStringUTF(data.stop_reason ? data.stop_reason : "");
-
-    jobject obj = env->NewObject(cls,
-        ctor,
-        ttft_ms,
-        prompt_ms,
-        decode_ms,  // D D D
-        prompt_tokens,
-        gen_tokens,  // J J
-        prefill_speed,
-        decoding_speed,  // D D
-        jStopReason      // String
-    );
-
-    env->DeleteLocalRef(jStopReason);
-    return obj;
-}
-
 bool check_jni_exception(JNIEnv *env, const char *where) {
     if (env->ExceptionCheck()) {
         LOGe("Exception at %s", where);

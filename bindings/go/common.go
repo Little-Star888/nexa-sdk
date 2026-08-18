@@ -15,6 +15,7 @@ import (
 
 type ProfileData struct {
 	TTFT            int64
+	MediaTime       int64
 	PromptTime      int64
 	DecodeTime      int64
 	PromptTokens    int64
@@ -31,13 +32,14 @@ func (p ProfileData) TotalTokens() int64 {
 }
 
 func (p ProfileData) TotalTimeUs() int64 {
-	return p.PromptTime + p.DecodeTime
+	return p.MediaTime + p.PromptTime + p.DecodeTime
 }
 
 // LCOV_EXCL_START
 func newProfileDataFromCPtr(c C.geniex_ProfileData) ProfileData {
 	return ProfileData{
 		TTFT:            int64(c.ttft),
+		MediaTime:       int64(c.media_time),
 		PromptTime:      int64(c.prompt_time),
 		DecodeTime:      int64(c.decode_time),
 		PromptTokens:    int64(c.prompt_tokens),

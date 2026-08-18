@@ -214,3 +214,26 @@ Run `geniex update` to upgrade:
 - **Linux** — prints the install-script one-liner to re-run (`curl -fsSL … | bash`); auto-update is not wired up yet.
 
 Pass `--skip-update` on any command to skip the probe (and the notify banner) entirely for that invocation.
+
+## Performance metrics
+
+`--verbose` (and the Go/Python APIs' `ProfileData`, and `geniex-bench`) report one number per inference phase. Which metric covers which phase:
+
+| Metric | Field | Phase it measures |
+|--------|-------|-------------------|
+| `ttft` | `ttft` | Start of generate → first sampled token. For a VLM this **includes** the media encoder, so it is *not* comparable to a pure prefill number. |
+| media time | `media_time` | The vision/audio **encoder** only — turning pixels/audio into decoder-space embeddings. `0` on text-only runs. |
+| prompt / prefill time | `prompt_time` | Prefill — running the prompt tokens through the model. On a VLM this includes prefilling the media (soft) tokens; it excludes the encoder. |
+| prompt / prefill speed | `prefill_speed` | `prompt_tokens / prompt_time`. |
+| decode time / speed | `decode_time` / `decoding_speed` | Generation phase (first token → last token). |
+
+Key points:
+
+- **`media_time` is the encoder only.** Everything downstream of the encoder (prefilling the media tokens through the model) lives in `prompt_time`, same as text.
+- **`prompt_tokens` counts text + media tokens** on a VLM run, so `prefill_speed` reflects the full prefill the model actually did.
+- `ttft` spans encoder + prefill, so `ttft ≈ media_time + prompt_time` for a VLM.
+
+Both runtimes measure `media_time` at the same boundary (encoder wall time only), so the numbers are comparable across plugins:
+
+- **llama.cpp** — timed per-chunk: the encode (`mtmd_encode_chunk`) is `media_time`; prefilling the embeddings (`mtmd_helper_decode_image_chunk` → `llama_decode`) goes to `prompt_time`, same as text chunks. Bitmap loading and tokenization are timed by neither, so they fall only in `ttft`; `ttft ≈ media_time + prompt_time` up to that overhead.
+- **QAIRT** — `media_time` is the encoder wall time (`encodeVision`); the media-token NPU prefill stays in `prompt_time` (= `ttft − media_time`). QAIRT's `prompt_time` is derived from `ttft`, so treat it as indicative, not exact. The encoder number itself is directly measured.

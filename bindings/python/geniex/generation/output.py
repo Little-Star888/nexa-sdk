@@ -24,6 +24,7 @@ def _format_us(us: int) -> str:
 @dataclass(repr=False)
 class ProfileData:
     ttft: int = 0
+    media_time: int = 0
     prompt_time: int = 0
     decode_time: int = 0
     prompt_tokens: int = 0
@@ -43,6 +44,7 @@ class ProfileData:
         stop = c.stop_reason.decode() if c.stop_reason else None
         return cls(
             ttft=c.ttft,
+            media_time=c.media_time,
             prompt_time=c.prompt_time,
             decode_time=c.decode_time,
             prompt_tokens=c.prompt_tokens,
@@ -58,6 +60,7 @@ class ProfileData:
         return (
             f'ProfileData('
             f'ttft={_format_us(self.ttft)}, '
+            f'media_time={_format_us(self.media_time)}, '
             f'prompt_time={_format_us(self.prompt_time)}, '
             f'decode_time={_format_us(self.decode_time)}, '
             f'prompt_tokens={self.prompt_tokens} tok, '

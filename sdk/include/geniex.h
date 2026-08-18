@@ -349,10 +349,11 @@ GENIEX_API int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input,
 /** Profile data structure for performance metrics */
 typedef struct {
     int64_t ttft;        /* Time to first token (us) */
-    int64_t prompt_time; /* Prompt processing time (us) */
+    int64_t media_time;  /* Image/audio encoder time (us); 0 for text-only runs */
+    int64_t prompt_time; /* Prefill time (us); includes media-token prefill, excludes encoder */
     int64_t decode_time; /* Token generation time (us) */
 
-    int64_t prompt_tokens;    /* Number of prompt tokens */
+    int64_t prompt_tokens;    /* Number of prompt tokens (text + media tokens) */
     int64_t generated_tokens; /* Number of generated tokens */
 
     double prefill_speed;  /* Prefill speed (tokens/sec) */

@@ -271,11 +271,12 @@ jobject extract_profiling_data(JNIEnv* env, const geniex_ProfileData& data) {
     jclass cls = env->FindClass("com/geniex/sdk/bean/ProfilingData");
     if (!cls) return nullptr;
 
-    // (DDDJJDDJJLjava/lang/String;)V
-    jmethodID ctor = env->GetMethodID(cls, "<init>", "(DDDJJDDJJLjava/lang/String;)V");
+    // (DDDDJJDDJJLjava/lang/String;)V
+    jmethodID ctor = env->GetMethodID(cls, "<init>", "(DDDDJJDDJJLjava/lang/String;)V");
     if (!ctor) return nullptr;
 
     const jdouble ttft_ms   = static_cast<jdouble>(data.ttft / 1000.0);
+    const jdouble media_ms  = static_cast<jdouble>(data.media_time / 1000.0);
     const jdouble prompt_ms = static_cast<jdouble>(data.prompt_time / 1000.0);
     const jdouble decode_ms = static_cast<jdouble>(data.decode_time / 1000.0);
 
@@ -301,8 +302,9 @@ jobject extract_profiling_data(JNIEnv* env, const geniex_ProfileData& data) {
     jobject obj = env->NewObject(cls,
         ctor,
         ttft_ms,
+        media_ms,
         prompt_ms,
-        decode_ms,  // D D D
+        decode_ms,  // D D D D
         prompt_tokens,
         gen_tokens,  // J J
         prefill_speed,

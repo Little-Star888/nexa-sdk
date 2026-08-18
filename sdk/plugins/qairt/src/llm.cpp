@@ -260,13 +260,14 @@ int32_t QairtLlm::generate(const geniex_LlmGenerateInput* input, geniex_LlmGener
 
     // Profile data (convert ms -> us)
     output->profile_data.ttft             = static_cast<int64_t>(result.ttft_ms * 1000.0);
+    output->profile_data.media_time       = 0;                          // text-only
     output->profile_data.prompt_time      = output->profile_data.ttft;  // approximate
     output->profile_data.decode_time      = static_cast<int64_t>(result.decode_ms * 1000.0);
     output->profile_data.prompt_tokens    = result.prompt_tokens;
     output->profile_data.generated_tokens = result.generated_tokens;
-    output->profile_data.decoding_speed   = result.tokens_per_second;
     output->profile_data.prefill_speed =
         result.prompt_tokens > 0 && result.ttft_ms > 0.0 ? result.prompt_tokens / (result.ttft_ms / 1000.0) : 0.0;
+    output->profile_data.decoding_speed = result.tokens_per_second;
 
     // Stop Reason
     if (result.stop_reason == "user") {

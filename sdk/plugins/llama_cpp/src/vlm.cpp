@@ -197,7 +197,6 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
     }
 
     common::Profiler profiler;
-    profiler.prompt_start();
 
     int32_t res = GENIEX_SUCCESS;
 
@@ -206,7 +205,8 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
 
     this->set_sampler(cfg.sampler_config);
 
-    // Prepare multimodal input: collect bitmaps for images and audio
+    // Bitmap loading and tokenization fall outside both media_time and
+    // prompt_time (only the chunk loop below is timed), so they show up in ttft.
     std::vector<mtmd_bitmap*> bitmaps;
     int                       n_media = 0;
 
@@ -297,23 +297,70 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
                 return GENIEX_ERROR_VLM_GENERATION_FAILED;
             }
 
-            // Evaluate chunks (like eval_message does). 1 means the prompt does
-            // not fit the KV cache: since this is prefill, the prompt itself is
-            // too long, not a generic failure.
-            llama_pos new_n_past = this->n_past;
-            switch (mtmd_helper_eval_chunks(
-                this->ctx_vision, this->ctx, chunks, this->n_past, 0, llama_n_batch(this->ctx), true, &new_n_past)) {
-                case 0:
-                    profiler.update_prompt_tokens(new_n_past - this->n_past);
-                    this->n_past = new_n_past;
-                    break;
-                case 1:
-                    res = GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG;
-                    break;
-                default:
-                    GENIEX_LOG_ERROR("mtmd_helper_eval_chunks failed");
-                    res = GENIEX_ERROR_VLM_GENERATION_FAILED;
-                    break;
+            // Time each phase separately: encoder → media_time, decode/prefill →
+            // prompt_time. prompt_tokens counts text + media tokens.
+            const size_t  n_chunks      = mtmd_input_chunks_size(chunks);
+            const int32_t n_batch       = llama_n_batch(this->ctx);
+            llama_pos     n_past_cur    = this->n_past;
+            uint32_t      prompt_tokens = 0;
+            for (size_t i = 0; i < n_chunks && res == GENIEX_SUCCESS; ++i) {
+                const mtmd_input_chunk* chunk    = mtmd_input_chunks_get(chunks, i);
+                const bool              is_media = mtmd_input_chunk_get_type(chunk) != MTMD_INPUT_CHUNK_TYPE_TEXT;
+                const bool              is_last  = (i == n_chunks - 1);
+                // Token count, not KV positions (differ under M-RoPE; KV uses new_n_past).
+                const size_t n_tokens = mtmd_input_chunk_get_n_tokens(chunk);
+
+                llama_pos new_n_past = n_past_cur;
+                int32_t   ret;
+                if (is_media) {
+                    profiler.media_start();
+                    ret = mtmd_encode_chunk(this->ctx_vision, chunk);
+                    profiler.media_end();
+                    if (ret != 0) {
+                        // encode returns 1 on a generic error, not KV-full: fail, don't truncate.
+                        GENIEX_LOG_ERROR("media chunk encoding failed");
+                        res = GENIEX_ERROR_VLM_GENERATION_FAILED;
+                        break;
+                    }
+                    float* embd = mtmd_get_output_embd(this->ctx_vision);
+                    profiler.prompt_start();
+                    ret = mtmd_helper_decode_image_chunk(this->ctx_vision,
+                        this->ctx,
+                        chunk,
+                        embd,
+                        n_past_cur,
+                        0,
+                        n_batch,
+                        &new_n_past,
+                        nullptr,
+                        nullptr);
+                    profiler.prompt_end();
+                } else {
+                    profiler.prompt_start();
+                    ret = mtmd_helper_eval_chunk_single(
+                        this->ctx_vision, this->ctx, chunk, n_past_cur, 0, n_batch, is_last, &new_n_past);
+                    profiler.prompt_end();
+                }
+
+                // This is prefill: a return of 1 (KV cache full) means the prompt
+                // itself is too long, not a generic failure.
+                switch (ret) {
+                    case 0:
+                        prompt_tokens += (uint32_t)n_tokens;
+                        n_past_cur = new_n_past;
+                        break;
+                    case 1:
+                        res = GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG;
+                        break;
+                    default:
+                        GENIEX_LOG_ERROR("chunk evaluation failed");
+                        res = GENIEX_ERROR_VLM_GENERATION_FAILED;
+                        break;
+                }
+            }
+            if (res == GENIEX_SUCCESS) {
+                profiler.update_prompt_tokens(prompt_tokens);
+                this->n_past = n_past_cur;
             }
             mtmd_input_chunks_free(chunks);
         } else {
@@ -322,7 +369,6 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
             GENIEX_LOG_DEBUG("no new text content, skipping mtmd processing");
         }
 
-        profiler.prompt_end();
         profiler.decode_start();
     } else {
         GENIEX_LOG_DEBUG("using text-only (direct llama) path");
@@ -351,10 +397,7 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
 
             GENIEX_LOG_DEBUG("_ml_vlm_generate_internal: Tokenized new text portion into {} tokens", prompt_len);
 
-            // Record prompt processing end and decode start
-            profiler.prompt_end();
             profiler.update_prompt_tokens(prompt_len);
-            profiler.decode_start();
 
             llama_batch batch = llama_batch_get_one(prompt_tokens, prompt_len);
             // Set positions based on current n_past
@@ -362,7 +405,10 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
                 batch.pos[i] = this->n_past + i;
             }
 
+            profiler.prompt_start();
             int32_t decode_ret = llama_decode(this->ctx, batch);
+            profiler.prompt_end();
+            profiler.decode_start();
             free(prompt_tokens);
             // 1 means the prompt does not fit the KV cache: since this is
             // prefill, the prompt itself is too long, not a generic failure.
