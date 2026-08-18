@@ -532,6 +532,10 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 		checkAudioDependency()
 	}
 
+	// Warn once per unsupported modality; feeding an audio path to a
+	// vision-only model corrupts the run (the pipeline has no audio encoder).
+	warnedAudio, warnedImage := false, false
+
 	var history []geniex_sdk.VlmChatMessage
 	if systemPrompt != "" {
 		history = append(history, geniex_sdk.VlmChatMessage{Role: geniex_sdk.VlmRoleSystem, Contents: []geniex_sdk.VlmContent{{Type: geniex_sdk.VlmContentTypeText, Text: systemPrompt}}})
@@ -549,6 +553,21 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 			return err
 		},
 		Run: func(prompt string, images, audios []string, onToken func(string) bool) (string, geniex_sdk.ProfileData, error) {
+			if len(audios) > 0 && !caps.SupportsAudio {
+				if !warnedAudio {
+					fmt.Println(render.GetTheme().Warning.Sprint("Warning: this model does not support audio; ignoring audio input."))
+					warnedAudio = true
+				}
+				audios = nil
+			}
+			if len(images) > 0 && !caps.SupportsVision {
+				if !warnedImage {
+					fmt.Println(render.GetTheme().Warning.Sprint("Warning: this model does not support images; ignoring image input."))
+					warnedImage = true
+				}
+				images = nil
+			}
+
 			msg := geniex_sdk.VlmChatMessage{Role: geniex_sdk.VlmRoleUser}
 			msg.Contents = append(msg.Contents, geniex_sdk.VlmContent{Type: geniex_sdk.VlmContentTypeText, Text: prompt})
 			for _, image := range images {
