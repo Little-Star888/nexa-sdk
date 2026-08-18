@@ -585,7 +585,13 @@ def main() -> int:
     )
     p.add_argument("--cells-out", type=Path, help="write the per-cell JSON list here")
     p.add_argument("--render-dir", type=Path, help="render mode: aggregate JSON here")
-    p.add_argument("--job-timeout", type=int, default=7200)
+    p.add_argument(
+        "--job-timeout",
+        type=int,
+        default=19800,
+        help="host poll and QDC reservation seconds; default 330 min leaves "
+        "headroom for log upload under the GitHub-hosted 6h job cap",
+    )
     args = p.parse_args()
 
     if args.render_dir:
