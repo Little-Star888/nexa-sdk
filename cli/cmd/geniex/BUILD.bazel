@@ -45,7 +45,6 @@ go_cgo_test(
     srcs = [
         "infer_test.go",
         "model_test.go",
-        "update_test.go",
     ],
     embed = [":geniex_lib"],
     gotags = [

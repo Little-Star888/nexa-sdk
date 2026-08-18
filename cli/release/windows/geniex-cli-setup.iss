@@ -77,7 +77,10 @@ begin
     Exit;
   end;
 
-  if (not Exec(RemoveQuotes(UninstallString), '/VERYSILENT', '', SW_HIDE, ewWaitUntilTerminated, ResultCode))
+  { Run the previous uninstaller the same way we were launched: fully silent
+    and hidden for `geniex update --silent` (/VERYSILENT), otherwise the
+    original visible /SILENT behavior. }
+  if (not Exec(RemoveQuotes(UninstallString), IfThen(IsSilent(), '/VERYSILENT', '/SILENT'), '', IfThen(IsSilent(), SW_HIDE, SW_SHOW), ewWaitUntilTerminated, ResultCode))
      or (ResultCode <> 0) then
   begin
     MsgBox(Format('Uninstall failed (ErrCode: %d).', [ResultCode]), mbError, MB_OK);
