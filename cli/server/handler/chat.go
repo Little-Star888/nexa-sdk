@@ -321,12 +321,15 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 		if !parseTool && reasoningSeparated(param.ReasoningFormat) {
 			class = reasoningClass()
 		}
-		profile, fullText, err := gen(prompt, sink(class, &content, &reasoning))
-		if errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
-			writeContextLengthExceeded(c, fullText, profile)
+		profile, _, err := gen(prompt, sink(class, &content, &reasoning))
+		// A prompt that never fit is a client error (400). A window exhausted
+		// mid-generation is a normal truncated completion (finish_reason=length),
+		// so it falls through to the regular response below.
+		if errors.Is(err, geniex_sdk.ErrLlmGenerationPromptTooLong) {
+			writePromptTooLong(c, profile)
 			return
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
 			c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return
 		}

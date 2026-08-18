@@ -298,7 +298,8 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
             }
 
             // Evaluate chunks (like eval_message does). 1 means the prompt does
-            // not fit the KV cache: report truncation, not a generic failure.
+            // not fit the KV cache: since this is prefill, the prompt itself is
+            // too long, not a generic failure.
             llama_pos new_n_past = this->n_past;
             switch (mtmd_helper_eval_chunks(
                 this->ctx_vision, this->ctx, chunks, this->n_past, 0, llama_n_batch(this->ctx), true, &new_n_past)) {
@@ -307,7 +308,7 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
                     this->n_past = new_n_past;
                     break;
                 case 1:
-                    res = GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+                    res = GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG;
                     break;
                 default:
                     GENIEX_LOG_ERROR("mtmd_helper_eval_chunks failed");
@@ -363,13 +364,14 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
 
             int32_t decode_ret = llama_decode(this->ctx, batch);
             free(prompt_tokens);
-            // 1 means the prompt does not fit the KV cache: report truncation, not a generic failure.
+            // 1 means the prompt does not fit the KV cache: since this is
+            // prefill, the prompt itself is too long, not a generic failure.
             switch (decode_ret) {
                 case 0:
                     this->n_past += prompt_len;
                     break;
                 case 1:
-                    res = GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
+                    res = GENIEX_ERROR_LLM_GENERATION_PROMPT_TOO_LONG;
                     break;
                 default:
                     GENIEX_LOG_ERROR("llama_decode failed");

@@ -41,25 +41,16 @@ func writeKeepAliveError(c *gin.Context, err error) bool {
 	return true
 }
 
-// OpenAI's 400 body, plus the partial generation under `choices` so clients can
-// recover the truncated output.
-func writeContextLengthExceeded(c *gin.Context, fullText string, profile geniex_sdk.ProfileData) {
-	choice := openai.ChatCompletionChoice{
-		FinishReason: "length",
-		Message: openai.ChatCompletionMessage{
-			Role:    constant.Assistant(openai.MessageRoleAssistant),
-			Content: fullText,
-		},
-	}
-
+// OpenAI's 400 body for a prompt that is longer than the context window. No
+// partial output exists (nothing was generated), so this returns only the error.
+func writePromptTooLong(c *gin.Context, profile geniex_sdk.ProfileData) {
 	c.JSON(http.StatusBadRequest, map[string]any{
 		"error": map[string]any{
-			"message": "model context window exceeded; output truncated",
+			"message": "prompt is longer than the model's context window",
 			"type":    "invalid_request_error",
 			"code":    "context_length_exceeded",
 		},
-		"choices": []openai.ChatCompletionChoice{choice},
-		"usage":   profile2Usage(profile),
+		"usage": profile2Usage(profile),
 	})
 }
 

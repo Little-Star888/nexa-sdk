@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -98,7 +99,10 @@ func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, in
 			}
 			return true
 		}
-		if err := wait(); err != nil {
+		// A context window exhausted mid-stream is a normal truncated completion
+		// (finish_reason=length): fall through to the finish chunk. Other errors
+		// (including a too-long prompt) are surfaced as an error event.
+		if err := wait(); err != nil && !errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
@@ -121,7 +125,10 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 			buffer.WriteString(r)
 			return true
 		}
-		if err := wait(); err != nil {
+		// A context window exhausted mid-stream is a normal truncated completion:
+		// fall through and emit what was buffered. Other errors (including a
+		// too-long prompt) are surfaced as an error event.
+		if err := wait(); err != nil && !errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
 			slog.Error("Generation error", "error", err)
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false

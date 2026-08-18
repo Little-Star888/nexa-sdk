@@ -48,6 +48,13 @@ const (
 - This model may not be compatible with your system. Try another model.
 - See help in our discord or slack.`
 
+	hintPromptTooLong = `⚠️ Prompt too long — the input alone is longer than the context window.
+
+👉 Try these:
+- Shorten the prompt (or the conversation history) so it fits the window.
+- llama_cpp: raise the window with '--nctx <N>' (default 4096), up to the model's trained max. Larger windows use more memory.
+- qairt: the window is fixed at compile time and can't be raised at runtime. Add '--sliding-window' to evict the oldest context, or pull a bundle built for a longer context.`
+
 	hintContextLength = `⚠️ Context length exceeded — the conversation outgrew the context window.
 
 👉 Try these:
@@ -129,6 +136,7 @@ var errorHints = []struct {
 	{geniex_sdk.ErrCommonModelLoad, hintModelLoad},
 	{geniex_sdk.ErrCommonPluginLoad, hintPluginLoad},
 	{geniex_sdk.ErrCommonPluginInvalid, hintPluginInvalid},
+	{geniex_sdk.ErrLlmGenerationPromptTooLong, hintPromptTooLong},
 	{geniex_sdk.ErrLlmTokenizationContextLength, hintContextLength},
 	{geniex_sdk.ErrCommonAuth, hintHubAuthRequired},
 	{geniex_sdk.ErrCommonHubModelNotFound, hintModelNotFound},

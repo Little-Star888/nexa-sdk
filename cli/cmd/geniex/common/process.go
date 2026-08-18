@@ -122,6 +122,15 @@ func (p *Processor) Process() error {
 		case errors.Is(err, ErrNoImage):
 			fmt.Println(render.GetTheme().Error.Sprintf("No image file provided, please provide an image file"))
 			fmt.Println()
+		case errors.Is(err, geniex_sdk.ErrLlmGenerationPromptTooLong):
+			if p.Reset != nil {
+				if resetErr := p.Reset(); resetErr != nil {
+					return resetErr
+				}
+			}
+			fmt.Println(render.GetTheme().Error.Sprintf("Prompt is longer than the context window; conversation is reset."))
+			fmt.Println(render.GetTheme().Error.Sprintf("Raise it with --nctx <N> (llama_cpp; larger uses more memory), or add --sliding-window (qairt)."))
+			fmt.Println()
 		case errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength):
 			if p.Reset != nil {
 				if resetErr := p.Reset(); resetErr != nil {
