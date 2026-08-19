@@ -3,6 +3,7 @@
 
 #include "vlm.h"
 
+#include <algorithm>
 #include <cstring>
 #include <nlohmann/json.hpp>
 
@@ -124,8 +125,9 @@ int32_t LlamaVlm::reset() {
     // leave cache state inconsistent with n_past. Keep this aligned with LlamaLlm::reset().
     llama_memory_clear(llama_get_memory(this->ctx), /*clear data=*/true);
 
-    this->n_past              = 0;
-    this->global_n_past_chars = 0;
+    this->n_past = 0;
+    this->past_prompt.clear();
+    this->past_gen.clear();
 
     return GENIEX_SUCCESS;
 }
@@ -257,17 +259,32 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
 
     GENIEX_LOG_DEBUG("total media files loaded: {}", n_media);
 
-    // Get the full prompt length for tracking
-    const int32_t full_prompt_len = (int32_t)strlen(input->prompt_utf8);
-    GENIEX_LOG_DEBUG("full prompt length: {}, global_text_pos: {}", full_prompt_len, this->global_n_past_chars);
+    // Incremental text to feed (see vlm.h). Mismatch breaks append-only — fail.
+    const std::string full_prompt(input->prompt_utf8);
 
-    // Extract only the new text portion that hasn't been processed yet
     std::string new_text_portion;
-    if (this->global_n_past_chars < full_prompt_len) {
-        new_text_portion = std::string(input->prompt_utf8 + this->global_n_past_chars);
-        GENIEX_LOG_DEBUG("new text portion length: {}", new_text_portion.length());
+    if (this->n_past == 0 || this->past_prompt.empty()) {
+        new_text_portion = full_prompt;
     } else {
-        GENIEX_LOG_DEBUG("no new text to process (global_text_pos >= full_prompt_len)");
+        size_t lcp     = 0;
+        size_t lcp_max = std::min(full_prompt.size(), this->past_prompt.size());
+        while (lcp < lcp_max && full_prompt[lcp] == this->past_prompt[lcp]) ++lcp;
+
+        const size_t reuse_end = lcp + this->past_gen.size();
+        const bool   gen_matches =
+            reuse_end <= full_prompt.size() && full_prompt.compare(lcp, this->past_gen.size(), this->past_gen) == 0;
+
+        if (!gen_matches) {
+            GENIEX_LOG_ERROR("prefix reuse failed: prompt[{}:{}] does not match last generation (|G|={})",
+                lcp,
+                reuse_end,
+                this->past_gen.size());
+            return GENIEX_ERROR_VLM_GENERATION_FAILED;
+        }
+
+        new_text_portion = full_prompt.substr(reuse_end);
+        GENIEX_LOG_DEBUG(
+            "prefix reuse: |A|={}, |G|={}, increment={} bytes", lcp, this->past_gen.size(), new_text_portion.size());
     }
 
     // Use mtmd path when ctx_vision is available, fallback to direct llama path otherwise
@@ -518,7 +535,9 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
     auto full_text_str = full_text.str();
     output->full_text  = strdup(full_text_str.c_str());
     if (generated_token_count > 0) {
-        this->global_n_past_chars = full_prompt_len + full_text_str.length();
+        // Record this turn so the next can reuse A+T+G (see vlm.h).
+        this->past_prompt = full_prompt;
+        this->past_gen    = full_text_str;
     }
 
     GENIEX_LOG_DEBUG("completed generation with {} tokens", generated_token_count);
