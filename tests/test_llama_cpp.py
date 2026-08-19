@@ -23,15 +23,21 @@ from _quality_data import (
     LLM_QUALITY_PROMPTS,
     LLM_QUALITY_SEED,
     LLM_QUALITY_TEMPERATURE,
+    PARITY_INPUT_IDS,
+    PARITY_KL_MAX,
+    PARITY_TOP1_MIN,
     VLM_QUALITY_KEYWORDS,
     VLM_QUALITY_MAX_NEW_TOKENS,
     VLM_QUALITY_PROMPT,
     VLM_QUALITY_SEED,
     VLM_QUALITY_TEMPERATURE,
+    parity_kl_divergence,
+    parity_top1_agreement,
 )
 
 _LLM_BACKENDS = ['cpu', 'gpu', 'npu']
 _VLM_BACKENDS = ['cpu', 'gpu', 'npu']
+_PARITY_CANDIDATES = ['gpu', 'npu', 'hybrid']
 
 
 def test_model_manager_pull(llama_cpp_llm_paths, llama_cpp_vlm_paths, llama_cpp_mtp_paths):
@@ -179,6 +185,28 @@ def test_vlm_quality_keywords(llama_cpp_vlm_paths, quality_image, device_map):
             f'device_map={device_map!r} keywords={VLM_QUALITY_KEYWORDS} '
             f'got={out.text!r}'
         )
+
+
+def _forward_parity(device_map: str) -> tuple[list[list[tuple[int, float]]], list[float]]:
+    with geniex.AutoModelForCausalLM.from_pretrained(
+        LLAMA_CPP_LLM_MODEL,
+        precision=LLAMA_CPP_LLM_PRECISION,
+        device_map=device_map,
+    ) as llm:
+        top1_rows = llm.forward_logits(PARITY_INPUT_IDS, all_positions=True, top_n=1)
+        last_row = llm.forward_logits(PARITY_INPUT_IDS, all_positions=False, top_n=0)[0]
+    return top1_rows, last_row
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize('device_map', _PARITY_CANDIDATES)
+def test_llm_logits_parity(llama_cpp_llm_paths, device_map):
+    ref_top1, ref_last = _forward_parity('cpu')
+    cand_top1, cand_last = _forward_parity(device_map)
+    agree = parity_top1_agreement(ref_top1, cand_top1)
+    kl = parity_kl_divergence(ref_last, cand_last)
+    assert agree >= PARITY_TOP1_MIN, f'device_map={device_map!r} top1={agree:.3f} < {PARITY_TOP1_MIN}'
+    assert kl <= PARITY_KL_MAX, f'device_map={device_map!r} KL={kl:.4f} > {PARITY_KL_MAX}'
 
 
 @pytest.mark.llm
