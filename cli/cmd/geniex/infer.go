@@ -28,24 +28,23 @@ import (
 
 var (
 	// disableStream *bool // reuse in run.go
-	ngl            int32
-	nctx           int32
-	maxTokens      int32
-	stop           []string
-	stopFile       string
-	enableThink    bool
-	prompt         []string
-	tokenFile      string
-	input          string
-	systemPrompt   string
-	computeUnit    string
-	deviceOverride string
-	slidingWindow  bool
-	specType       string
-	draftModel     string
-	draftTokens    int32
-	draftMin       int32
-	draftPMin      float32
+	ngl           int32
+	nctx          int32
+	maxTokens     int32
+	stop          []string
+	stopFile      string
+	enableThink   bool
+	prompt        []string
+	tokenFile     string
+	input         string
+	systemPrompt  string
+	computeUnit   string
+	slidingWindow bool
+	specType      string
+	draftModel    string
+	draftTokens   int32
+	draftMin      int32
+	draftPMin     float32
 
 	// sampler config
 	temperature       float32
@@ -80,8 +79,7 @@ var (
 	llmFlags = func() *pflag.FlagSet {
 		llmFlags := pflag.NewFlagSet("LLM/VLM Model", pflag.ExitOnError)
 		llmFlags.SortFlags = false
-		llmFlags.StringVarP(&computeUnit, "compute", "c", "", "compute unit to run on: cpu, gpu, npu, or hybrid (default: npu)")
-		llmFlags.StringVarP(&deviceOverride, "device", "", "", "override device list, e.g. HTP0,HTP1,HTP2,HTP3; bypasses --compute for device selection (llama_cpp only)")
+		llmFlags.StringVarP(&computeUnit, "compute", "c", "", "compute unit to run on: cpu, gpu, npu, hybrid, or an explicit device list like HTP0,HTP1,HTP2,HTP3 (llama_cpp only) (default: npu)")
 		llmFlags.Int32VarP(&ngl, "ngl", "n", -1, "number of layers to offload to gpu/npu, -1 = all (llama_cpp only)")
 		llmFlags.Int32VarP(&nctx, "nctx", "", 4096, "context window size; raise to extend context (llama_cpp only)")
 		llmFlags.Int32VarP(&maxTokens, "max-tokens", "", 2048, "max tokens")
@@ -296,15 +294,6 @@ func resolveModelParams(runtimeID, modelName string) (deviceID string, resolvedN
 	resolvedNgl = resolved.Ngl
 	if resolved.Warning != "" {
 		fmt.Println(render.GetTheme().Warning.Sprintf("Warning: %s", resolved.Warning))
-	}
-
-	if deviceOverride != "" {
-		if runtimeID == geniex_sdk.RuntimeLlamaCpp {
-			deviceID = deviceOverride
-		} else {
-			fmt.Println(render.GetTheme().Warning.Sprintf(
-				"Warning: --device is only supported by llama_cpp; ignoring for runtime %s", runtimeID))
-		}
 	}
 	return
 }
@@ -602,11 +591,11 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 				PromptUTF8: tmplOut.FormattedText,
 				OnToken:    onToken,
 				Config: &geniex_sdk.GenerationConfig{
-					MaxTokens:      maxTokens,
-					Stop:           stopSequences,
-					SamplerConfig:  samplerConfig,
-					ImagePaths:     images,
-					AudioPaths:     audios,
+					MaxTokens:     maxTokens,
+					Stop:          stopSequences,
+					SamplerConfig: samplerConfig,
+					ImagePaths:    images,
+					AudioPaths:    audios,
 				},
 			})
 			if err != nil {
