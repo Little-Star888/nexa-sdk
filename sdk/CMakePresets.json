@@ -38,6 +38,18 @@
       }
     },
     {
+      "name": "cpu-only",
+      "hidden": true,
+      "cacheVariables": {
+        "GENIEX_PLUGIN_LLAMA_CPP": "ON",
+        "GENIEX_PLUGIN_QAIRT": "OFF",
+        "GGML_HEXAGON": "OFF",
+        "GGML_OPENCL": "OFF",
+        "GENIEX_BENCHMARK": "ON",
+        "GENIEX_CPU_ONLY": "ON"
+      }
+    },
+    {
       "name": "arm64-windows-snapdragon",
       "hidden": true,
       "generator": "Ninja",
@@ -89,6 +101,22 @@
       }
     },
     {
+      "name": "arm64-linux-cpu",
+      "hidden": true,
+      "architecture": {
+        "value": "arm64",
+        "strategy": "external"
+      },
+      "toolset": {
+        "value": "host=x86_64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/arm64-linux-gnu-cpu.cmake",
+        "PREBUILT_LIB_DIR": "linux_aarch64"
+      }
+    },
+    {
       "name": "default",
       "displayName": "Default (SDK Release)",
       "description": "Build SDK in Release mode with standard options",
@@ -117,6 +145,14 @@
     {
       "name": "arm64-linux-snapdragon-release",
       "inherits": ["arm64-linux-snapdragon", "snapdragon", "release", "base"]
+    },
+    {
+      "name": "arm64-linux-cpu-debug",
+      "inherits": ["arm64-linux-cpu", "cpu-only", "debug", "base"]
+    },
+    {
+      "name": "arm64-linux-cpu-release",
+      "inherits": ["arm64-linux-cpu", "cpu-only", "release", "base"]
     }
   ],
   "buildPresets": [
@@ -153,6 +189,16 @@
     {
       "name": "arm64-linux-snapdragon-release",
       "configurePreset": "arm64-linux-snapdragon-release",
+      "jobs": 0
+    },
+    {
+      "name": "arm64-linux-cpu-debug",
+      "configurePreset": "arm64-linux-cpu-debug",
+      "jobs": 0
+    },
+    {
+      "name": "arm64-linux-cpu-release",
+      "configurePreset": "arm64-linux-cpu-release",
       "jobs": 0
     }
   ]
