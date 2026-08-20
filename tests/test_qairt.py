@@ -134,6 +134,7 @@ def test_llm_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
             [{'role': 'user', 'content': prompt}],
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=False,
         )
         out = llm.generate(
             formatted,
@@ -142,6 +143,11 @@ def test_llm_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
             seed=LLM_QUALITY_SEED,
         )
         assert out.text, f'empty completion for prompt={prompt!r}'
+        # A think trace that eats the whole budget leaves a truncated answer
+        # stub, which reads as a missing keyword — report it as truncation.
+        assert (
+            out.profile.stop_reason != 'length'
+        ), f'completion truncated at {LLM_QUALITY_MAX_NEW_TOKENS} tokens: prompt={prompt!r} got={out.text!r}'
         matched = expected.lower() in out.text.lower()
         assert matched, (
             f'prompt={prompt!r} expected_substring={expected!r} ' f'device_map={device_map!r} got={out.text!r}'
