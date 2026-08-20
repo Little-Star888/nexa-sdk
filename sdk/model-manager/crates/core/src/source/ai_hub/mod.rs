@@ -22,6 +22,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use url::Url;
 
+use crate::config::StoreConfig;
 use crate::error::{parse_manifest, Error, Result};
 use crate::manifest::{ModelFileInfo, ModelManifest, ModelType};
 use crate::transport::{HttpTransport, ReqwestTransport};
@@ -38,10 +39,14 @@ use super::{basename, BytesSource, FileSpec, ModelSource, Plan};
 
 const MANIFEST_FILENAME: &str = "manifest.json";
 const PLATFORM_FILENAME: &str = "platform.json";
+const LATEST_VERSION_FILENAME: &str = "latest.txt";
 const MAX_INDEX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// TTL for the on-disk index cache (matches Go CLI's 24h).
+/// 24h TTL for manifest / platform / info JSON caches (matches Go CLI).
 const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// 1h TTL for the `latest.txt` version pointer.
+const LATEST_VERSION_TTL: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Clone)]
 pub struct AiHubConfig {
@@ -92,6 +97,59 @@ async fn fetch_platform_info(
     )
     .await?;
     parse_manifest("platform.json", &platform_bytes)
+}
+
+/// Resolve the AIHM release version. `GENIEX_AIHUBVERSION` wins if set;
+/// otherwise fetch `releases/latest.txt` (1h disk cache) and fall back
+/// to the pinned default on any failure so pull never blocks.
+pub async fn resolve_ai_hub_version(endpoint: &str, cache_dir: &Path) -> String {
+    if let Some(pinned) = StoreConfig::ai_hub_version_override() {
+        return pinned;
+    }
+
+    let cache_path = cache_dir.join(LATEST_VERSION_FILENAME);
+    if let Some(bytes) = read_cache_fresh(&cache_path, LATEST_VERSION_TTL) {
+        if let Some(v) = parse_latest_version(&bytes) {
+            return v;
+        }
+    }
+
+    let transport: Arc<dyn HttpTransport> = match ReqwestTransport::new() {
+        Ok(t) => Arc::new(t),
+        Err(e) => {
+            crate::logging::warn(&format!("aihub latest.txt transport init: {e}"));
+            return StoreConfig::ai_hub_version_fallback();
+        }
+    };
+
+    let url = format!("{endpoint}/releases/{LATEST_VERSION_FILENAME}");
+    match fetch_direct(&url, &transport).await {
+        Ok(bytes) => match parse_latest_version(&bytes) {
+            Some(v) => {
+                write_cache(&cache_path, &bytes);
+                v
+            }
+            None => {
+                crate::logging::warn(&format!("aihub latest.txt at {url} is empty/malformed"));
+                StoreConfig::ai_hub_version_fallback()
+            }
+        },
+        Err(e) => {
+            crate::logging::warn(&format!("aihub latest.txt fetch from {url}: {e}"));
+            StoreConfig::ai_hub_version_fallback()
+        }
+    }
+}
+
+/// Normalize `latest.txt`'s bare `0.61.0` body into the `v0.61.0` form
+/// the `releases/{version}/...` path segment expects. `None` for empty
+/// or non-UTF-8 bodies.
+fn parse_latest_version(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes)
+        .ok()?
+        .trim()
+        .trim_start_matches('v');
+    (!text.is_empty()).then(|| format!("v{text}"))
 }
 
 /// The `os.ostype` values this build runs on; `None` means "don't filter".
@@ -533,16 +591,26 @@ async fn fetch_with_cache(
     Ok(bytes)
 }
 
-/// Return cached bytes if the file is within `ttl` and stamped with the
-/// requested `version`, so a release bump invalidates stale caches before
-/// the TTL elapses. Any I/O or parse error is a cache miss.
-fn read_cache(path: &Path, version: &str, ttl: Duration) -> Option<Vec<u8>> {
+/// Return cached bytes when the file's mtime is still within `ttl`. Pure
+/// filesystem check — no content parsing, no version stamp comparison —
+/// so it's the right fit for `latest.txt`, whose body *is* the version
+/// and carries no self-identifying field to cross-check. Also used as
+/// the freshness precheck inside [`read_cache`] before it validates the
+/// embedded version stamp.
+fn read_cache_fresh(path: &Path, ttl: Duration) -> Option<Vec<u8>> {
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
     if SystemTime::now().duration_since(mtime).ok()? > ttl {
         return None;
     }
-    let bytes = std::fs::read(path).ok()?;
+    std::fs::read(path).ok()
+}
+
+/// Return cached bytes if the file is within `ttl` and stamped with the
+/// requested `version`, so a release bump invalidates stale caches before
+/// the TTL elapses. Any I/O or parse error is a cache miss.
+fn read_cache(path: &Path, version: &str, ttl: Duration) -> Option<Vec<u8>> {
+    let bytes = read_cache_fresh(path, ttl)?;
     // manifest.json stamps `version`; platform.json / info.json use
     // `aihm_version`. Both omit the leading `v` the config carries.
     let doc: serde_json::Value = serde_json::from_slice(&bytes).ok()?;

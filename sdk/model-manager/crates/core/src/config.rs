@@ -50,10 +50,23 @@ impl StoreConfig {
         std::env::var("GENIEX_AIHUBBASEURL").unwrap_or_else(|_| DEFAULT_AI_HUB_BASE_URL.to_string())
     }
 
-    /// Pinned aihm release version the SDK consumes. The public bucket has
-    /// no `latest` alias; override via `GENIEX_AIHUBVERSION`.
-    pub fn ai_hub_version() -> String {
-        std::env::var("GENIEX_AIHUBVERSION").unwrap_or_else(|_| DEFAULT_AI_HUB_VERSION.to_string())
+    /// Explicit AIHM version pin. When set, this wins outright over the
+    /// dynamic `releases/latest.txt` lookup in
+    /// [`crate::source::ai_hub::resolve_ai_hub_version`] — no network call
+    /// is made.
+    pub fn ai_hub_version_override() -> Option<String> {
+        std::env::var("GENIEX_AIHUBVERSION")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    }
+
+    /// Version used when no override is set and `releases/latest.txt`
+    /// can't be read (network failure, missing pointer, malformed
+    /// content). Kept close to the newest release AIHM has published, so
+    /// bump it opportunistically when noticed stale.
+    pub fn ai_hub_version_fallback() -> String {
+        DEFAULT_AI_HUB_VERSION.to_string()
     }
 
     /// Cache directory for AI Hub index JSONs. Matches the Go CLI layout
@@ -79,7 +92,7 @@ impl StoreConfig {
 const DEFAULT_AI_HUB_BASE_URL: &str =
     "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models";
 
-/// Mirrors `cli/internal/config/config.go:DefaultAIHubVersion`.
+/// Fallback for [`StoreConfig::ai_hub_version_fallback`].
 const DEFAULT_AI_HUB_VERSION: &str = "v0.60.0";
 
 fn default_data_dir() -> PathBuf {

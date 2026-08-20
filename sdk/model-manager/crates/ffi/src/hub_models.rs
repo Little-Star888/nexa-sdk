@@ -4,7 +4,7 @@
 use std::os::raw::c_char;
 
 use model_manager_core::config::StoreConfig;
-use model_manager_core::source::ai_hub::{list_hub_models, AiHubConfig};
+use model_manager_core::source::ai_hub::{list_hub_models, resolve_ai_hub_version, AiHubConfig};
 
 use crate::init::{get_store, runtime_handle};
 use crate::store::{to_ffi_type, GenieXModelType};
@@ -45,15 +45,14 @@ pub extern "C" fn geniex_model_list_hub(
             Some(unsafe { cstr_to_str(chipset)? })
         };
         let store = get_store()?;
-        let cfg = AiHubConfig::new(
-            StoreConfig::ai_hub_base_url(),
-            StoreConfig::ai_hub_version(),
-            String::new(),
-            store.config().ai_hub_cache_dir(),
-            false,
-        );
         let models = runtime_handle()
-            .block_on(list_hub_models(&cfg, chipset))
+            .block_on(async {
+                let endpoint = StoreConfig::ai_hub_base_url();
+                let cache_dir = store.config().ai_hub_cache_dir();
+                let version = resolve_ai_hub_version(&endpoint, &cache_dir).await;
+                let cfg = AiHubConfig::new(endpoint, version, String::new(), cache_dir, false);
+                list_hub_models(&cfg, chipset).await
+            })
             .map_err(|e| report(&e))?;
 
         let infos: Vec<GenieXHubModelInfo> = models

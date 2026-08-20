@@ -39,7 +39,7 @@ use crate::executor::{Executor, ProgressCallback};
 use crate::manifest_builder::ManifestHint;
 use crate::mapping::canonicalize_model_name;
 use crate::resume;
-use crate::source::ai_hub::{AiHubConfig, AiHubSource};
+use crate::source::ai_hub::{resolve_ai_hub_version, AiHubConfig, AiHubSource};
 use crate::source::dockerhub::DockerHubSource;
 use crate::source::hf::HfSource;
 use crate::source::localfs::LocalFsSource;
@@ -98,7 +98,7 @@ pub async fn pull(store: &Store, mut req: PullRequest) -> Result<()> {
     validate_model_name(&req.model_name)?;
 
     let transport: Arc<dyn HttpTransport> = Arc::new(ReqwestTransport::new()?);
-    let source: Box<dyn ModelSource> = build_source(&req, store, transport.clone())?;
+    let source: Box<dyn ModelSource> = build_source(&req, store, transport.clone()).await?;
     pull_with_source(
         store,
         &req.model_name,
@@ -207,7 +207,7 @@ pub fn pull_blocking(
     handle.block_on(pull(store, req))
 }
 
-pub(crate) fn build_source(
+pub(crate) async fn build_source(
     req: &PullRequest,
     store: &Store,
     transport: Arc<dyn HttpTransport>,
@@ -233,13 +233,10 @@ pub(crate) fn build_source(
             display_name,
             chipset,
         } => {
-            let cfg = AiHubConfig::new(
-                StoreConfig::ai_hub_base_url(),
-                StoreConfig::ai_hub_version(),
-                chipset.clone(),
-                store.config().ai_hub_cache_dir(),
-                false,
-            );
+            let endpoint = StoreConfig::ai_hub_base_url();
+            let cache_dir = store.config().ai_hub_cache_dir();
+            let version = resolve_ai_hub_version(&endpoint, &cache_dir).await;
+            let cfg = AiHubConfig::new(endpoint, version, chipset.clone(), cache_dir, false);
             let src = AiHubSource::with_transport(
                 display_name.clone(),
                 req.model_name.clone(),

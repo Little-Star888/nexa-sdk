@@ -6,7 +6,7 @@ use std::os::raw::c_char;
 use model_manager_core::config::StoreConfig;
 use model_manager_core::source::ai_hub::{
     detect::detect_host_chipset, detect_host_chipset_reference, list_supported_chipsets,
-    AiHubConfig,
+    resolve_ai_hub_version, AiHubConfig,
 };
 
 use crate::init::{get_store, runtime_handle};
@@ -28,14 +28,11 @@ pub struct GenieXChipsetList {
     pub count: i32,
 }
 
-fn ai_hub_cfg_for_chipset_query(store: &model_manager_core::store::Store) -> AiHubConfig {
-    AiHubConfig::new(
-        StoreConfig::ai_hub_base_url(),
-        StoreConfig::ai_hub_version(),
-        String::new(),
-        store.config().ai_hub_cache_dir(),
-        false,
-    )
+async fn ai_hub_cfg_for_chipset_query(store: &model_manager_core::store::Store) -> AiHubConfig {
+    let endpoint = StoreConfig::ai_hub_base_url();
+    let cache_dir = store.config().ai_hub_cache_dir();
+    let version = resolve_ai_hub_version(&endpoint, &cache_dir).await;
+    AiHubConfig::new(endpoint, version, String::new(), cache_dir, false)
 }
 
 #[no_mangle]
@@ -44,9 +41,12 @@ pub extern "C" fn geniex_model_list_chipsets(out: *mut GenieXChipsetList) -> i32
         if out.is_null() {
             return Err(GENIEX_ERROR_COMMON_INVALID_INPUT);
         }
-        let cfg = ai_hub_cfg_for_chipset_query(get_store()?);
+        let store = get_store()?;
         let chipsets = runtime_handle()
-            .block_on(list_supported_chipsets(&cfg))
+            .block_on(async {
+                let cfg = ai_hub_cfg_for_chipset_query(store).await;
+                list_supported_chipsets(&cfg).await
+            })
             .map_err(|e| report(&e))?;
 
         let infos: Vec<GenieXChipsetInfo> = chipsets
@@ -116,8 +116,11 @@ pub extern "C" fn geniex_model_detect_chipset(offline: i32, out_chipset: *mut *m
         let detected = if offline != 0 {
             detect_host_chipset()
         } else {
-            let cfg = ai_hub_cfg_for_chipset_query(get_store()?);
-            runtime_handle().block_on(detect_host_chipset_reference(&cfg))
+            let store = get_store()?;
+            runtime_handle().block_on(async {
+                let cfg = ai_hub_cfg_for_chipset_query(store).await;
+                detect_host_chipset_reference(&cfg).await
+            })
         };
         let ptr = detected
             .map(|s| str_to_cptr(&s))

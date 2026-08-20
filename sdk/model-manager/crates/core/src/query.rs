@@ -45,7 +45,7 @@ pub async fn query(store: &Store, mut req: PullRequest) -> Result<ModelQuery> {
     validate_model_name(&req.model_name)?;
 
     let transport: Arc<dyn HttpTransport> = Arc::new(ReqwestTransport::new()?);
-    let source = build_source(&req, store, transport)?;
+    let source = build_source(&req, store, transport).await?;
     let plan = source.plan().await?;
     Ok(model_query_from_plan(req.model_name, plan))
 }
