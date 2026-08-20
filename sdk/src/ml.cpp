@@ -24,8 +24,9 @@
 #endif
 
 // Baseline armv8.0 boards (e.g. unoq) lack the armv8.2 features this build bakes
-// in, so bail cleanly instead of SIGILL. Keep in sync with -march. See #1217.
-#if defined(__linux__) && defined(__aarch64__)
+// in, so bail cleanly instead of SIGILL. Keep in sync with -march; the CPU-only
+// build has nothing to check. See #1217.
+#if defined(__linux__) && defined(__aarch64__) && !defined(GENIEX_CPU_ONLY)
 #include <asm/hwcap.h>
 #include <sys/auxv.h>
 

@@ -107,7 +107,9 @@ Possible causes: network timeout, corporate proxy, or firewall.
 	hintCPUUnsupported = `⚠️ This device is missing CPU features that geniex requires, so it cannot run here.
 
 👉 Try these:
-- Run geniex on a newer device that meets the CPU requirements.
+- On a baseline ARMv8.0 board, install the CPU-only build instead: re-run the
+  installer with '--cpu-only'.
+- Otherwise run geniex on a newer device that meets the CPU requirements.
 - If you believe this device should be supported, report it in our discord or slack with the output of 'uname -m' and 'cat /proc/cpuinfo'.`
 )
 

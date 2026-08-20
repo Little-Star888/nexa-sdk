@@ -30,12 +30,14 @@ set(GENIEX_VERSION "v0.0.0" CACHE STRING "GenieX library version")
 option(GENIEX_PLUGIN_LLAMA_CPP  "Enable llama.cpp backend"       ON)
 option(GENIEX_PLUGIN_QAIRT      "Enable QAIRT backend"           ON)
 option(GENIEX_BENCHMARK         "Build benchmark example"        OFF)
+option(GENIEX_CPU_ONLY          "CPU inference only, baseline ISA" OFF)
 
 message(STATUS "=============== Options ===============")
 message(STATUS "GENIEX_VERSION:          ${GENIEX_VERSION}")
 message(STATUS "GENIEX_PLUGIN_LLAMA_CPP: ${GENIEX_PLUGIN_LLAMA_CPP}")
 message(STATUS "GENIEX_PLUGIN_QAIRT:     ${GENIEX_PLUGIN_QAIRT}")
 message(STATUS "GENIEX_BENCHMARK:        ${GENIEX_BENCHMARK}")
+message(STATUS "GENIEX_CPU_ONLY:         ${GENIEX_CPU_ONLY}")
 message(STATUS "=======================================")
 
 # ===============================================================================
@@ -177,6 +179,9 @@ set(COMMON_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # compile definitions
 
 add_compile_definitions(PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+if(GENIEX_CPU_ONLY)
+    add_compile_definitions(GENIEX_CPU_ONLY)
+endif()
 
 # subdirectories
 
