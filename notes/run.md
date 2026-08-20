@@ -47,8 +47,11 @@ Defaults when the user passes nothing (`--device ""` / `device_map="auto"`):
 so `cpu` / `gpu` / `hybrid` against a qairt model get coerced to `NPU`
 with a warning on stderr — the CLI does **not** exit early.
 
-Concrete ids (`HTP0,HTP1,HTP2,HTP3`, `GPUOpenCL`, etc.) pass through
-unchanged when supplied via `<plugin>:<device>`.
+Beyond the aliases, `--compute` also accepts an explicit device list of
+concrete ids (`HTP0,HTP1,HTP2,HTP3`, `GPUOpenCL`) — `llama_cpp` passes it
+through to llama.cpp verbatim (handy for multi-DSP recipes that need more
+than the single `HTP0` the `npu` alias pins); `--ngl` still applies. qairt
+is NPU-only, so a device list gets coerced to `NPU` with a warning.
 
 ## Compute-unit selection (llama_cpp)
 

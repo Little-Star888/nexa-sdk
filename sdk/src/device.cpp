@@ -41,17 +41,48 @@ std::string to_lower(const char* s) {
     return out;
 }
 
-std::string to_lower_trim(const char* s) {
-    std::string out   = to_lower(s);
-    size_t      start = 0;
-    while (start < out.size() && std::isspace(static_cast<unsigned char>(out[start]))) ++start;
-    size_t end = out.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(out[end - 1]))) --end;
-    return out.substr(start, end - start);
+std::string trim(const std::string& s) {
+    size_t start = 0;
+    while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) ++start;
+    size_t end = s.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) --end;
+    return s.substr(start, end - start);
 }
+
+std::string to_lower_trim(const char* s) { return trim(to_lower(s)); }
 
 bool is_known_alias(const std::string& s) {
     return s == kAliasCPU || s == kAliasGPU || s == kAliasNPU || s == kAliasHybrid;
+}
+
+// A concrete llama.cpp device name: "HTP0".."HTPn" or "GPUOpenCL".
+bool is_device_token(const std::string& t) {
+    if (t == kDeviceGPUOpenCL) return true;
+    if (t.rfind("HTP", 0) == 0 && t.size() > 3) {
+        for (size_t i = 3; i < t.size(); ++i)
+            if (!std::isdigit(static_cast<unsigned char>(t[i]))) return false;
+        return true;
+    }
+    return false;
+}
+
+// Parse an explicit device list like "HTP0,HTP1,HTP2,HTP3" (or a single
+// "HTP0"). Returns true and fills `out` with the whitespace-stripped list
+// only when every comma-separated token is a valid device name.
+bool parse_device_list(const std::string& raw, std::string& out) {
+    if (raw.empty()) return false;
+    std::string normalized;
+    size_t      start = 0;
+    while (start <= raw.size()) {
+        size_t      end = raw.find(',', start);
+        std::string tok = trim(raw.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        start           = (end == std::string::npos) ? raw.size() + 1 : end + 1;
+        if (!is_device_token(tok)) return false;
+        if (!normalized.empty()) normalized += ',';
+        normalized += tok;
+    }
+    out = normalized;
+    return !out.empty();
 }
 
 }  // namespace
@@ -73,10 +104,16 @@ int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_Res
     }
 
     const std::string plugin = input->plugin_id;
-    std::string       alias  = to_lower_trim(input->mode);
+    const std::string raw    = trim(input->mode ? input->mode : "");
+    std::string       alias  = to_lower(raw.c_str());
 
-    if (!alias.empty() && alias != kAliasAuto && !is_known_alias(alias)) {
-        GENIEX_LOG_ERROR("geniex_resolve_device: invalid device mode '{}'", alias);
+    // Besides the aliases, mode may be an explicit device list ("HTP0,HTP1")
+    // that bypasses the alias table and is handed straight to llama.cpp.
+    std::string device_list;
+    const bool  has_device_list = parse_device_list(raw, device_list);
+
+    if (!alias.empty() && alias != kAliasAuto && !is_known_alias(alias) && !has_device_list) {
+        GENIEX_LOG_ERROR("geniex_resolve_device: invalid device mode '{}'", raw);
         return GENIEX_ERROR_COMMON_INVALID_DEVICE;
     }
 
@@ -87,11 +124,13 @@ int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_Res
     }
 
     // QAIRT is NPU-only and rejects any non-zero n_gpu_layers, so force
-    // ngl to 0. Non-npu aliases are coerced with a warning, not an error.
+    // ngl to 0. Non-npu aliases and device lists are coerced with a
+    // warning, not an error.
     if (plugin == kPluginQairt) {
-        if (alias != kAliasNPU) {
-            std::string msg =
-                "qairt plugin only supports NPU inference; ignoring device='" + alias + "' and running on NPU";
+        if (has_device_list || alias != kAliasNPU) {
+            const std::string shown = has_device_list ? device_list : alias;
+            std::string       msg =
+                "qairt plugin only supports NPU inference; ignoring device='" + shown + "' and running on NPU";
             output->warning = portable_strdup(msg.c_str());
         }
         output->device_id = portable_strdup(kDeviceQairtNPU);
@@ -99,8 +138,15 @@ int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_Res
         return GENIEX_SUCCESS;
     }
 
-    // llama_cpp: ngl passes through unchanged (-1 means "all layers" to
-    // llama.cpp). Only cpu forces it to 0.
+    // llama_cpp: an explicit device list passes through verbatim; ngl is
+    // left at its default (-1 = "all layers").
+    if (has_device_list) {
+        output->device_id = portable_strdup(device_list.c_str());
+        return GENIEX_SUCCESS;
+    }
+
+    // ngl passes through unchanged (-1 means "all layers" to llama.cpp).
+    // Only cpu forces it to 0.
     if (alias == kAliasCPU) {
         output->ngl = 0;
     } else if (alias == kAliasGPU) {
