@@ -369,13 +369,12 @@ mod tests {
     use crate::manifest::{ModelFileInfo, ModelType};
     use std::collections::HashMap;
 
-    fn make_store() -> Store {
-        // leak the TempDir so the directory persists for the test duration
+    /// The returned TempDir must stay bound for the test's duration: dropping it
+    /// removes the store directory.
+    fn make_store() -> (Store, tempfile::TempDir) {
         let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().to_path_buf();
-        std::mem::forget(tmp);
-        let cfg = StoreConfig::new(path);
-        Store::new(cfg).unwrap()
+        let cfg = StoreConfig::new(tmp.path().to_path_buf());
+        (Store::new(cfg).unwrap(), tmp)
     }
 
     fn sample_manifest(name: &str) -> ModelManifest {
@@ -403,7 +402,7 @@ mod tests {
 
     #[test]
     fn roundtrip_manifest() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         let m = sample_manifest("TestOrg/TestRepo");
         store.write_manifest(&m).unwrap();
         let loaded = store.get_manifest("TestOrg/TestRepo").unwrap();
@@ -412,7 +411,7 @@ mod tests {
 
     #[test]
     fn list_returns_written_manifests() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store.write_manifest(&sample_manifest("Org/A")).unwrap();
         store.write_manifest(&sample_manifest("Org/B")).unwrap();
         let list = store.list().unwrap();
@@ -421,7 +420,7 @@ mod tests {
 
     #[test]
     fn remove_deletes_directory() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store.write_manifest(&sample_manifest("Org/C")).unwrap();
         store.remove("Org/C").unwrap();
         assert!(!store.cfg.model_dir("Org/C").exists());
@@ -429,7 +428,7 @@ mod tests {
 
     #[test]
     fn set_model_type_roundtrips() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store.write_manifest(&sample_manifest("Org/Typed")).unwrap();
         assert_eq!(store.get_model_type("Org/Typed").unwrap(), ModelType::Llm);
         store.set_model_type("Org/Typed", ModelType::Vlm).unwrap();
@@ -438,7 +437,7 @@ mod tests {
 
     #[test]
     fn set_model_type_missing_model_errors() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         let err = store
             .set_model_type("Org/Absent", ModelType::Vlm)
             .unwrap_err();
@@ -450,7 +449,7 @@ mod tests {
         // Single-quant manifest: rm "name:Q4_K_M" should nuke the whole dir
         // rather than leave an orphan manifest with an empty ModelFile map.
         // Also guards against the Windows os-error-267 regression (colon in path).
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store
             .write_manifest(&sample_manifest("Org/WithQuant"))
             .unwrap();
@@ -482,7 +481,7 @@ mod tests {
 
     #[test]
     fn remove_quant_keeps_other_quants_and_shared_files() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         let m = multi_quant_manifest("Org/Multi");
         store.write_manifest(&m).unwrap();
         let dir = store.cfg.model_dir("Org/Multi");
@@ -503,7 +502,7 @@ mod tests {
 
     #[test]
     fn remove_unknown_quant_errors() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store
             .write_manifest(&multi_quant_manifest("Org/Multi2"))
             .unwrap();
@@ -519,7 +518,7 @@ mod tests {
 
     #[test]
     fn clean_returns_count() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store.write_manifest(&sample_manifest("Org/D")).unwrap();
         store.write_manifest(&sample_manifest("Org/E")).unwrap();
         let n = store.clean().unwrap();
@@ -528,7 +527,7 @@ mod tests {
 
     #[test]
     fn list_skips_inflight() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         // write a valid manifest + an inflight marker in the same dir
         store.write_manifest(&sample_manifest("Org/F")).unwrap();
         let dir = store.cfg.model_dir("Org/F");
@@ -539,7 +538,7 @@ mod tests {
 
     #[test]
     fn list_skips_corrupted() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         store.write_manifest(&sample_manifest("Org/Good")).unwrap();
         let bad_dir = store.cfg.model_dir("Org/Bad");
         fs::create_dir_all(&bad_dir).unwrap();
@@ -551,7 +550,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_names() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         assert!(store.get_manifest("../etc").is_err());
         assert!(store.remove("a/..").is_err());
         assert!(store.model_file_path("Org/Foo", "../outside").is_err());
@@ -559,7 +558,7 @@ mod tests {
 
     #[test]
     fn rejects_oversized_manifest() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         let dir = store.cfg.model_dir("Org/Huge");
         fs::create_dir_all(&dir).unwrap();
         let big = "x".repeat((MANIFEST_MAX_BYTES + 1) as usize);
@@ -570,7 +569,7 @@ mod tests {
 
     #[test]
     fn legacy_qairt_manifest_migrates_on_read_and_rewrites_disk() {
-        let store = make_store();
+        let (store, _tmp) = make_store();
         let dir = store.cfg.model_dir("qualcomm/Legacy");
         fs::create_dir_all(&dir).unwrap();
         let legacy = r#"{
