@@ -33,6 +33,11 @@ PLATFORM_MAP = {
     ('linux', 'arm64'): 'linux-arm64',
 }
 
+# Baseline armv8.0 boards (unoq) can't run the default linux-arm64 SDK, so CI
+# publishes a CPU-only one. Picking it is explicit. See GenieX #1217.
+_CPU_SUFFIX = '-cpu'
+_VARIANT_ENV = 'GENIEX_SDK_VARIANT'
+
 _CORE_LIB_NAMES = ('geniex.dll', 'libgeniex.so', 'libgeniex.dylib')
 _BACKEND_DIRS = {'llama-cpp': 'llama_cpp', 'qairt': 'qairt'}
 
@@ -57,6 +62,12 @@ class _ZIP64NotSupported(Exception):
 def _detect_platform() -> str:
     key = (sys.platform, platform.machine().lower())
     plat = PLATFORM_MAP.get(key)
+    if plat == 'linux-arm64':
+        variant = os.environ.get(_VARIANT_ENV, '').strip().lower()
+        if variant == 'cpu':
+            plat += _CPU_SUFFIX
+        elif variant not in ('', 'default'):
+            raise RuntimeError(f'{_VARIANT_ENV}={variant!r} is not one of: default, cpu')
     if plat is None:
         raise RuntimeError(
             f'Unsupported platform {key} for prebuilt geniex SDK.\n'
@@ -362,6 +373,19 @@ def fetch(
         raise ValueError(f'unknown backends: {sorted(unknown)}; expected subset of {sorted(_BACKEND_DIRS)}')
 
     plat = _detect_platform()
+    if plat.endswith(_CPU_SUFFIX) and 'qairt' in backend_set:
+        # Better to drop the backend than stage an empty qairt/ that fails later.
+        if backend_set == {'qairt'}:
+            raise RuntimeError(
+                f'{_VARIANT_ENV}=cpu selects the CPU-only SDK, which has no QAIRT\n'
+                'backend — those boards have no NPU. Install llama.cpp instead:\n'
+                '  pip install geniex-llama-cpp'
+            )
+        backend_set -= {'qairt'}
+        print(
+            '[geniex] the CPU-only SDK has no QAIRT backend; installing llama.cpp only.',
+            file=_tty(),
+        )
     asset = f'geniex-sdk-{plat}-{release_tag}.zip'
 
     override = os.environ.get('GENIEX_SDK_DOWNLOAD_URL')
