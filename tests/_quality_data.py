@@ -17,6 +17,11 @@ before `generate()` to reproduce that path — feeding the raw string lets
 Qwen3-style models drift into completion mode and the keyword only appears
 by sampler luck.
 
+Thinking is disabled for the keyword cells. With it on, Qwen3 spends most of
+`LLM_QUALITY_MAX_NEW_TOKENS` on a reasoning trace, the answer gets truncated,
+and the binding strips the trace — leaving a stub that looks like a missing
+keyword (qcom-ai-hub/geniex#1460).
+
 One intentional delta vs. upstream: VLM only ships the dog photo + first
 keyword set. Upstream also iterates a Qualcomm AIHub product image with
 vocabulary like person/phone/text; that second image is deferred to keep
