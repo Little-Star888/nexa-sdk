@@ -39,7 +39,7 @@ use crate::executor::{Executor, ProgressCallback};
 use crate::manifest_builder::ManifestHint;
 use crate::mapping::canonicalize_model_name;
 use crate::resume;
-use crate::source::ai_hub::{resolve_ai_hub_version, AiHubConfig, AiHubSource};
+use crate::source::ai_hub::{AiHubConfig, AiHubSource};
 use crate::source::dockerhub::DockerHubSource;
 use crate::source::hf::HfSource;
 use crate::source::localfs::LocalFsSource;
@@ -235,7 +235,8 @@ pub(crate) async fn build_source(
         } => {
             let endpoint = StoreConfig::ai_hub_base_url();
             let cache_dir = store.config().ai_hub_cache_dir();
-            let version = resolve_ai_hub_version(&endpoint, &cache_dir).await;
+            let version = StoreConfig::ai_hub_version_override()
+                .unwrap_or_else(StoreConfig::ai_hub_version_fallback);
             let cfg = AiHubConfig::new(endpoint, version, chipset.clone(), cache_dir, false);
             let src = AiHubSource::with_transport(
                 display_name.clone(),

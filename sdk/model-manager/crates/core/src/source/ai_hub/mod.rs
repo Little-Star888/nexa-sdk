@@ -39,18 +39,21 @@ use super::{basename, BytesSource, FileSpec, ModelSource, Plan};
 
 const MANIFEST_FILENAME: &str = "manifest.json";
 const PLATFORM_FILENAME: &str = "platform.json";
-const LATEST_VERSION_FILENAME: &str = "latest.txt";
+/// AIHM-maintained mirror of the current release; falls back to pinned.
+const LATEST_DIR: &str = "latest";
 const MAX_INDEX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// 24h TTL for manifest / platform / info JSON caches (matches Go CLI).
-const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+/// TTL for `latest/` index JSONs — short so new releases propagate.
+const INDEX_TTL: Duration = Duration::from_secs(60 * 60);
 
-/// 1h TTL for the `latest.txt` version pointer.
-const LATEST_VERSION_TTL: Duration = Duration::from_secs(60 * 60);
+/// TTL for per-model info.json (immutable per release).
+const INFO_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone)]
 pub struct AiHubConfig {
     pub endpoint: String,
+    /// Pinned release directory used as fallback for `latest/` fetches,
+    /// or the outright target when `GENIEX_AIHUBVERSION` is set.
     pub version: String,
     /// Empty → auto-detect via [`detect::detect_host_chipset`].
     pub chipset: String,
@@ -76,80 +79,13 @@ impl AiHubConfig {
     }
 }
 
-/// Fetch and parse `platform.json` (the chipset catalogue) for `cfg`,
-/// honouring the on-disk 24h cache. Shared by `AiHubSource::plan` and
-/// [`list_supported_chipsets`].
+/// Fetch and parse `platform.json` — the chipset catalogue.
 async fn fetch_platform_info(
     cfg: &AiHubConfig,
     transport: &Arc<dyn HttpTransport>,
 ) -> Result<PlatformInfo> {
-    let platform_url = format!(
-        "{}/releases/{}/{PLATFORM_FILENAME}",
-        cfg.endpoint, cfg.version
-    );
-    let platform_cache = cfg.cache_dir.join(PLATFORM_FILENAME);
-    let platform_bytes = fetch_with_cache(
-        &platform_url,
-        &platform_cache,
-        &cfg.version,
-        cfg.skip_cache,
-        transport,
-    )
-    .await?;
+    let platform_bytes = fetch_release_index(PLATFORM_FILENAME, cfg, transport).await?;
     parse_manifest("platform.json", &platform_bytes)
-}
-
-/// Resolve the AIHM release version. `GENIEX_AIHUBVERSION` wins if set;
-/// otherwise fetch `releases/latest.txt` (1h disk cache) and fall back
-/// to the pinned default on any failure so pull never blocks.
-pub async fn resolve_ai_hub_version(endpoint: &str, cache_dir: &Path) -> String {
-    if let Some(pinned) = StoreConfig::ai_hub_version_override() {
-        return pinned;
-    }
-
-    let cache_path = cache_dir.join(LATEST_VERSION_FILENAME);
-    if let Some(bytes) = read_cache_fresh(&cache_path, LATEST_VERSION_TTL) {
-        if let Some(v) = parse_latest_version(&bytes) {
-            return v;
-        }
-    }
-
-    let transport: Arc<dyn HttpTransport> = match ReqwestTransport::new() {
-        Ok(t) => Arc::new(t),
-        Err(e) => {
-            crate::logging::warn(&format!("aihub latest.txt transport init: {e}"));
-            return StoreConfig::ai_hub_version_fallback();
-        }
-    };
-
-    let url = format!("{endpoint}/releases/{LATEST_VERSION_FILENAME}");
-    match fetch_direct(&url, &transport).await {
-        Ok(bytes) => match parse_latest_version(&bytes) {
-            Some(v) => {
-                write_cache(&cache_path, &bytes);
-                v
-            }
-            None => {
-                crate::logging::warn(&format!("aihub latest.txt at {url} is empty/malformed"));
-                StoreConfig::ai_hub_version_fallback()
-            }
-        },
-        Err(e) => {
-            crate::logging::warn(&format!("aihub latest.txt fetch from {url}: {e}"));
-            StoreConfig::ai_hub_version_fallback()
-        }
-    }
-}
-
-/// Normalize `latest.txt`'s bare `0.61.0` body into the `v0.61.0` form
-/// the `releases/{version}/...` path segment expects. `None` for empty
-/// or non-UTF-8 bodies.
-fn parse_latest_version(bytes: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(bytes)
-        .ok()?
-        .trim()
-        .trim_start_matches('v');
-    (!text.is_empty()).then(|| format!("v{text}"))
 }
 
 /// The `os.ostype` values this build runs on; `None` means "don't filter".
@@ -248,19 +184,7 @@ pub async fn list_hub_models(cfg: &AiHubConfig, chipset: Option<&str>) -> Result
         None => None,
     };
 
-    let manifest_url = format!(
-        "{}/releases/{}/{MANIFEST_FILENAME}",
-        cfg.endpoint, cfg.version
-    );
-    let manifest_cache = cfg.cache_dir.join(MANIFEST_FILENAME);
-    let manifest_bytes = fetch_with_cache(
-        &manifest_url,
-        &manifest_cache,
-        &cfg.version,
-        cfg.skip_cache,
-        &transport,
-    )
-    .await?;
+    let manifest_bytes = fetch_release_index(MANIFEST_FILENAME, cfg, &transport).await?;
     let manifest: ReleaseManifest = parse_manifest("manifest.json", &manifest_bytes)?;
 
     Ok(select_hub_models(manifest, canonical.as_deref()))
@@ -346,10 +270,8 @@ impl AiHubSource {
         }
     }
 
-    /// Fetch and parse the per-model `info.json`. Returns `None` on any
-    /// failure (missing URL, fetch error, malformed JSON), logging a
-    /// warning first — modality classification tolerates absence.
-    async fn fetch_info_json(&self, entry: &ManifestModelEntry, version: &str) -> Option<InfoJson> {
+    /// Fetch and parse per-model `info.json`; `None` on any failure.
+    async fn fetch_info_json(&self, entry: &ManifestModelEntry) -> Option<InfoJson> {
         if entry.manifest_urls.info.is_empty() {
             return None;
         }
@@ -358,10 +280,10 @@ impl AiHubSource {
             .cache_dir
             .join("info")
             .join(format!("{}.json", entry.id));
-        let bytes = fetch_with_cache(
+        let bytes = fetch_cached(
             &entry.manifest_urls.info,
             &cache_path,
-            version,
+            INFO_TTL,
             self.cfg.skip_cache,
             &self.transport,
         )
@@ -381,19 +303,8 @@ impl AiHubSource {
 #[async_trait]
 impl ModelSource for AiHubSource {
     async fn plan(&self) -> Result<Plan> {
-        let endpoint = self.cfg.endpoint.as_str();
-        let version = self.cfg.version.as_str();
-
-        let manifest_url = format!("{endpoint}/releases/{version}/{MANIFEST_FILENAME}");
-        let manifest_cache = self.cfg.cache_dir.join(MANIFEST_FILENAME);
-        let manifest_bytes = fetch_with_cache(
-            &manifest_url,
-            &manifest_cache,
-            version,
-            self.cfg.skip_cache,
-            &self.transport,
-        )
-        .await?;
+        let manifest_bytes =
+            fetch_release_index(MANIFEST_FILENAME, &self.cfg, &self.transport).await?;
         let release_manifest: ReleaseManifest = parse_manifest("manifest.json", &manifest_bytes)?;
 
         // Match by display_name first, then fall back to the snake_case
@@ -489,7 +400,7 @@ impl ModelSource for AiHubSource {
         // (both report MODEL_DOMAIN_GENERATIVE_AI), so we also read the
         // per-model info.json. Failure is non-fatal: `classify_ai_hub`
         // falls back to the domain-only signal.
-        let info = self.fetch_info_json(entry, version).await;
+        let info = self.fetch_info_json(entry).await;
         let model_type = classify_ai_hub(info.as_ref(), entry);
         let manifest = ModelManifest {
             name: self.model_name.clone(),
@@ -572,15 +483,56 @@ fn is_macos_metadata(path: &str) -> bool {
     basename(&normalized).starts_with("._")
 }
 
-async fn fetch_with_cache(
+/// Fetch a release-index JSON. Serves the 1h cache when fresh, else
+/// tries `releases/latest/<filename>` with `releases/<version>/` as
+/// fallback. `GENIEX_AIHUBVERSION` skips `latest/` outright.
+async fn fetch_release_index(
+    filename: &str,
+    cfg: &AiHubConfig,
+    transport: &Arc<dyn HttpTransport>,
+) -> Result<Vec<u8>> {
+    let cache_path = cfg.cache_dir.join(filename);
+    if !cfg.skip_cache {
+        if let Some(bytes) = read_cache_fresh(&cache_path, INDEX_TTL) {
+            return Ok(bytes);
+        }
+    }
+    if StoreConfig::ai_hub_version_override().is_none() {
+        let latest_url = format!("{}/releases/{LATEST_DIR}/{filename}", cfg.endpoint);
+        match fetch_direct(&latest_url, transport).await {
+            Ok(bytes) => {
+                if !cfg.skip_cache {
+                    write_cache(&cache_path, &bytes);
+                }
+                return Ok(bytes);
+            }
+            Err(e) => {
+                crate::logging::warn(&format!(
+                    "aihub {filename} at {latest_url} unavailable ({e}); \
+                     falling back to releases/{}",
+                    cfg.version
+                ));
+            }
+        }
+    }
+    let fallback_url = format!("{}/releases/{}/{filename}", cfg.endpoint, cfg.version);
+    let bytes = fetch_direct(&fallback_url, transport).await?;
+    if !cfg.skip_cache {
+        write_cache(&cache_path, &bytes);
+    }
+    Ok(bytes)
+}
+
+/// Fetch bytes with a plain mtime + TTL cache. No content inspection.
+async fn fetch_cached(
     url: &str,
     cache_path: &Path,
-    version: &str,
+    ttl: Duration,
     skip_cache: bool,
     transport: &Arc<dyn HttpTransport>,
 ) -> Result<Vec<u8>> {
     if !skip_cache {
-        if let Some(bytes) = read_cache(cache_path, version, CACHE_TTL) {
+        if let Some(bytes) = read_cache_fresh(cache_path, ttl) {
             return Ok(bytes);
         }
     }
@@ -591,12 +543,7 @@ async fn fetch_with_cache(
     Ok(bytes)
 }
 
-/// Return cached bytes when the file's mtime is still within `ttl`. Pure
-/// filesystem check — no content parsing, no version stamp comparison —
-/// so it's the right fit for `latest.txt`, whose body *is* the version
-/// and carries no self-identifying field to cross-check. Also used as
-/// the freshness precheck inside [`read_cache`] before it validates the
-/// embedded version stamp.
+/// Return cached bytes when the file's mtime is within `ttl`.
 fn read_cache_fresh(path: &Path, ttl: Duration) -> Option<Vec<u8>> {
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
@@ -604,18 +551,6 @@ fn read_cache_fresh(path: &Path, ttl: Duration) -> Option<Vec<u8>> {
         return None;
     }
     std::fs::read(path).ok()
-}
-
-/// Return cached bytes if the file is within `ttl` and stamped with the
-/// requested `version`, so a release bump invalidates stale caches before
-/// the TTL elapses. Any I/O or parse error is a cache miss.
-fn read_cache(path: &Path, version: &str, ttl: Duration) -> Option<Vec<u8>> {
-    let bytes = read_cache_fresh(path, ttl)?;
-    // manifest.json stamps `version`; platform.json / info.json use
-    // `aihm_version`. Both omit the leading `v` the config carries.
-    let doc: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    let cached = doc.get("version").or_else(|| doc.get("aihm_version"))?;
-    (cached.as_str()? == version.trim_start_matches('v')).then_some(bytes)
 }
 
 /// Best-effort cache write. Failures are logged and swallowed — the
@@ -951,32 +886,16 @@ mod tests {
     #[test]
     fn cache_miss_on_missing_file() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(read_cache(&tmp.path().join("nope.json"), "0.58.0", CACHE_TTL).is_none());
+        assert!(read_cache_fresh(&tmp.path().join("nope.json"), INDEX_TTL).is_none());
     }
 
     #[test]
-    fn cache_roundtrip() {
+    fn cache_roundtrip_mtime_ttl() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("x.json");
         write_cache(&p, br#"{"version":"0.58.0"}"#);
-        // Requested version is passed with the leading `v`, as cfg holds it.
-        assert!(read_cache(&p, "v0.58.0", CACHE_TTL).is_some());
-        assert!(read_cache(&p, "v0.58.0", Duration::ZERO).is_none());
-    }
-
-    #[test]
-    fn cache_miss_on_version_mismatch() {
-        let tmp = tempfile::tempdir().unwrap();
-        let manifest = tmp.path().join("manifest.json");
-        write_cache(&manifest, br#"{"version":"0.52.0"}"#);
-        assert!(read_cache(&manifest, "v0.58.0", CACHE_TTL).is_none());
-        assert!(read_cache(&manifest, "v0.52.0", CACHE_TTL).is_some());
-
-        // platform.json / info.json use the `aihm_version` key instead.
-        let platform = tmp.path().join("platform.json");
-        write_cache(&platform, br#"{"aihm_version":"0.52.0"}"#);
-        assert!(read_cache(&platform, "v0.58.0", CACHE_TTL).is_none());
-        assert!(read_cache(&platform, "v0.52.0", CACHE_TTL).is_some());
+        assert!(read_cache_fresh(&p, INDEX_TTL).is_some());
+        assert!(read_cache_fresh(&p, Duration::ZERO).is_none());
     }
 
     fn chipset(name: &str) -> ChipsetInfo {

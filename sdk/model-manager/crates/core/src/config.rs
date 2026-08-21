@@ -50,10 +50,7 @@ impl StoreConfig {
         std::env::var("GENIEX_AIHUBBASEURL").unwrap_or_else(|_| DEFAULT_AI_HUB_BASE_URL.to_string())
     }
 
-    /// Explicit AIHM version pin. When set, this wins outright over the
-    /// dynamic `releases/latest.txt` lookup in
-    /// [`crate::source::ai_hub::resolve_ai_hub_version`] — no network call
-    /// is made.
+    /// Explicit AIHM version pin. When set, skips `releases/latest/`.
     pub fn ai_hub_version_override() -> Option<String> {
         std::env::var("GENIEX_AIHUBVERSION")
             .ok()
@@ -61,10 +58,8 @@ impl StoreConfig {
             .filter(|v| !v.is_empty())
     }
 
-    /// Version used when no override is set and `releases/latest.txt`
-    /// can't be read (network failure, missing pointer, malformed
-    /// content). Kept close to the newest release AIHM has published, so
-    /// bump it opportunistically when noticed stale.
+    /// Fallback release directory when `releases/latest/` is unavailable.
+    /// Bump opportunistically as AIHM ships newer releases.
     pub fn ai_hub_version_fallback() -> String {
         DEFAULT_AI_HUB_VERSION.to_string()
     }
