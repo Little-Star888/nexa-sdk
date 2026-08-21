@@ -102,19 +102,6 @@ GGML_HEXAGON_NDEV=4 geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 \
   --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0
 ```
 
-The model-loaded line confirms all four are active:
-
-```text
-Model loaded: runtime=llama_cpp compute=htp0,htp1,htp2,htp3 ngl=-1 nctx=8192
-```
-
-Perf on Snapdragon X2 Elite (Glymur), Gemma4-26B Q4_0 + MTP, 256 decode tokens:
-
-| `--nctx` | Decode tok/s | MTP accept |
-|---|---|---|
-| 8192  | 10.6 | 53.7% |
-| 16384 | 11.2 | 53.9% |
-
 <Note>The device list bypasses the `npu` / `hybrid` aliases — `npu` pins `HTP0` alone, while a comma-separated list distributes across all named cores. `qairt` models coerce a device list to NPU with a warning.</Note>
 
 ## **Next steps**
