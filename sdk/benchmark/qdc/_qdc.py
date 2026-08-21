@@ -58,7 +58,7 @@ def _is_quota_error(exc: Exception) -> bool:
     return any(h in msg for h in _QUOTA_HINTS)
 
 
-# QDC's status/log endpoints occasionally blip with a 5xx (mostly 504
+# QDC's upload/status/log endpoints occasionally blip with a 5xx (mostly 504
 # Gateway Time-out, some 500) with no fault on our side; retrying the same
 # call a few seconds later almost always succeeds. Unlike the pending-job
 # quota, this isn't capacity we need to wait out, so the retry is short.
@@ -175,7 +175,13 @@ def submit_and_wait(
 ) -> str:
     """Upload the artifact, submit the job (retrying on quota), and block until terminal."""
     log.info("uploading artifact (%d MB)", zip_path.stat().st_size // 1_000_000)
-    artifact_id = qdc_api.upload_file(client, str(zip_path), ArtifactType.TESTSCRIPT)
+    artifact_id = _call_with_retry(
+        qdc_api.upload_file,
+        client,
+        str(zip_path),
+        ArtifactType.TESTSCRIPT,
+        what="upload artifact",
+    )
     job_id = _submit_with_retry(
         client,
         target_id=target_id,
