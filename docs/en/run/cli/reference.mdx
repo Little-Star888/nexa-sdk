@@ -71,6 +71,13 @@ geniex infer unsloth/Qwen3.5-0.8B-GGUF --compute cpu
 geniex infer ai-hub-models/Qwen3-4B --compute npu
 ```
 
+```bash
+# Explicit device list — spread across multiple HTP cores (llama.cpp + multi-DSP devices only)
+GGML_HEXAGON_NDEV=4 geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute HTP0,HTP1,HTP2,HTP3
+```
+
+<Note>Set `GGML_HEXAGON_NDEV` to match the number of device IDs in `--compute`. `qairt` models coerce a device list to NPU with a warning. See [Spreading across multiple HTP cores](/en/tutorials/speculative-decoding-mtp#spreading-across-multiple-htp-cores) for MTP performance numbers.</Note>
+
 <Warning>Qualcomm AI Hub Models run on NPU only. Using `--compute cpu` or `--compute gpu` returns an error.</Warning>
 
 ### **`geniex infer` — VLM**
