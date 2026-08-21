@@ -91,6 +91,32 @@ Paste this straight into the built-in Swagger UI at `http://127.0.0.1:18181` to 
 
 <Note>The `spec_*` fields are part of the model cache key, so changing any of them rebuilds the model on the next request. Keep them stable across a run.</Note>
 
+## **Spreading across multiple HTP cores**
+
+On devices with multiple DSP subsystems (e.g. Snapdragon X2 Elite with four HTP cores), you can spread the workload by passing a comma-separated device list to `--compute`. Set `GGML_HEXAGON_NDEV` to the number of device IDs so the Hexagon backend opens all of them:
+
+```bash
+GGML_HEXAGON_NDEV=4 geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 \
+  --compute HTP0,HTP1,HTP2,HTP3 \
+  --spec-type draft-mtp \
+  --draft-model RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf:Q4_0
+```
+
+The model-loaded line confirms all four are active:
+
+```text
+Model loaded: runtime=llama_cpp compute=htp0,htp1,htp2,htp3 ngl=-1 nctx=8192
+```
+
+Perf on Snapdragon X2 Elite (Glymur), Gemma4-26B Q4_0 + MTP, 256 decode tokens:
+
+| `--nctx` | Decode tok/s | MTP accept |
+|---|---|---|
+| 8192  | 10.6 | 53.7% |
+| 16384 | 11.2 | 53.9% |
+
+<Note>The device list bypasses the `npu` / `hybrid` aliases — `npu` pins `HTP0` alone, while a comma-separated list distributes across all named cores. `qairt` models coerce a device list to NPU with a warning.</Note>
+
 ## **Next steps**
 
 - [CLI reference](/en/run/cli/reference) — every `geniex infer` flag.

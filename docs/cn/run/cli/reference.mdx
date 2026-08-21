@@ -71,6 +71,13 @@ geniex infer unsloth/Qwen3.5-0.8B-GGUF --compute cpu
 geniex infer ai-hub-models/Qwen3-4B --compute npu
 ```
 
+```bash
+# 显式设备列表——分散到多个 HTP 核心（仅限 llama.cpp + 多 DSP 设备）
+GGML_HEXAGON_NDEV=4 geniex infer google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0 --compute HTP0,HTP1,HTP2,HTP3
+```
+
+<Note>将 `GGML_HEXAGON_NDEV` 设置为与 `--compute` 中设备 ID 数量一致。`qairt` 模型会将设备列表强制转为 NPU 并输出警告。性能数据参见 [MTP 教程](/en/tutorials/speculative-decoding-mtp#spreading-across-multiple-htp-cores)。</Note>
+
 <Warning>Qualcomm AI Hub 模型仅在 NPU 上运行。使用 `--compute cpu` 或 `--compute gpu` 会返回错误。</Warning>
 
 ### **`geniex infer` — VLM**
