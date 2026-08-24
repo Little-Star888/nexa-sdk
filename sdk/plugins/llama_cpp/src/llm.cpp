@@ -662,10 +662,14 @@ int32_t LlamaLlm::decode_speculative(const geniex_GenerationConfig& cfg, const s
         }
         this->n_past += (int)n_accept + 1;
 
-        // Drop any rejected draft tail from both KV caches.
-        llama_memory_seq_rm(mem_tgt, seq_id, this->n_past, -1);
-        if (mem_dft) {
-            llama_memory_seq_rm(mem_dft, seq_id, this->n_past, -1);
+        // Drop any rejected draft tail from both KV caches. Nothing to drop when
+        // the target agreed with the whole draft, and seq_rm is not free on the
+        // HTP backend, so skip it then — same guard as the server's n_rollback.
+        if (n_accept < draft.size()) {
+            llama_memory_seq_rm(mem_tgt, seq_id, this->n_past, -1);
+            if (mem_dft) {
+                llama_memory_seq_rm(mem_dft, seq_id, this->n_past, -1);
+            }
         }
 
         id_last = ids.back();
