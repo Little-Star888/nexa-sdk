@@ -1,0 +1,328 @@
+// Copyright (c) 2024-2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause
+
+/* Output side: the stdout summary line, the per-cell JSON report, the
+ * llama-bench-style Markdown row, and the --logits JSON report. */
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "bench.h"
+
+void print_summary(const options_t* o, const char* device_id, int32_t ngl, const agg_t* a) {
+    fprintf(stdout,
+        "[ok  ] %s  plugin=%s device=%s%s%s%s ngl=%d "
+        "ttft=%.1fms prefill=%.1ftps decode=%.1ftps gen=%.0f tok\n",
+        o->cell_id ? o->cell_id : "cell",
+        o->plugin,
+        o->device,
+        device_id ? "(id=" : "",
+        device_id ? device_id : "",
+        device_id ? ")" : "",
+        ngl,
+        a->ttft_ms_med,
+        a->prefill_med,
+        a->decode_med,
+        a->gen_tokens_med);
+}
+
+/* ------------------------------- JSON ------------------------------- */
+
+/* Write a JSON string literal, escaping the characters JSON forbids raw.
+ * Needed for paths: Windows model paths carry backslashes that would
+ * otherwise emit invalid escape sequences (e.g. "C:\Users"). */
+static void json_write_quoted(FILE* f, const char* v) {
+    fputc('"', f);
+    for (const unsigned char* p = (const unsigned char*)v; *p; ++p) {
+        switch (*p) {
+            case '"':
+                fputs("\\\"", f);
+                break;
+            case '\\':
+                fputs("\\\\", f);
+                break;
+            case '\n':
+                fputs("\\n", f);
+                break;
+            case '\r':
+                fputs("\\r", f);
+                break;
+            case '\t':
+                fputs("\\t", f);
+                break;
+            default:
+                if (*p < 0x20)
+                    fprintf(f, "\\u%04x", *p);
+                else
+                    fputc((int)*p, f);
+        }
+    }
+    fputc('"', f);
+}
+
+static void json_field_str(FILE* f, const char* k, const char* v, bool last) {
+    fprintf(f, "    \"%s\": ", k);
+    if (v)
+        json_write_quoted(f, v);
+    else
+        fprintf(f, "null");
+    fprintf(f, last ? "\n" : ",\n");
+}
+
+static void json_field_dbl(FILE* f, const char* k, double v, bool last) {
+    fprintf(f, "    \"%s\": %.6f%s", k, v, last ? "\n" : ",\n");
+}
+static void json_field_i64(FILE* f, const char* k, int64_t v, bool last) {
+    fprintf(f, "    \"%s\": %lld%s", k, (long long)v, last ? "\n" : ",\n");
+}
+
+void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
+    const run_result_t* runs, const agg_t* a) {
+    FILE* f = fopen(o->output_json, "w");
+    if (!f) {
+        fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
+        exit(1);
+    }
+    fprintf(f, "{\n");
+    json_field_str(f, "schema_version", "4", false);
+    json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
+    json_field_str(f, "plugin", o->plugin, false);
+    json_field_str(f, "device", o->device, false);
+    json_field_str(f, "device_id", device_id, false);
+    json_field_str(f, "model_path", o->model_path, false);
+    json_field_i64(f, "model_size_bytes", model_size_bytes, false);
+    json_field_str(f, "qairt_version", geniex_get_plugin_version("qairt"), false);
+    json_field_str(f, "llama_cpp_version", geniex_get_plugin_version("llama_cpp"), false);
+    fprintf(f, "    \"params\": {\n");
+    fprintf(f,
+        "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
+        "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d",
+        o->warmup,
+        o->repeat,
+        o->n_prompt,
+        o->max_new_tokens,
+        (double)o->temperature,
+        o->seed,
+        o->n_ctx,
+        o->n_threads,
+        ngl);
+    if (o->spec_type) {
+        fprintf(f, ",\n      \"spec_type\": ");
+        json_write_quoted(f, o->spec_type);
+        if (o->draft_model) {
+            fprintf(f, ",\n      \"draft_model\": ");
+            json_write_quoted(f, o->draft_model);
+        }
+        fprintf(f, ",\n      \"draft_tokens\": %d", o->draft_tokens);
+    }
+    fprintf(f, "\n    },\n");
+    fprintf(f, "    \"runs\": [\n");
+    for (int i = 0; i < o->repeat; ++i) {
+        const run_result_t* r = &runs[i];
+        fprintf(f,
+            "      {\"run_idx\": %d, \"ttft_us\": %lld, \"media_us\": %lld, "
+            "\"prompt_time_us\": %lld, \"decode_time_us\": %lld, "
+            "\"prompt_tokens\": %lld, \"gen_tokens\": %lld, "
+            "\"prefill_tps\": %.6f, \"decode_tps\": %.6f, \"stop_reason\": %s%s%s}%s\n",
+            r->run_idx,
+            (long long)r->ttft_us,
+            (long long)r->media_us,
+            (long long)r->prompt_time_us,
+            (long long)r->decode_time_us,
+            (long long)r->prompt_tokens,
+            (long long)r->gen_tokens,
+            r->prefill_tps,
+            r->decode_tps,
+            r->stop_reason ? "\"" : "null",
+            r->stop_reason ? r->stop_reason : "",
+            r->stop_reason ? "\"" : "",
+            (i + 1 < o->repeat) ? "," : "");
+    }
+    fprintf(f, "    ],\n");
+    fprintf(f, "    \"agg\": {\n");
+    fprintf(f,
+        "      \"ttft_ms\":     {\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
+        a->ttft_ms_med,
+        a->ttft_ms_lo,
+        a->ttft_ms_hi,
+        a->ttft_ms_mean,
+        a->ttft_ms_sd);
+    fprintf(f,
+        "      \"prefill_tps\": {\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
+        a->prefill_med,
+        a->prefill_lo,
+        a->prefill_hi,
+        a->prefill_mean,
+        a->prefill_sd);
+    fprintf(f,
+        "      \"decode_tps\":  {\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
+        a->decode_med,
+        a->decode_lo,
+        a->decode_hi,
+        a->decode_mean,
+        a->decode_sd);
+    fprintf(f, "      \"gen_tokens\":  {\"median\": %.6f},\n", a->gen_tokens_med);
+    fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f},\n", a->prompt_tokens_med);
+    fprintf(f, "      \"media_ms\":{\"median\": %.6f}\n", a->media_ms_med);
+    fprintf(f, "    }\n");
+    fprintf(f, "}\n");
+    fclose(f);
+    /* keep static-analysis happy */
+    (void)json_field_dbl;
+}
+
+/* Write one row of the SDK's top-N output as a JSON array of [token_id, logit]
+ * pairs. The SDK already selected and sorted the top-N (descending logit), so
+ * this just formats row_width pairs. */
+static void write_top_n_row(FILE* f, const int32_t* ids, const float* logits, int32_t row_width) {
+    fputc('[', f);
+    for (int32_t k = 0; k < row_width; ++k) {
+        fprintf(f, "%s[%d, %.6f]", k ? ", " : "", ids[k], logits[k]);
+    }
+    fputc(']', f);
+}
+
+/* Write the prefill-only logits report for --logits. Emits shape metadata plus,
+ * per row, the top-N [token_id, logit] pairs. Records the top-N truncation
+ * explicitly so a consumer never mistakes it for the full vocabulary. */
+void write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
+    const geniex_LlmForwardLogitsOutput* fout) {
+    FILE* f = fopen(o->output_json, "w");
+    if (!f) {
+        fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
+        exit(1);
+    }
+    const bool truncated = fout->row_width < fout->vocab_size;
+
+    fprintf(f, "{\n");
+    json_field_str(f, "schema_version", "logits-1", false);
+    json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
+    json_field_str(f, "plugin", o->plugin, false);
+    json_field_str(f, "device", o->device, false);
+    json_field_str(f, "device_id", device_id, false);
+    json_field_str(f, "model_path", o->model_path, false);
+    json_field_i64(f, "n_gpu_layers", ngl, false);
+    json_field_i64(f, "n_prompt", fin->input_ids_count, false);
+    fprintf(f, "    \"all_positions\": %s,\n", fin->all_positions ? "true" : "false");
+    json_field_i64(f, "n_rows", fout->n_rows, false);
+    json_field_i64(f, "vocab_size", fout->vocab_size, false);
+    json_field_i64(f, "top_n", fout->row_width, false);
+    fprintf(f, "    \"truncated_to_top_n\": %s,\n", truncated ? "true" : "false");
+
+    fprintf(f, "    \"rows\": [\n");
+    for (int32_t r = 0; r < fout->n_rows; ++r) {
+        const size_t off = (size_t)r * fout->row_width;
+        fprintf(f, "      ");
+        write_top_n_row(f, fout->token_ids + off, fout->logits + off, fout->row_width);
+        fprintf(f, r + 1 < fout->n_rows ? ",\n" : "\n");
+    }
+    fprintf(f, "    ]\n");
+    fprintf(f, "}\n");
+    fclose(f);
+}
+
+/* ----------------------------- Markdown ----------------------------- */
+
+/* Trim the `-{plugin}-{device}[-c{N}]` tail from a cell_id; falls back to the
+ * raw id when the suffix isn't present. Caller frees. */
+static char* model_label(const char* cell_id, const char* plugin, const char* device) {
+    if (!cell_id) return NULL;
+    size_t cl = strlen(cell_id);
+    /* Strip a trailing "-c<digits>" if present (bench ctx sweep). */
+    size_t end = cl;
+    while (end > 0 && cell_id[end - 1] >= '0' && cell_id[end - 1] <= '9') end--;
+    if (end >= 2 && end < cl && cell_id[end - 1] == 'c' && cell_id[end - 2] == '-') {
+        cl = end - 2;
+    }
+    size_t pl  = plugin ? strlen(plugin) : 0;
+    size_t dl  = device ? strlen(device) : 0;
+    size_t suf = 1 + pl + 1 + dl;
+    if (pl && dl && cl > suf && cell_id[cl - suf] == '-' && cell_id[cl - suf + 1 + pl] == '-' &&
+        strncmp(cell_id + cl - suf + 1, plugin, pl) == 0 && strncmp(cell_id + cl - dl, device, dl) == 0) {
+        char* out = (char*)malloc(cl - suf + 1);
+        if (!out) return NULL;
+        memcpy(out, cell_id, cl - suf);
+        out[cl - suf] = '\0';
+        return out;
+    }
+    char* out = (char*)malloc(cl + 1);
+    if (!out) return NULL;
+    memcpy(out, cell_id, cl);
+    out[cl] = '\0';
+    return out;
+}
+
+static void format_size(int64_t bytes, char* buf, size_t bufsz) {
+    if (bytes <= 0) {
+        snprintf(buf, bufsz, "-");
+        return;
+    }
+    double b = (double)bytes;
+    if (b < 1024.0) {
+        snprintf(buf, bufsz, "%lld B", (long long)bytes);
+    } else if (b < 1024.0 * 1024.0) {
+        snprintf(buf, bufsz, "%.1f KiB", b / 1024.0);
+    } else if (b < 1024.0 * 1024.0 * 1024.0) {
+        snprintf(buf, bufsz, "%.1f MiB", b / (1024.0 * 1024.0));
+    } else {
+        snprintf(buf, bufsz, "%.2f GiB", b / (1024.0 * 1024.0 * 1024.0));
+    }
+}
+
+void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a) {
+    /* Write llama-bench-style row. First call writes the header + separator;
+     * subsequent calls append a single row. Detect "first call" by checking
+     * whether the file currently exists / is non-empty. */
+    struct stat st;
+    bool        first = (stat(o->output_md, &st) != 0) || st.st_size == 0;
+
+    FILE* f = fopen(o->output_md, "a");
+    if (!f) {
+        fprintf(stderr, "ERROR: cannot open %s for append\n", o->output_md);
+        exit(1);
+    }
+    if (first) {
+        fprintf(f,
+            "| Model | Size | Backend | Device | ngl | Test | TTFT (ms) | Media enc (ms) | Prefill (tok/s) | "
+            "Decode (tok/s) |\n"
+            "|-------|-----:|---------|--------|----:|------|----------:|---------------:|----------------:|"
+            "---------------:|\n");
+    }
+
+    char  size_buf[32];
+    char  ngl_buf[16];
+    char  test_buf[32];
+    char* model = model_label(o->cell_id, o->plugin, o->device);
+    format_size(model_size_bytes, size_buf, sizeof(size_buf));
+    if (strcmp(o->plugin, "qairt") == 0 || ngl <= 0) {
+        snprintf(ngl_buf, sizeof(ngl_buf), "-");
+    } else {
+        snprintf(ngl_buf, sizeof(ngl_buf), "%d", ngl);
+    }
+    snprintf(
+        test_buf, sizeof(test_buf), "pp%lld+tg%lld", (long long)a->prompt_tokens_med, (long long)a->gen_tokens_med);
+
+    char media_buf[24];
+    if (a->media_ms_med > 0)
+        snprintf(media_buf, sizeof(media_buf), "%.1f", a->media_ms_med);
+    else
+        snprintf(media_buf, sizeof(media_buf), "-");
+
+    fprintf(f,
+        "| %s | %s | %s | %s | %s | %s | %.1f ± %.1f | %s | %.1f ± %.1f | %.1f ± %.1f |\n",
+        model ? model : (o->cell_id ? o->cell_id : "cell"),
+        size_buf,
+        o->plugin,
+        o->device,
+        ngl_buf,
+        test_buf,
+        a->ttft_ms_med,
+        a->ttft_ms_sd,
+        media_buf,
+        a->prefill_med,
+        a->prefill_sd,
+        a->decode_med,
+        a->decode_sd);
+    free(model);
+    fclose(f);
+}
