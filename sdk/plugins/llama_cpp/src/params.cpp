@@ -147,8 +147,11 @@ llama_context_params build_context_params(
 }
 
 ggml_threadpool_params build_threadpool_params(int n_threads, Device device) {
+    // Linux / NPU stays unpinned: strict-pinning 6 threads to cores 2-7 halves
+    // HTP decode throughput on Snapdragon X2 Elite (10.6 vs 20.1 tok/s), and
+    // llama.cpp's own Snapdragon Linux runs never pin.
     static const bool pin_matrix[3][3] = {
-        {false, true, true},    // Linux
+        {false, true, false},   // Linux
         {false, false, false},  // Windows
         {true, true, true}      // Android
     };
