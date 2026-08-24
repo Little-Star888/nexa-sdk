@@ -329,6 +329,11 @@ components:
           minimum: 1
           description: An upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
           default: 2048
+        max_tokens:
+          type: integer
+          minimum: 1
+          description: "Deprecated alias for `max_completion_tokens`, accepted for compatibility with older OpenAI clients. Ignored when `max_completion_tokens` is also present."
+          deprecated: true
         temperature:
           type: number
           format: float

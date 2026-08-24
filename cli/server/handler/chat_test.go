@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -52,4 +53,30 @@ func TestSinks(t *testing.T) {
 			t.Errorf("content = %q, want raw inline", got)
 		}
 	})
+}
+
+// Mirrors the alias collapse ChatCompletions applies after binding.
+func TestMaxCompletionTokensAlias(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want int64
+	}{
+		{"no cap in body falls back to default", `{}`, 2048},
+		{"max_completion_tokens honoured", `{"max_completion_tokens":512}`, 512},
+		{"deprecated max_tokens honoured", `{"max_tokens":512}`, 512},
+		{"max_completion_tokens wins over max_tokens", `{"max_tokens":512,"max_completion_tokens":128}`, 128},
+		{"explicit null falls back to default", `{"max_tokens":null}`, 2048},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := defaultChatCompletionRequest()
+			if err := json.Unmarshal([]byte(tc.body), &p); err != nil {
+				t.Fatalf("unmarshal %s: %v", tc.body, err)
+			}
+			if got := p.MaxCompletionTokens.Or(p.MaxTokens.Value); got != tc.want {
+				t.Errorf("cap = %d, want %d", got, tc.want)
+			}
+		})
+	}
 }
