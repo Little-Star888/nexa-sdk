@@ -63,7 +63,8 @@ class LlamaLlm : public ILlm {
    private:
     void set_sampler(const geniex_SamplerConfig* cfg);
 
-    int32_t setup_speculative(const geniex_ModelConfig& config, Device device, const char* device_id);
+    int32_t setup_speculative(
+        const geniex_ModelConfig& config, Device device, const char* device_id, common_params_speculative& spar);
     void    teardown_speculative();
     int32_t decode_speculative(const geniex_GenerationConfig& cfg, const std::vector<llama_token>& prompt_ids,
         const std::function<bool(llama_token)>& emit, const std::function<int()>& n_generated,
