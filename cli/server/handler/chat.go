@@ -60,7 +60,8 @@ func defaultChatCompletionRequest() ChatCompletionRequest {
 	cfg := config.Get()
 	return ChatCompletionRequest{
 		ChatCompletionNewParams: ChatCompletionNewParams{
-			MaxCompletionTokens: param.NewOpt[int64](2048),
+			// On the deprecated alias, so an explicit max_completion_tokens wins.
+			MaxTokens: param.NewOpt[int64](2048),
 		},
 		Stream: false,
 
@@ -76,17 +77,6 @@ func defaultChatCompletionRequest() ChatCompletionRequest {
 	}
 }
 
-func isWarmupRequest(param ChatCompletionRequest) bool {
-	if len(param.Messages) == 0 {
-		return true
-	}
-	if len(param.Messages) != 1 {
-		return false
-	}
-	r := param.Messages[0].GetRole()
-	return r != nil && *r == "system"
-}
-
 func ChatCompletions(c *gin.Context) {
 	param := defaultChatCompletionRequest()
 	if err := c.ShouldBindJSON(&param); err != nil {
@@ -94,6 +84,8 @@ func ChatCompletions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
+	// max_tokens is the deprecated alias; below reads MaxCompletionTokens only.
+	param.MaxCompletionTokens = openai.Int(param.MaxCompletionTokens.Or(param.MaxTokens.Value))
 
 	slog.Info("ChatCompletions", "param", param)
 	name, _ := geniex_sdk.SplitNamePrecision(param.Model)
@@ -221,7 +213,7 @@ func prepareVLM(p *geniex_sdk.VLM, messages []geniex_sdk.VlmChatMessage, param C
 			PromptUTF8: prompt,
 			OnToken:    onToken,
 			Config: &geniex_sdk.GenerationConfig{
-				MaxTokens:      int32(param.MaxCompletionTokens.Value),
+				MaxTokens:     int32(param.MaxCompletionTokens.Value),
 				SamplerConfig: sampler,
 				ImagePaths:    images,
 				AudioPaths:    audios,
@@ -253,7 +245,12 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 	if writeKeepAliveError(c, err) {
 		return
 	}
-	if isWarmupRequest(param) {
+	// Warm-up: no messages, or a lone system message — model loaded, nothing to generate.
+	var role *string
+	if len(param.Messages) == 1 {
+		role = param.Messages[0].GetRole()
+	}
+	if len(param.Messages) == 0 || role != nil && *role == "system" {
 		c.JSON(http.StatusOK, nil)
 		return
 	}
