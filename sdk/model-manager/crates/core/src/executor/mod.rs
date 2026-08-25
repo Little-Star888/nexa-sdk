@@ -546,16 +546,20 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
         });
     }
 
+    // Let every spawned chunk task run to completion instead of cancelling
+    // siblings on the first error — chunks that are already in flight are
+    // typically about to succeed, and cancelling them would discard bytes
+    // that were already downloaded before they get a chance to persist
+    // their bit in the `.progress` bitmap. Only a real cooperative cancel
+    // (via the progress callback) should preempt in-flight chunks.
     let mut first_err: Option<Error> = None;
     while let Some(res) = chunk_tasks.join_next().await {
         match res {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                cancel.cancel();
                 first_err.get_or_insert(e);
             }
             Err(join_err) => {
-                cancel.cancel();
                 first_err.get_or_insert(Error::Http(format!("chunk join: {join_err}")));
             }
         }
