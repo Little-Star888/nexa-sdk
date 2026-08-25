@@ -4,10 +4,14 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 
@@ -48,38 +52,42 @@ func Serve() {
 	RegisterSwagger(engine)
 
 	cfg := config.Get()
-	var err error
+	srv := &http.Server{Addr: cfg.Host, Handler: engine}
+	listen := srv.ListenAndServe
+	scheme := "http"
 
-	// Determine whether to serve over HTTPS
 	if cfg.HTTPS {
-		certFile := cfg.CertFile
-		keyFile := cfg.KeyFile
+		for _, path := range []string{cfg.CertFile, cfg.KeyFile} {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				fmt.Println(render.GetTheme().Error.Sprintf("HTTPS cert/key file not found: %s", path))
+				return
+			}
+		}
+		listen = func() error { return srv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile) }
+		scheme = "https"
 
-		// Verify that certificate and key files exist
-		if _, err := os.Stat(certFile); os.IsNotExist(err) {
-			fmt.Println(render.GetTheme().Error.Sprintf("HTTPS Certificate file not found: %s", certFile))
-			return
-		}
-		if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-			fmt.Println(render.GetTheme().Error.Sprintf("HTTPS Key file not found: %s", keyFile))
-			return
-		}
-
-		fmt.Println(render.GetTheme().Info.Sprintf("HTTPS enabled: cert=%s key=%s", certFile, keyFile))
-		fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on https://%s/", cfg.Host))
-		if hint := hostBindingHint(cfg.Host); hint != "" {
-			fmt.Println(render.GetTheme().Info.Sprint(hint))
-		}
-		err = engine.RunTLS(cfg.Host, certFile, keyFile)
-	} else {
-		fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on http://%s/", cfg.Host))
-		if hint := hostBindingHint(cfg.Host); hint != "" {
-			fmt.Println(render.GetTheme().Info.Sprint(hint))
-		}
-		err = engine.Run(cfg.Host)
+		fmt.Println(render.GetTheme().Info.Sprintf("HTTPS enabled: cert=%s key=%s", cfg.CertFile, cfg.KeyFile))
 	}
 
-	if err != nil {
+	fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on %s://%s/", scheme, cfg.Host))
+	if hint := hostBindingHint(cfg.Host); hint != "" {
+		fmt.Println(render.GetTheme().Info.Sprint(hint))
+	}
+
+	// Unhandled, Ctrl+C skips the deferred DeInit and pins NPU buffers till reboot.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- listen() }()
+
+	// stop() first in both arms, so a second Ctrl+C kills instead of being swallowed.
+	select {
+	case err := <-errCh: // listen only returns on failure here
+		stop()
 		fmt.Println(render.GetTheme().Error.Sprintf("HTTP/HTTPS Server Error: %v", err))
+	case <-ctx.Done():
+		stop()
+		fmt.Println(render.GetTheme().Info.Sprint("Shutting down, releasing model resources..."))
+		srv.Shutdown(context.Background())
 	}
 }

@@ -129,9 +129,6 @@ func (keepAlive *keepAliveService) start() {
 		for {
 			select {
 			case <-keepAlive.stopCh:
-				middleware.GILock.Lock()
-				keepAlive.destroy()
-				middleware.GILock.Unlock()
 				return
 
 			case <-t.C:
@@ -242,7 +239,11 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 	return t, nil
 }
 
-// stop signals the sweep goroutine to terminate.
+// stop ends the sweep goroutine and frees the cached model — here rather than in
+// the goroutine, so it lands before the SDK deinit that follows.
 func (keepAlive *keepAliveService) stop() {
-	keepAlive.stopCh <- struct{}{}
+	close(keepAlive.stopCh)
+	middleware.GILock.Lock()
+	defer middleware.GILock.Unlock()
+	keepAlive.destroy()
 }
