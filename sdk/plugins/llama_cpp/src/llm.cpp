@@ -95,7 +95,11 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
         return GENIEX_ERROR_COMMON_MODEL_LOAD;
     }
 
-    llama_context_params cpar = build_context_params(config, /*n_ctx_default=*/4096, device);
+    // Parse the speculative config before the target context: a drafting target
+    // needs its rollback snapshots and per-draft logits rows sized up front.
+    std::optional<common_params_speculative> spar = build_speculative_params(config);
+
+    llama_context_params cpar = build_context_params(config, /*n_ctx_default=*/4096, device, spar ? &*spar : nullptr);
     this->ctx                 = llama_init_from_model(this->model, cpar);
     if (!this->ctx) {
         return GENIEX_ERROR_COMMON_MODEL_LOAD;
@@ -110,8 +114,8 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
 
     // Speculative decoding: optional, keyed on a non-empty spec_type ("none" also
     // disables). Failure is non-fatal — we log and fall back to plain decoding.
-    if (config.spec_type && config.spec_type[0] != '\0' && strcmp(config.spec_type, "none") != 0) {
-        int32_t spec_ret = setup_speculative(config, device, input->device_id);
+    if (spar) {
+        int32_t spec_ret = setup_speculative(config, device, input->device_id, *spar);
         if (spec_ret != GENIEX_SUCCESS) {
             GENIEX_LOG_WARN("speculative decoding setup failed; falling back to plain decoding");
             teardown_speculative();
@@ -658,10 +662,14 @@ int32_t LlamaLlm::decode_speculative(const geniex_GenerationConfig& cfg, const s
         }
         this->n_past += (int)n_accept + 1;
 
-        // Drop any rejected draft tail from both KV caches.
-        llama_memory_seq_rm(mem_tgt, seq_id, this->n_past, -1);
-        if (mem_dft) {
-            llama_memory_seq_rm(mem_dft, seq_id, this->n_past, -1);
+        // Drop any rejected draft tail from both KV caches. Nothing to drop when
+        // the target agreed with the whole draft, and seq_rm is not free on the
+        // HTP backend, so skip it then — same guard as the server's n_rollback.
+        if (n_accept < draft.size()) {
+            llama_memory_seq_rm(mem_tgt, seq_id, this->n_past, -1);
+            if (mem_dft) {
+                llama_memory_seq_rm(mem_dft, seq_id, this->n_past, -1);
+            }
         }
 
         id_last = ids.back();
@@ -698,25 +706,15 @@ void LlamaLlm::teardown_speculative() {
     this->spec_n_max = 0;
 }
 
-int32_t LlamaLlm::setup_speculative(const geniex_ModelConfig& config, Device device, const char* device_id) {
-    std::vector<common_speculative_type> types =
-        common_speculative_types_from_names(string_split<std::string>(config.spec_type, ','));
-    types.erase(std::remove(types.begin(), types.end(), COMMON_SPECULATIVE_TYPE_NONE), types.end());
-    if (types.empty()) {
-        GENIEX_LOG_ERROR("unrecognized --spec-type: '{}'", config.spec_type);
-        return GENIEX_ERROR_COMMON_INVALID_INPUT;
-    }
-
-    const bool needs_draft = std::any_of(types.begin(), types.end(), [](common_speculative_type t) {
+int32_t LlamaLlm::setup_speculative(
+    const geniex_ModelConfig& config, Device device, const char* device_id, common_params_speculative& spar) {
+    const bool needs_draft = std::any_of(spar.types.begin(), spar.types.end(), [](common_speculative_type t) {
         return t == COMMON_SPECULATIVE_TYPE_DRAFT_MTP || t == COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3 ||
                t == COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE;
     });
+    const bool is_mtp =
+        std::find(spar.types.begin(), spar.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != spar.types.end();
 
-    common_params_speculative spar;
-    spar.types       = types;
-    spar.draft.n_max = config.spec_n_max > 0 ? config.spec_n_max : 3;
-    if (config.spec_n_min > 0) spar.draft.n_min = config.spec_n_min;
-    if (config.spec_p_min > 0) spar.draft.p_min = config.spec_p_min;
     spar.draft.ctx_tgt = this->ctx;
     this->spec_n_max   = spar.draft.n_max;
 
@@ -738,13 +736,17 @@ int32_t LlamaLlm::setup_speculative(const geniex_ModelConfig& config, Device dev
             return GENIEX_ERROR_COMMON_MODEL_LOAD;
         }
 
+        // Mirrors common_base_params_to_speculative: the draft context inherits
+        // the target's params verbatim; only the MTP wiring, the disabled
+        // rollback and the single-output limits differ.
         llama_context_params dcpar = build_context_params(config, /*n_ctx_default=*/4096, device);
-        dcpar.ctx_type             = LLAMA_CONTEXT_TYPE_MTP;
-        dcpar.ctx_other            = this->ctx;
-        dcpar.n_rs_seq             = 0;
-        const uint32_t draft_batch = std::max<uint32_t>(64, static_cast<uint32_t>(this->spec_n_max));
-        dcpar.n_batch              = draft_batch;
-        dcpar.n_ubatch             = draft_batch;
+        if (is_mtp) {
+            dcpar.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+        }
+        dcpar.ctx_other             = this->ctx;
+        dcpar.n_rs_seq              = 0;
+        dcpar.n_outputs_max         = dcpar.n_seq_max;
+        dcpar.n_outputs_max_per_seq = 1;
 
         this->draft_ctx = llama_init_from_model(this->draft_model, dcpar);
         if (!this->draft_ctx) {

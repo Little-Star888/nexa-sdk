@@ -28,6 +28,7 @@
         "GENIEX_PLUGIN_LLAMA_CPP": "ON",
         "GGML_HEXAGON": "ON",
         "GGML_OPENCL": "ON",
+        "GGML_OPENMP": "OFF",
         "GENIEX_PLUGIN_QAIRT": "ON",
         "GENIEX_BENCHMARK": "ON",
         "CMAKE_PREFIX_PATH": "$env{OPENCL_SDK_ROOT}",
@@ -45,6 +46,7 @@
         "GENIEX_PLUGIN_QAIRT": "OFF",
         "GGML_HEXAGON": "OFF",
         "GGML_OPENCL": "OFF",
+        "GGML_OPENMP": "OFF",
         "GENIEX_BENCHMARK": "ON",
         "GENIEX_CPU_ONLY": "ON"
       }

@@ -3,6 +3,7 @@
 
 #include "params.h"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -10,6 +11,7 @@
 #include <thread>
 
 #include "logging.h"
+#include "speculative.h"
 
 namespace geniex {
 
@@ -68,7 +70,29 @@ llama_model_params build_model_params(const geniex_ModelConfig& config, Device d
     return mpar;
 }
 
-llama_context_params build_context_params(const geniex_ModelConfig& config, int32_t n_ctx_default, Device device) {
+std::optional<common_params_speculative> build_speculative_params(const geniex_ModelConfig& config) {
+    if (!config.spec_type || config.spec_type[0] == '\0' || strcmp(config.spec_type, "none") == 0) {
+        return std::nullopt;
+    }
+
+    std::vector<common_speculative_type> types =
+        common_speculative_types_from_names(string_split<std::string>(config.spec_type, ','));
+    types.erase(std::remove(types.begin(), types.end(), COMMON_SPECULATIVE_TYPE_NONE), types.end());
+    if (types.empty()) {
+        GENIEX_LOG_ERROR("unrecognized --spec-type: '{}'", config.spec_type);
+        return std::nullopt;
+    }
+
+    common_params_speculative spar;
+    spar.types       = types;
+    spar.draft.n_max = config.spec_n_max > 0 ? config.spec_n_max : 3;
+    if (config.spec_n_min > 0) spar.draft.n_min = config.spec_n_min;
+    if (config.spec_p_min > 0) spar.draft.p_min = config.spec_p_min;
+    return spar;
+}
+
+llama_context_params build_context_params(
+    const geniex_ModelConfig& config, int32_t n_ctx_default, Device device, const common_params_speculative* spec) {
     static const uint32_t ubatch_matrix[3][3] = {
         {2048, 512, 1024},  // Linux
         {2048, 512, 1024},  // Windows
@@ -94,9 +118,18 @@ llama_context_params build_context_params(const geniex_ModelConfig& config, int3
     cpar.flash_attn_type      = static_cast<llama_flash_attn_type>(fa);
     cpar.no_perf              = false;
 
+    if (spec) {
+        cpar.n_rs_seq     = spec->need_n_rs_seq();
+        const auto limits = common_speculative_get_output_limits(
+            static_cast<int32_t>(cpar.n_batch), static_cast<int32_t>(cpar.n_seq_max), common_speculative_n_max(spec));
+        cpar.n_outputs_max         = std::max<int32_t>(1, limits.total);
+        cpar.n_outputs_max_per_seq = std::max<int32_t>(1, limits.per_seq);
+    }
+
     GENIEX_LOG_INFO(
         "[Optimise] context params: n_ctx={}, n_batch={}, n_ubatch={}, n_seq_max={}, n_threads={}, "
-        "n_threads_batch={}, flash_attn_type={}, swa_full={}, kv_unified={}, no_perf={}",
+        "n_threads_batch={}, flash_attn_type={}, swa_full={}, kv_unified={}, no_perf={}, n_rs_seq={}, "
+        "n_outputs_max={}, n_outputs_max_per_seq={}",
         cpar.n_ctx,
         cpar.n_batch,
         cpar.n_ubatch,
@@ -106,13 +139,19 @@ llama_context_params build_context_params(const geniex_ModelConfig& config, int3
         static_cast<int>(cpar.flash_attn_type),
         cpar.swa_full,
         cpar.kv_unified,
-        cpar.no_perf);
+        cpar.no_perf,
+        cpar.n_rs_seq,
+        cpar.n_outputs_max,
+        cpar.n_outputs_max_per_seq);
     return cpar;
 }
 
 ggml_threadpool_params build_threadpool_params(int n_threads, Device device) {
+    // Linux / NPU stays unpinned: strict-pinning 6 threads to cores 2-7 halves
+    // HTP decode throughput on Snapdragon X2 Elite (10.6 vs 20.1 tok/s), and
+    // llama.cpp's own Snapdragon Linux runs never pin.
     static const bool pin_matrix[3][3] = {
-        {false, true, true},    // Linux
+        {false, true, false},   // Linux
         {false, false, false},  // Windows
         {true, true, true}      // Android
     };
