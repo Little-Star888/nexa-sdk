@@ -480,7 +480,23 @@ func pullModel(ctx context.Context, name, quant string) error {
 		if err != nil {
 			return err
 		}
-		if chosen, err := choosePrecision("Choose a precision version to download", q.Candidates); err != nil {
+		// Only the picker hides cached precisions: without a terminal the head
+		// wins, and filtering would make a repeated `geniex pull <model>` walk
+		// the list instead of resolving to the recommended one every time.
+		candidates := q.Candidates
+		if hasTerminal() {
+			cached := cachedPrecisions(name, candidates)
+			if pending := skipDownloaded(candidates, cached); len(pending) > 0 {
+				candidates = pending
+			} else if len(cached) > 0 {
+				// A re-pull still repairs a truncated file or refetches a
+				// requantized or per-chipset bundle (the store is keyed by name).
+				fmt.Println(render.GetTheme().Info.Sprint("Every precision is already downloaded; pick one to re-download."))
+			}
+			slog.Debug("pull precisions", "remote", len(q.Candidates), "cached", cached, "offered", len(candidates))
+		}
+
+		if chosen, err := choosePrecision("Choose a precision version to download", candidates); err != nil {
 			return err
 		} else {
 			in.Precision = chosen
@@ -545,6 +561,31 @@ func pullModel(ctx context.Context, name, quant string) error {
 		fmt.Println(render.GetTheme().Info.Sprintf("   Precision: %s", quant))
 	}
 	return nil
+}
+
+// cachedPrecisions returns the candidates already on disk. The SDK canonicalizes
+// the name, so a bare AI Hub id or an ai-hub-models/ prefix hits its own entry.
+func cachedPrecisions(name string, candidates []geniex_sdk.PrecisionCandidate) []string {
+	if _, err := geniex_sdk.ModelGetPaths(name); err != nil {
+		return nil
+	}
+	var cached []string
+	for _, c := range candidates {
+		if _, err := geniex_sdk.ModelGetPaths(name + ":" + c.Precision); err == nil {
+			cached = append(cached, c.Precision)
+		}
+	}
+	return cached
+}
+
+func skipDownloaded(candidates []geniex_sdk.PrecisionCandidate, cached []string) []geniex_sdk.PrecisionCandidate {
+	if len(cached) == 0 {
+		return candidates
+	}
+	return slices.DeleteFunc(slices.Clone(candidates), func(c geniex_sdk.PrecisionCandidate) bool {
+		// GGUF quant labels match case-insensitively, as the SDK does.
+		return slices.ContainsFunc(cached, func(p string) bool { return strings.EqualFold(p, c.Precision) })
+	})
 }
 
 // hasTerminal reports whether a picker can be drawn: keys come from stdin, and
