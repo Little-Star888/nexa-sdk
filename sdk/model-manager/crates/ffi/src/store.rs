@@ -128,6 +128,34 @@ unsafe fn free_detail(d: &mut GenieXModelDetail) {
     *d = GenieXModelDetail::null();
 }
 
+/* ---- geniex_model_get_detailed ---- */
+
+#[no_mangle]
+pub extern "C" fn geniex_model_get_detailed(
+    model_name: *const c_char,
+    out: *mut GenieXModelDetail,
+) -> i32 {
+    ffi_guard(|| {
+        if out.is_null() {
+            return Err(GENIEX_ERROR_COMMON_INVALID_INPUT);
+        }
+        let name = unsafe { cstr_to_str(model_name) }?;
+        let manifest = get_store()?
+            .resolve_detail_manifest(name)
+            .map_err(|e| report(&e))?;
+        unsafe { *out = detail_from_manifest(&manifest) };
+        Ok(GENIEX_SUCCESS)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn geniex_model_detail_free(detail: *mut GenieXModelDetail) {
+    if detail.is_null() {
+        return;
+    }
+    free_detail(&mut *detail);
+}
+
 /* ---- geniex_model_remove / clean ---- */
 
 #[no_mangle]
