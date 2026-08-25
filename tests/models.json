@@ -5,7 +5,7 @@
         "id": "unsloth/Qwen3-4B-GGUF",
         "precision": "Q4_0",
         "hub": "hf",
-        "devices": ["cpu", "gpu", "npu", "hybrid"]
+        "devices": ["cpu", "gpu", "npu"]
       },
       {
         "id": "unsloth/gpt-oss-20b-GGUF",
@@ -20,7 +20,7 @@
         "id": "unsloth/gemma-4-E2B-it-GGUF",
         "precision": "Q4_0",
         "hub": "hf",
-        "devices": ["cpu", "gpu", "npu", "hybrid"]
+        "devices": ["cpu", "gpu", "npu"]
       }
     ],
     "llama_cpp_mtp_target": [

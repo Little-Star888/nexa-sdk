@@ -36,8 +36,8 @@ _VLM = primary('llama_cpp_vlm')
 _MTP_TARGET = primary('llama_cpp_mtp_target')
 _LLM_MATRIX = matrix('llama_cpp_llm')
 _VLM_MATRIX = matrix('llama_cpp_vlm')
-# Parity scores each candidate against a cpu reference run, so it needs a cpu model.
-_PARITY_CANDIDATES = [d for d in _LLM.devices if d != 'cpu']
+# Scored against a cpu reference run of the primary model, so not matrix-driven.
+_PARITY_CANDIDATES = ['gpu', 'npu', 'hybrid']
 _IS_QCS9075M = platform.system() == 'Linux' and platform.machine().lower() in ('aarch64', 'arm64')
 
 

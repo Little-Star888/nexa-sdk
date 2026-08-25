@@ -87,9 +87,9 @@ behavioural suite is a manifest edit. Loader: `tests/_models.py`.
 
 | Role                   | Model | Devices |
 |------------------------|-------|---------|
-| `llama_cpp_llm`        | `unsloth/Qwen3-4B-GGUF` Q4_0 | cpu, gpu, npu, hybrid |
+| `llama_cpp_llm`        | `unsloth/Qwen3-4B-GGUF` Q4_0 | cpu, gpu, npu |
 | `llama_cpp_llm`        | `unsloth/gpt-oss-20b-GGUF` Q4_0 | hybrid |
-| `llama_cpp_vlm`        | `unsloth/gemma-4-E2B-it-GGUF` Q4_0 + mmproj-F16 | cpu, gpu, npu, hybrid |
+| `llama_cpp_vlm`        | `unsloth/gemma-4-E2B-it-GGUF` Q4_0 + mmproj-F16 | cpu, gpu, npu |
 | `llama_cpp_mtp_target` | `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` | npu |
 | `llama_cpp_mtp_draft`  | `RachidAR/gemma-4-...-assistant-q4_0-gguf` | — (paired with the target) |
 | `qairt_llm`            | `qualcomm/Qwen3-4B` | npu |
