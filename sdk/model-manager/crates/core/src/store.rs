@@ -224,8 +224,7 @@ impl Store {
     }
 
     pub fn get_model_type(&self, name: &str) -> Result<ModelType> {
-        let name = canonicalize_model_name(name);
-        Ok(self.get_manifest(&name)?.model_type)
+        Ok(self.resolve_manifest(name)?.model_type)
     }
 
     pub fn set_model_type(&self, name: &str, model_type: ModelType) -> Result<()> {
@@ -491,6 +490,19 @@ mod tests {
         store.write_manifest(&sample_manifest("Org/B")).unwrap();
         let list = store.list().unwrap();
         assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn get_model_type_tolerates_a_precision_suffix() {
+        let (store, _tmp) = make_store();
+        store
+            .write_manifest(&sample_manifest("qualcomm/Typed"))
+            .unwrap();
+        // get_paths accepts "<name>:<quant>"; get_type must not diverge
+        assert_eq!(
+            store.get_model_type("Typed:Q4_K_M").unwrap(),
+            ModelType::Llm
+        );
     }
 
     #[test]

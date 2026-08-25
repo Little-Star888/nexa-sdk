@@ -190,7 +190,8 @@ GENIEX_API int32_t geniex_model_clean(int32_t* removed_count);
 
 /**
  * @brief Get the model type of a cached model.
- * @param model_name  "org/repo" format.
+ * @param model_name  "org/repo", a bare AI Hub id, or a HuggingFace URL, each
+ *                    with an optional ":<quant>" suffix that is ignored.
  * @param out_type    Set on success.
  * @return GENIEX_SUCCESS, or a negative geniex_ErrorCode.
  */
