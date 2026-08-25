@@ -480,18 +480,21 @@ func pullModel(ctx context.Context, name, quant string) error {
 		if err != nil {
 			return err
 		}
-		// Offer what isn't cached yet; when everything is, keep the full list
-		// rather than bailing out, as a re-pull is how you repair a truncated
-		// file, pick up an upstream requantization, or refetch an AI Hub bundle
-		// for another chipset (the store is keyed by name, not chipset).
+		// Only the picker hides cached precisions: without a terminal the head
+		// wins, and filtering would make a repeated `geniex pull <model>` walk
+		// the list instead of resolving to the recommended one every time.
 		candidates := q.Candidates
-		cached := cachedPrecisions(name, candidates)
-		if pending := skipDownloaded(candidates, cached); len(pending) > 0 {
-			candidates = pending
-		} else if len(cached) > 0 {
-			fmt.Println(render.GetTheme().Info.Sprint("Every precision is already downloaded; pick one to re-download."))
+		if hasTerminal() {
+			cached := cachedPrecisions(name, candidates)
+			if pending := skipDownloaded(candidates, cached); len(pending) > 0 {
+				candidates = pending
+			} else if len(cached) > 0 {
+				// A re-pull still repairs a truncated file or refetches a
+				// requantized or per-chipset bundle (the store is keyed by name).
+				fmt.Println(render.GetTheme().Info.Sprint("Every precision is already downloaded; pick one to re-download."))
+			}
+			slog.Debug("pull precisions", "remote", len(q.Candidates), "cached", cached, "offered", len(candidates))
 		}
-		slog.Debug("pull precisions", "remote", len(q.Candidates), "cached", cached, "offered", len(candidates))
 
 		if chosen, err := choosePrecision("Choose a precision version to download", candidates); err != nil {
 			return err
@@ -560,9 +563,8 @@ func pullModel(ctx context.Context, name, quant string) error {
 	return nil
 }
 
-// cachedPrecisions returns the candidates that already resolve on disk for
-// name. Resolution goes through the SDK, so a canonicalized name (a bare AI Hub
-// id, an ai-hub-models/ prefix) matches its own cache entry, as the pull does.
+// cachedPrecisions returns the candidates already on disk. The SDK canonicalizes
+// the name, so a bare AI Hub id or an ai-hub-models/ prefix hits its own entry.
 func cachedPrecisions(name string, candidates []geniex_sdk.PrecisionCandidate) []string {
 	if _, err := geniex_sdk.ModelGetPaths(name); err != nil {
 		return nil
@@ -576,8 +578,6 @@ func cachedPrecisions(name string, candidates []geniex_sdk.PrecisionCandidate) [
 	return cached
 }
 
-// skipDownloaded drops the already-cached candidates, so the picker only offers
-// something worth downloading.
 func skipDownloaded(candidates []geniex_sdk.PrecisionCandidate, cached []string) []geniex_sdk.PrecisionCandidate {
 	if len(cached) == 0 {
 		return candidates
