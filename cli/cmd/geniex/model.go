@@ -485,7 +485,11 @@ func pullModel(ctx context.Context, name, quant string) error {
 		// the list instead of resolving to the recommended one every time.
 		candidates := q.Candidates
 		if hasTerminal() {
-			cached := cachedPrecisions(name, candidates)
+			// N/A stays in: qairt stores a cached bundle under it.
+			var cached []string
+			if m, err := geniex_sdk.ModelGetDetailed(name); err == nil {
+				cached = downloadedPrecisions(*m, false)
+			}
 			if pending := skipDownloaded(candidates, cached); len(pending) > 0 {
 				candidates = pending
 			} else if len(cached) > 0 {
@@ -561,21 +565,6 @@ func pullModel(ctx context.Context, name, quant string) error {
 		fmt.Println(render.GetTheme().Info.Sprintf("   Precision: %s", quant))
 	}
 	return nil
-}
-
-// cachedPrecisions returns the candidates already on disk. The SDK canonicalizes
-// the name, so a bare AI Hub id or an ai-hub-models/ prefix hits its own entry.
-func cachedPrecisions(name string, candidates []geniex_sdk.PrecisionCandidate) []string {
-	if _, err := geniex_sdk.ModelGetPaths(name); err != nil {
-		return nil
-	}
-	var cached []string
-	for _, c := range candidates {
-		if _, err := geniex_sdk.ModelGetPaths(name + ":" + c.Precision); err == nil {
-			cached = append(cached, c.Precision)
-		}
-	}
-	return cached
 }
 
 func skipDownloaded(candidates []geniex_sdk.PrecisionCandidate, cached []string) []geniex_sdk.PrecisionCandidate {
