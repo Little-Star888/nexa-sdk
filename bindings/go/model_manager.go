@@ -239,16 +239,36 @@ func ModelListDetailed() ([]ModelDetail, error) {
 	models := unsafe.Slice(out.models, int(out.count))
 	result := make([]ModelDetail, out.count)
 	for i, m := range models {
-		result[i] = ModelDetail{
-			Name:       C.GoString(m.name),
-			ModelName:  C.GoString(m.model_name),
-			RuntimeID:  C.GoString(m.plugin_id),
-			ModelType:  ModelType(m.model_type),
-			TotalSize:  int64(m.total_size),
-			Precisions: cCharArrayToSlice(m.precisions, m.precision_count),
-		}
+		result[i] = goModelDetail(m)
 	}
 	return result, nil
+}
+
+// ModelGetDetailed returns one cached model's metadata without listing the
+// whole store. name takes the same loose forms as ModelGetPaths: a bare AI Hub
+// id is canonicalized to "qualcomm/<id>" in the SDK, and any ":precision"
+// suffix is ignored since the detail covers every downloaded precision.
+func ModelGetDetailed(name string) (*ModelDetail, error) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var out C.geniex_ModelDetail
+	if res := C.geniex_model_get_detailed(cName, &out); res != C.GENIEX_SUCCESS {
+		return nil, modelError(res)
+	}
+	defer C.geniex_model_detail_free(&out)
+	d := goModelDetail(out)
+	return &d, nil
+}
+
+func goModelDetail(m C.geniex_ModelDetail) ModelDetail {
+	return ModelDetail{
+		Name:       C.GoString(m.name),
+		ModelName:  C.GoString(m.model_name),
+		RuntimeID:  C.GoString(m.plugin_id),
+		ModelType:  ModelType(m.model_type),
+		TotalSize:  int64(m.total_size),
+		Precisions: cCharArrayToSlice(m.precisions, m.precision_count),
+	}
 }
 
 // ChipsetInfo mirrors geniex_ChipsetInfo.

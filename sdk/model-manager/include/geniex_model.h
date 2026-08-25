@@ -125,7 +125,8 @@ GENIEX_API void geniex_model_paths_free(geniex_ModelPaths* paths);
  * @brief Detailed metadata for one cached model.
  *
  * All non-NULL char* fields (and the `precisions` array) are heap-allocated;
- * free the enclosing output with geniex_model_list_detailed_free().
+ * free the enclosing output with geniex_model_list_detailed_free(), or a
+ * standalone detail with geniex_model_detail_free().
  */
 typedef struct {
     char*            name;       /**< "org/repo".                          */
@@ -153,6 +154,27 @@ GENIEX_API int32_t geniex_model_list_detailed(geniex_ModelListDetailedOutput* ou
 GENIEX_API void geniex_model_list_detailed_free(geniex_ModelListDetailedOutput* output);
 
 /**
+ * @brief Look up one cached model's metadata, without listing the whole store.
+ *
+ * The single-model counterpart of geniex_model_list_detailed(): it reads that
+ * model's manifest directly instead of walking every cached model. @p
+ * model_name takes the same loose forms as geniex_model_get_paths() — a bare
+ * name is canonicalized to `qualcomm/<name>`, and any `:<quant>` suffix is
+ * ignored, since the detail covers every downloaded precision. Like the
+ * listing, a model with an in-progress pull is reported as not cached.
+ *
+ * @param model_name  "org/repo", a bare AI Hub id, or a HuggingFace URL, each
+ *                    with an optional ":<quant>" suffix.
+ * @param out         Populated on success. Call geniex_model_detail_free() when done.
+ * @return GENIEX_SUCCESS, or a negative geniex_ErrorCode
+ *         (GENIEX_ERROR_COMMON_FILE_NOT_FOUND when the model is not cached).
+ */
+GENIEX_API int32_t geniex_model_get_detailed(const char* model_name, geniex_ModelDetail* out);
+
+/** Free one detail's strings + precisions array, then zero the struct. */
+GENIEX_API void geniex_model_detail_free(geniex_ModelDetail* detail);
+
+/**
  * @brief Delete a cached model from disk.
  * @param model_name  "org/repo" format.
  * @return GENIEX_SUCCESS, or GENIEX_ERROR_COMMON_FILE_NOT_FOUND if not cached.
@@ -168,7 +190,8 @@ GENIEX_API int32_t geniex_model_clean(int32_t* removed_count);
 
 /**
  * @brief Get the model type of a cached model.
- * @param model_name  "org/repo" format.
+ * @param model_name  "org/repo", a bare AI Hub id, or a HuggingFace URL, each
+ *                    with an optional ":<quant>" suffix that is ignored.
  * @param out_type    Set on success.
  * @return GENIEX_SUCCESS, or a negative geniex_ErrorCode.
  */

@@ -224,8 +224,7 @@ impl Store {
     }
 
     pub fn get_model_type(&self, name: &str) -> Result<ModelType> {
-        let name = canonicalize_model_name(name);
-        Ok(self.get_manifest(&name)?.model_type)
+        Ok(self.resolve_manifest(name)?.model_type)
     }
 
     pub fn set_model_type(&self, name: &str, model_type: ModelType) -> Result<()> {
@@ -236,6 +235,36 @@ impl Store {
             manifest.model_type = model_type;
             self.write_manifest(&manifest)
         })
+    }
+
+    /// Read one cached model's manifest, accepting the same loose name forms as
+    /// [`Self::get_paths`]: a non-canonical name is canonicalized and any
+    /// ":quant" suffix is dropped, since a manifest covers every precision.
+    ///
+    /// Canonicalization runs first so a pasted HuggingFace URL still resolves:
+    /// `split_quant` would otherwise cut at the colon in "https:".
+    pub fn resolve_manifest(&self, name_with_quant: &str) -> Result<ModelManifest> {
+        let canonical = canonicalize_model_name(name_with_quant);
+        let (name, _) = split_quant(&canonical);
+        validate_model_name(name)?;
+        self.get_manifest(name)
+    }
+
+    /// Read one cached model's manifest for reporting, skipping a model whose
+    /// directory holds an in-progress pull so this agrees with [`Self::list`].
+    /// The load path ([`Self::get_paths`] / [`Self::get_model_type`]) keeps
+    /// resolving the already-cached precisions while another one is pulling.
+    pub fn resolve_detail_manifest(&self, name_with_quant: &str) -> Result<ModelManifest> {
+        let manifest = self.resolve_manifest(name_with_quant)?;
+        if self
+            .cfg
+            .model_dir(&manifest.name)
+            .join(INFLIGHT_DIR)
+            .exists()
+        {
+            return Err(Error::ModelNotFound(manifest.name));
+        }
+        Ok(manifest)
     }
 
     /// Resolve a model name (with optional ":quant" suffix) to ModelPaths.
@@ -410,12 +439,70 @@ mod tests {
     }
 
     #[test]
+    fn resolve_manifest_canonicalizes_and_drops_quant() {
+        let (store, _tmp) = make_store();
+        store
+            .write_manifest(&sample_manifest("qualcomm/Bare"))
+            .unwrap();
+        // bare name -> qualcomm/<name>, and the ":quant" suffix is ignored
+        assert_eq!(
+            store.resolve_manifest("Bare").unwrap().name,
+            "qualcomm/Bare"
+        );
+        assert_eq!(
+            store.resolve_manifest("Bare:Q4_K_M").unwrap().name,
+            "qualcomm/Bare"
+        );
+        assert!(store.resolve_manifest("Org/Missing").is_err());
+    }
+
+    #[test]
+    fn resolve_manifest_accepts_a_pasted_hf_url() {
+        let (store, _tmp) = make_store();
+        store
+            .write_manifest(&sample_manifest("ggml-org/Qwen3"))
+            .unwrap();
+        assert_eq!(
+            store
+                .resolve_manifest("https://huggingface.co/ggml-org/Qwen3")
+                .unwrap()
+                .name,
+            "ggml-org/Qwen3"
+        );
+    }
+
+    #[test]
+    fn resolve_detail_manifest_skips_inflight() {
+        let (store, _tmp) = make_store();
+        store
+            .write_manifest(&sample_manifest("Org/Pulling"))
+            .unwrap();
+        fs::create_dir_all(store.cfg.model_dir("Org/Pulling").join(INFLIGHT_DIR)).unwrap();
+        // hidden from list + get_detailed, but still loadable through get_paths
+        assert!(store.resolve_detail_manifest("Org/Pulling").is_err());
+        assert!(store.resolve_manifest("Org/Pulling").is_ok());
+    }
+
+    #[test]
     fn list_returns_written_manifests() {
         let (store, _tmp) = make_store();
         store.write_manifest(&sample_manifest("Org/A")).unwrap();
         store.write_manifest(&sample_manifest("Org/B")).unwrap();
         let list = store.list().unwrap();
         assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn get_model_type_tolerates_a_precision_suffix() {
+        let (store, _tmp) = make_store();
+        store
+            .write_manifest(&sample_manifest("qualcomm/Typed"))
+            .unwrap();
+        // get_paths accepts "<name>:<quant>"; get_type must not diverge
+        assert_eq!(
+            store.get_model_type("Typed:Q4_K_M").unwrap(),
+            ModelType::Llm
+        );
     }
 
     #[test]

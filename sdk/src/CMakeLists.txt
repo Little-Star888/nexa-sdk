@@ -36,6 +36,8 @@ if(WIN32)
         geniex_model_set_type
         geniex_model_list_detailed
         geniex_model_list_detailed_free
+        geniex_model_get_detailed
+        geniex_model_detail_free
         geniex_model_query
         geniex_model_query_free
         geniex_model_resolve_alias

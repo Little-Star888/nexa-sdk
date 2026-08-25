@@ -534,13 +534,8 @@ func pullModel(ctx context.Context, name string, quant string) error {
 	if quant != "" {
 		key = name + ":" + quant
 	}
-	if models, err := geniex_sdk.ModelListDetailed(); err == nil {
-		for _, m := range models {
-			if m.Name == name && m.TotalSize > 0 {
-				fmt.Println(render.GetTheme().Info.Sprintf("   Size:      %s", humanize.IBytes(uint64(m.TotalSize))))
-				break
-			}
-		}
+	if m, err := geniex_sdk.ModelGetDetailed(name); err == nil && m.TotalSize > 0 {
+		fmt.Println(render.GetTheme().Info.Sprintf("   Size:      %s", humanize.IBytes(uint64(m.TotalSize))))
 	}
 	if paths, err := geniex_sdk.ModelGetPaths(key); err == nil && paths.ModelPath != "" {
 		fmt.Println(render.GetTheme().Info.Sprintf("   Location:  %s", filepath.Dir(paths.ModelPath)))

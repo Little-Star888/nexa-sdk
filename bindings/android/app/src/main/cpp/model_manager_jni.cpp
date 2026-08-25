@@ -477,6 +477,22 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_com_geniex_sdk_jni_ModelManager_l
     return arr;
 }
 
+extern "C" JNIEXPORT jobject JNICALL Java_com_geniex_sdk_jni_ModelManager_getDetailed(
+    JNIEnv* env, jobject /*thiz*/, jstring jModelName) {
+    std::string name = jstring2str(env, jModelName);
+    if (name.empty()) return nullptr;
+
+    geniex_ModelDetail d{};
+    int32_t            rc = geniex_model_get_detailed(name.c_str(), &d);
+    if (rc != GENIEX_SUCCESS) {
+        LOGe("[ModelManager JNI] getDetailed(%s) failed rc=%d", name.c_str(), rc);
+        return nullptr;
+    }
+    jobject item = build_model_detail(env, d);
+    geniex_model_detail_free(&d);
+    return item;
+}
+
 extern "C" JNIEXPORT jobject JNICALL Java_com_geniex_sdk_jni_ModelManager_query(
     JNIEnv* env, jobject /*thiz*/, jobject inputObj) {
     if (!inputObj) {

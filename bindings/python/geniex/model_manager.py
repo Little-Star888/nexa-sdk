@@ -22,6 +22,7 @@ from ._ffi._types import (
     geniex_ChipsetList,
     geniex_download_progress_cb,
     geniex_HubModelList,
+    geniex_ModelDetail,
     geniex_ModelListDetailedOutput,
     geniex_ModelPaths,
     geniex_ModelPullInput,
@@ -40,6 +41,7 @@ __all__ = [
     'pull',
     'list_models',
     'list_detailed',
+    'get_detailed',
     'last_error_message',
     'query',
     'remove',
@@ -322,22 +324,39 @@ def list_detailed() -> list[ModelDetail]:
     out = geniex_ModelListDetailedOutput()
     _check(lib.geniex_model_list_detailed(byref(out)))
     try:
-        models = []
-        for i in range(out.count):
-            d = out.models[i]
-            models.append(
-                ModelDetail(
-                    name=d.name.decode() if d.name else '',
-                    model_name=d.model_name.decode() if d.model_name else '',
-                    runtime=d.plugin_id.decode() if d.plugin_id else '',
-                    model_type=_type_str(d.model_type),
-                    total_size=d.total_size,
-                    precisions=[d.precisions[j].decode() for j in range(d.precision_count)],
-                )
-            )
-        return models
+        return [_model_detail(out.models[i]) for i in range(out.count)]
     finally:
         lib.geniex_model_list_detailed_free(byref(out))
+
+
+def get_detailed(name: str) -> ModelDetail:
+    """Return one cached model's metadata, without listing the whole store.
+
+    ``name`` takes the same loose forms as :func:`get_paths`: a bare AI Hub id
+    is canonicalized to ``qualcomm/<id>`` by the SDK, and any ``:<precision>``
+    suffix is ignored since the detail covers every downloaded precision.
+
+    Raises :class:`GenieXError` if the model is not cached.
+    """
+    _ensure_init()
+    lib = load_library()
+    out = geniex_ModelDetail()
+    _check(lib.geniex_model_get_detailed(name.encode(), byref(out)))
+    try:
+        return _model_detail(out)
+    finally:
+        lib.geniex_model_detail_free(byref(out))
+
+
+def _model_detail(d: geniex_ModelDetail) -> ModelDetail:
+    return ModelDetail(
+        name=d.name.decode() if d.name else '',
+        model_name=d.model_name.decode() if d.model_name else '',
+        runtime=d.plugin_id.decode() if d.plugin_id else '',
+        model_type=_type_str(d.model_type),
+        total_size=d.total_size,
+        precisions=[d.precisions[j].decode() for j in range(d.precision_count)],
+    )
 
 
 def query(
