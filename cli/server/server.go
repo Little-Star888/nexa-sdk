@@ -4,10 +4,16 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -15,6 +21,8 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/render"
 	"github.com/qualcomm/GenieX/cli/server/service"
 )
+
+const shutdownTimeout = 30 * time.Second
 
 // hostBindingHint suggests --host 0.0.0.0 when bound to loopback, else "".
 // Malformed hosts are treated as non-loopback — better silent than misleading.
@@ -48,13 +56,11 @@ func Serve() {
 	RegisterSwagger(engine)
 
 	cfg := config.Get()
-	var err error
+	certFile := cfg.CertFile
+	keyFile := cfg.KeyFile
 
 	// Determine whether to serve over HTTPS
 	if cfg.HTTPS {
-		certFile := cfg.CertFile
-		keyFile := cfg.KeyFile
-
 		// Verify that certificate and key files exist
 		if _, err := os.Stat(certFile); os.IsNotExist(err) {
 			fmt.Println(render.GetTheme().Error.Sprintf("HTTPS Certificate file not found: %s", certFile))
@@ -67,19 +73,42 @@ func Serve() {
 
 		fmt.Println(render.GetTheme().Info.Sprintf("HTTPS enabled: cert=%s key=%s", certFile, keyFile))
 		fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on https://%s/", cfg.Host))
-		if hint := hostBindingHint(cfg.Host); hint != "" {
-			fmt.Println(render.GetTheme().Info.Sprint(hint))
-		}
-		err = engine.RunTLS(cfg.Host, certFile, keyFile)
 	} else {
 		fmt.Println(render.GetTheme().Info.Sprintf("Local hosting on http://%s/", cfg.Host))
-		if hint := hostBindingHint(cfg.Host); hint != "" {
-			fmt.Println(render.GetTheme().Info.Sprint(hint))
-		}
-		err = engine.Run(cfg.Host)
+	}
+	if hint := hostBindingHint(cfg.Host); hint != "" {
+		fmt.Println(render.GetTheme().Info.Sprint(hint))
 	}
 
-	if err != nil {
-		fmt.Println(render.GetTheme().Error.Sprintf("HTTP/HTTPS Server Error: %v", err))
+	// Without this the runtime kills the process on Ctrl+C, skipping the
+	// deferred DeInit and leaking the model's NPU buffers until reboot.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{Addr: cfg.Host, Handler: engine}
+	errCh := make(chan error, 1)
+	go func() {
+		if cfg.HTTPS {
+			errCh <- srv.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			errCh <- srv.ListenAndServe()
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Println(render.GetTheme().Error.Sprintf("HTTP/HTTPS Server Error: %v", err))
+		}
+	case <-ctx.Done():
+		// Restore the default disposition so a second Ctrl+C can still abort a
+		// teardown that a stuck request would otherwise hold up.
+		stop()
+		fmt.Println(render.GetTheme().Info.Sprint("Shutting down, releasing model resources..."))
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			fmt.Println(render.GetTheme().Warning.Sprintf("Server shutdown: %v", err))
+		}
 	}
 }

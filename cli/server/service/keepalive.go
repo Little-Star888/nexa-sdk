@@ -107,6 +107,7 @@ type keepAliveService struct {
 	param        types.ModelParam // params the cache keys on
 	lastActivity time.Time        // when the last model request finished
 	stopCh       chan struct{}
+	doneCh       chan struct{} // closed once the sweep goroutine has freed the model
 }
 
 // keepable is a model the cache can free; keepResetable can also be reset.
@@ -123,8 +124,10 @@ type keepResetable interface {
 func (keepAlive *keepAliveService) start() {
 	keepAlive.lastActivity = time.Now()
 	keepAlive.stopCh = make(chan struct{})
+	keepAlive.doneCh = make(chan struct{})
 
 	go func() {
+		defer close(keepAlive.doneCh)
 		t := time.NewTicker(5 * time.Second)
 		for {
 			select {
@@ -242,7 +245,9 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 	return t, nil
 }
 
-// stop signals the sweep goroutine to terminate.
+// stop signals the sweep goroutine to terminate and waits for it to free the
+// cached model — returning earlier would race the SDK deinit against destroy.
 func (keepAlive *keepAliveService) stop() {
-	keepAlive.stopCh <- struct{}{}
+	close(keepAlive.stopCh)
+	<-keepAlive.doneCh
 }
