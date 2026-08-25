@@ -3,7 +3,7 @@
 
 use std::os::raw::c_char;
 
-use model_manager_core::manifest::ModelType;
+use model_manager_core::manifest::{ModelManifest, ModelType};
 
 use crate::init::get_store;
 use crate::types::*;
@@ -93,6 +93,41 @@ pub unsafe extern "C" fn geniex_model_paths_free(paths: *mut GenieXModelPaths) {
     *paths = GenieXModelPaths::null();
 }
 
+/// Build the C view of one manifest: every heap member is owned by the caller
+/// and reclaimed by [`free_detail`].
+fn detail_from_manifest(m: &ModelManifest) -> GenieXModelDetail {
+    let downloaded = m
+        .model_file
+        .iter()
+        .filter(|(_, fi)| fi.downloaded)
+        .map(|(q, _)| str_to_cptr(q))
+        .collect();
+    let (precisions, precision_count) = into_c_array(downloaded);
+    GenieXModelDetail {
+        name: str_to_cptr(&m.name),
+        model_name: str_to_cptr(&m.model_name),
+        plugin_id: str_to_cptr(&m.plugin_id),
+        model_type: to_ffi_type(m.model_type.clone()),
+        total_size: m.total_size(),
+        precisions,
+        precision_count,
+    }
+}
+
+/// # Safety
+/// `d` must have been produced by [`detail_from_manifest`] and not freed yet.
+unsafe fn free_detail(d: &mut GenieXModelDetail) {
+    free_cptr(d.name);
+    free_cptr(d.model_name);
+    free_cptr(d.plugin_id);
+    if let Some(precs) = from_c_array(d.precisions, d.precision_count) {
+        for p in precs {
+            free_cptr(p);
+        }
+    }
+    *d = GenieXModelDetail::null();
+}
+
 /* ---- geniex_model_remove / clean ---- */
 
 #[no_mangle]
@@ -167,6 +202,20 @@ pub struct GenieXModelDetail {
     pub precision_count: i32,
 }
 
+impl GenieXModelDetail {
+    fn null() -> Self {
+        Self {
+            name: std::ptr::null_mut(),
+            model_name: std::ptr::null_mut(),
+            plugin_id: std::ptr::null_mut(),
+            model_type: GenieXModelType::Llm,
+            total_size: 0,
+            precisions: std::ptr::null_mut(),
+            precision_count: 0,
+        }
+    }
+}
+
 #[repr(C)]
 pub struct GenieXModelListDetailedOutput {
     pub models: *mut GenieXModelDetail,
@@ -180,28 +229,7 @@ pub extern "C" fn geniex_model_list_detailed(output: *mut GenieXModelListDetaile
             return Err(GENIEX_ERROR_COMMON_INVALID_INPUT);
         }
         let manifests = get_store()?.list().map_err(|e| report(&e))?;
-        let details: Vec<GenieXModelDetail> = manifests
-            .iter()
-            .map(|m| {
-                let downloaded: Vec<&str> = m
-                    .model_file
-                    .iter()
-                    .filter(|(_, fi)| fi.downloaded)
-                    .map(|(q, _)| q.as_str())
-                    .collect();
-                let precs: Vec<*mut c_char> = downloaded.iter().map(|q| str_to_cptr(q)).collect();
-                let (precisions, precision_count) = into_c_array(precs);
-                GenieXModelDetail {
-                    name: str_to_cptr(&m.name),
-                    model_name: str_to_cptr(&m.model_name),
-                    plugin_id: str_to_cptr(&m.plugin_id),
-                    model_type: to_ffi_type(m.model_type.clone()),
-                    total_size: m.total_size(),
-                    precisions,
-                    precision_count,
-                }
-            })
-            .collect();
+        let details: Vec<GenieXModelDetail> = manifests.iter().map(detail_from_manifest).collect();
         let (models, count) = into_c_array(details);
         unsafe {
             (*output).models = models;
@@ -221,14 +249,7 @@ pub unsafe extern "C" fn geniex_model_list_detailed_free(
     let o = &mut *output;
     if let Some(mut details) = from_c_array(o.models, o.count) {
         for d in details.iter_mut() {
-            free_cptr(d.name);
-            free_cptr(d.model_name);
-            free_cptr(d.plugin_id);
-            if let Some(precs) = from_c_array(d.precisions, d.precision_count) {
-                for p in precs {
-                    free_cptr(p);
-                }
-            }
+            free_detail(d);
         }
     }
     o.models = std::ptr::null_mut();
