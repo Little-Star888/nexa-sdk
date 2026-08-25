@@ -186,15 +186,13 @@ def test_llm_quality_keywords(cached, model, device_map, prompt, expected):
             seed=LLM_QUALITY_SEED,
         )
         assert out.text, f'empty completion for prompt={prompt!r}'
-        # A think trace that eats the whole budget leaves a truncated answer
-        # stub, which reads as a missing keyword — report it as truncation.
-        assert (
-            out.profile.stop_reason != 'length'
-        ), f'completion truncated at {budget} tokens: model={model.id!r} prompt={prompt!r} got={out.text!r}'
+        # Greedy decode can loop until the budget runs out, so `length` is only a
+        # problem when it truncated before the keyword appeared.
         matched = expected.lower() in out.text.lower()
         assert matched, (
             f'prompt={prompt!r} expected_substring={expected!r} '
-            f'model={model.id!r} device_map={device_map!r} got={out.text!r}'
+            f'model={model.id!r} device_map={device_map!r} '
+            f'stop_reason={out.profile.stop_reason!r} budget={budget} got={out.text!r}'
         )
 
 
