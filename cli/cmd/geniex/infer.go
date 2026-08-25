@@ -114,7 +114,7 @@ func infer() *cobra.Command {
 		GroupID: "inference",
 		Use:     "infer <model-name>[:<precision>]",
 		Short:   "Infer with a model",
-		Long:    "Run inference with a specified model. The model must be downloaded and cached locally. Append ':<precision>' to pick a specific precision; otherwise you'll be prompted to choose one.",
+		Long:    "Run inference with a specified model. The model must be downloaded and cached locally. Append ':<precision>' to pick a specific precision; otherwise you'll be prompted to choose one when several are cached.",
 	}
 
 	inferCmd.Args = cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)
@@ -126,6 +126,14 @@ func infer() *cobra.Command {
 
 	inferCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		name, precision := geniex_sdk.SplitNamePrecision(args[0])
+
+		if precision == "" {
+			chosen, err := pickCachedPrecision(name)
+			if err != nil {
+				return err
+			}
+			precision = chosen
+		}
 
 		paths, err := ensureModelAvailable(cmd.Context(), name, precision)
 		if err != nil {
@@ -186,6 +194,44 @@ func ensureModelAvailable(ctx context.Context, name, quant string) (*geniex_sdk.
 		paths, err = geniex_sdk.ModelGetPaths(key)
 	}
 	return paths, err
+}
+
+// pickCachedPrecision asks which of a cached model's downloaded precisions to
+// run, returning "" when there is nothing to disambiguate.
+func pickCachedPrecision(name string) (string, error) {
+	m, err := geniex_sdk.ModelGetDetailed(name)
+	if err != nil {
+		return "", nil
+	}
+	precisions := downloadedPrecisions(*m, true)
+	if len(precisions) < 2 {
+		return "", nil
+	}
+
+	// ModelGetPaths on the bare name resolves the SDK's own pick; choosePrecision
+	// pre-selects the head, so that pick has to land there.
+	def, err := geniex_sdk.ModelGetPaths(name)
+	if err != nil {
+		return "", err
+	}
+	// Size is left unset: ModelDetail.TotalSize aggregates every downloaded
+	// precision, and the SDK does not expose the per-precision figure its
+	// manifest already holds.
+	candidates := make([]geniex_sdk.PrecisionCandidate, len(precisions))
+	head := 0
+	for i, p := range precisions {
+		candidates[i].Precision = p
+		mp, err := geniex_sdk.ModelGetPaths(name + ":" + p)
+		if err != nil {
+			continue
+		}
+		if mp.ModelPath == def.ModelPath {
+			head = i
+		}
+	}
+	candidates[0], candidates[head] = candidates[head], candidates[0]
+
+	return choosePrecision("Select a precision from local folder", candidates)
 }
 
 // resolveDraftModel maps a --draft-model value to a GGUF path the SDK can load.

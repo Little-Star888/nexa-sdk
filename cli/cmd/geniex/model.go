@@ -20,6 +20,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/render"
@@ -427,7 +428,7 @@ func setTypeCmd() *cobra.Command {
 	}
 }
 
-func pullModel(ctx context.Context, name string, quant string) error {
+func pullModel(ctx context.Context, name, quant string) error {
 	slog.Debug("pullModel", "name", name, "quant", quant)
 
 	hub, err := resolveHub()
@@ -479,7 +480,7 @@ func pullModel(ctx context.Context, name string, quant string) error {
 		if err != nil {
 			return err
 		}
-		if chosen, err := choosePrecision(q.Candidates); err != nil {
+		if chosen, err := choosePrecision("Choose a precision version to download", q.Candidates); err != nil {
 			return err
 		} else {
 			in.Precision = chosen
@@ -546,31 +547,44 @@ func pullModel(ctx context.Context, name string, quant string) error {
 	return nil
 }
 
-// choosePrecision picks a precision from the remote candidates: the only one
-// when there's a single option, otherwise an interactive picker pre-filled
-// with candidates[0] (the SDK sorts by priority, so head is the recommended
-// pick).
-func choosePrecision(candidates []geniex_sdk.PrecisionCandidate) (string, error) {
+// hasTerminal reports whether a picker can be drawn: keys come from stdin, and
+// huh draws on stderr, so both have to be a terminal.
+func hasTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
+}
+
+// choosePrecision picks a precision from candidates, whose head must be the
+// recommended pick: it is taken as-is when it is the only option or there is no
+// terminal to draw on, otherwise the picker pre-selects it.
+func choosePrecision(title string, candidates []geniex_sdk.PrecisionCandidate) (string, error) {
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no precision available for this model")
 	}
-	if len(candidates) == 1 {
+	if len(candidates) == 1 || !hasTerminal() {
 		return candidates[0].Precision, nil
 	}
 
+	// Sizes come from the remote query; a local pick has none, so drop the
+	// column rather than render a row of placeholders.
+	withSize := slices.ContainsFunc(candidates, func(c geniex_sdk.PrecisionCandidate) bool {
+		return c.Size > 0
+	})
 	options := make([]huh.Option[string], 0, len(candidates))
 	for _, c := range candidates {
-		sz := "—"
-		if c.Size > 0 {
-			sz = humanize.IBytes(uint64(c.Size))
+		label := c.Precision
+		if withSize {
+			sz := "—"
+			if c.Size > 0 {
+				sz = humanize.IBytes(uint64(c.Size))
+			}
+			label = fmt.Sprintf("%-10s [%7s]", c.Precision, sz)
 		}
-		label := fmt.Sprintf("%-10s [%7s]", c.Precision, sz)
 		options = append(options, huh.NewOption(label, c.Precision))
 	}
 
 	chosen := candidates[0].Precision
 	if err := huh.NewSelect[string]().
-		Title("Choose a precision version to download").
+		Title(title).
 		Options(options...).
 		Value(&chosen).
 		Run(); err != nil {
