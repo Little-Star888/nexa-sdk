@@ -12,18 +12,14 @@ from pathlib import Path
 import geniex
 import pytest
 
-from _models import (
-    LLAMA_CPP_LLM_MODEL,
-    LLAMA_CPP_LLM_PRECISION,
-    LLAMA_CPP_MTP_TARGET_MODEL,
-    LLAMA_CPP_VLM_MODEL,
-    LLAMA_CPP_VLM_PRECISION,
-)
+from _models import matrix, primary, pull_cells
 from _quality_data import (
+    DETERMINISM_MAX_NEW_TOKENS,
+    DETERMINISM_PROMPT,
+    GREEDY_TEMPERATURE,
     LLM_QUALITY_MAX_NEW_TOKENS,
     LLM_QUALITY_PROMPTS,
     LLM_QUALITY_SEED,
-    LLM_QUALITY_TEMPERATURE,
     PARITY_INPUT_IDS,
     PARITY_KL_MAX,
     PARITY_TOP1_MIN,
@@ -31,25 +27,29 @@ from _quality_data import (
     VLM_QUALITY_MAX_NEW_TOKENS,
     VLM_QUALITY_PROMPT,
     VLM_QUALITY_SEED,
-    VLM_QUALITY_TEMPERATURE,
     parity_kl_divergence,
     parity_top1_agreement,
 )
 
-_LLM_BACKENDS = ['cpu', 'gpu', 'npu']
-_VLM_BACKENDS = ['cpu', 'gpu', 'npu']
-_PARITY_CANDIDATES = ['gpu', 'npu', 'hybrid']
+_LLM = primary('llama_cpp_llm')
+_VLM = primary('llama_cpp_vlm')
+_MTP_TARGET = primary('llama_cpp_mtp_target')
+_LLM_MATRIX = matrix('llama_cpp_llm')
+_VLM_MATRIX = matrix('llama_cpp_vlm')
+# Parity scores each candidate against a cpu reference run, so it needs a cpu model.
+_PARITY_CANDIDATES = [d for d in _LLM.devices if d != 'cpu']
 _IS_QCS9075M = platform.system() == 'Linux' and platform.machine().lower() in ('aarch64', 'arm64')
 
 
-def test_model_manager_pull(llama_cpp_llm_paths, llama_cpp_vlm_paths, llama_cpp_mtp_paths):
-    for name, paths in [
-        ('llm', llama_cpp_llm_paths),
-        ('vlm', llama_cpp_vlm_paths),
-        ('mtp-target', llama_cpp_mtp_paths['target']),
-        ('mtp-draft', llama_cpp_mtp_paths['draft']),
-    ]:
-        assert Path(paths.model_path).is_file(), f'{name}: model_path missing: {paths.model_path}'
+@pytest.mark.parametrize('model', pull_cells('llama_cpp_llm', 'llama_cpp_vlm'))
+def test_model_manager_pull(cached, model):
+    paths = cached(model)
+    assert Path(paths.model_path).is_file(), f'{model.id}: model_path missing: {paths.model_path}'
+
+
+def test_model_manager_pull_mtp(llama_cpp_mtp_paths):
+    for name, paths in llama_cpp_mtp_paths.items():
+        assert Path(paths.model_path).is_file(), f'mtp-{name}: model_path missing: {paths.model_path}'
 
 
 def _run_multi_turn(llm) -> list[str]:
@@ -66,7 +66,7 @@ def _run_multi_turn(llm) -> list[str]:
             add_generation_prompt=True,
             enable_thinking=False,
         )
-        out = llm.generate(prompt, max_new_tokens=64, temperature=0.0, seed=42)
+        out = llm.generate(prompt, max_new_tokens=64, temperature=GREEDY_TEMPERATURE, seed=42)
         assert out.text, f'empty completion at turn {len(replies) + 1}'
         assert out.profile.generated_tokens > 0
         replies.append(out.text)
@@ -75,25 +75,62 @@ def _run_multi_turn(llm) -> list[str]:
 
 
 @pytest.mark.llm
-@pytest.mark.parametrize('device_map', _LLM_BACKENDS)
-def test_llm_multi_turn(llama_cpp_llm_paths, device_map):
+@pytest.mark.parametrize(('model', 'device_map'), _LLM_MATRIX)
+def test_llm_multi_turn(cached, model, device_map):
+    cached(model)
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        model.id,
+        precision=model.precision,
         device_map=device_map,
     ) as llm:
         replies = _run_multi_turn(llm)
     assert (
         'alice' in replies[-1].lower()
-    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+    ), f'model={model.id!r} device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize(('model', 'device_map'), _LLM_MATRIX)
+def test_llm_greedy_is_deterministic(cached, model, device_map):
+    # Reloads per run: llama_cpp keeps its KV cache across generate() calls, so a
+    # second call on the same handle continues the first answer.
+    cached(model)
+
+    def _greedy_once(seed: int) -> str:
+        with geniex.AutoModelForCausalLM.from_pretrained(
+            model.id,
+            precision=model.precision,
+            device_map=device_map,
+        ) as llm:
+            formatted = llm.tokenizer.apply_chat_template(
+                [{'role': 'user', 'content': DETERMINISM_PROMPT}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            return llm.generate(
+                formatted,
+                max_new_tokens=DETERMINISM_MAX_NEW_TOKENS,
+                temperature=GREEDY_TEMPERATURE,
+                seed=seed,
+            ).text
+
+    first = _greedy_once(LLM_QUALITY_SEED)
+    second = _greedy_once(LLM_QUALITY_SEED + 1)
+    assert first, f'empty completion for model={model.id!r} device_map={device_map!r}'
+    assert first == second, (
+        f'greedy decode diverged across seeds '
+        f'model={model.id!r} device_map={device_map!r} first={first!r} second={second!r}'
+    )
 
 
 @pytest.mark.vlm
-@pytest.mark.parametrize('device_map', _VLM_BACKENDS)
-def test_vlm_multi_turn(llama_cpp_vlm_paths, test_image, device_map):
+@pytest.mark.parametrize(('model', 'device_map'), _VLM_MATRIX)
+def test_vlm_multi_turn(cached, model, test_image, device_map):
+    cached(model)
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        LLAMA_CPP_VLM_MODEL,
-        precision=LLAMA_CPP_VLM_PRECISION,
+        model.id,
+        precision=model.precision,
         device_map=device_map,
     ) as vlm:
         history = [
@@ -106,7 +143,7 @@ def test_vlm_multi_turn(llama_cpp_vlm_paths, test_image, device_map):
             }
         ]
         prompt1 = vlm.tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=True)
-        out1 = vlm.generate(prompt1, max_new_tokens=16, temperature=0.0, seed=42, images=[test_image])
+        out1 = vlm.generate(prompt1, max_new_tokens=16, temperature=GREEDY_TEMPERATURE, seed=42, images=[test_image])
         assert out1.profile.prompt_tokens > 0
 
         history.append({'role': 'assistant', 'content': out1.text or '...'})
@@ -114,7 +151,7 @@ def test_vlm_multi_turn(llama_cpp_vlm_paths, test_image, device_map):
         prompt2 = vlm.tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=True)
         # Second turn without a bitmap — old char-offset tracking sliced past the
         # image marker while an image was still supplied and mtmd_tokenize failed.
-        out2 = vlm.generate(prompt2, max_new_tokens=16, temperature=0.0, seed=42, images=[])
+        out2 = vlm.generate(prompt2, max_new_tokens=16, temperature=GREEDY_TEMPERATURE, seed=42, images=[])
         assert isinstance(out2, geniex.GenerateOutput)
         assert out2.profile.prompt_tokens > 0
 
@@ -136,12 +173,14 @@ def _vlm_prompt(vlm, image_path: str, text: str) -> str:
 
 
 @pytest.mark.llm
-@pytest.mark.parametrize('device_map', _LLM_BACKENDS)
+@pytest.mark.parametrize(('model', 'device_map'), _LLM_MATRIX)
 @pytest.mark.parametrize(('prompt', 'expected'), LLM_QUALITY_PROMPTS)
-def test_llm_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected):
+def test_llm_quality_keywords(cached, model, device_map, prompt, expected):
+    cached(model)
+    budget = model.quality_max_new_tokens or LLM_QUALITY_MAX_NEW_TOKENS
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        model.id,
+        precision=model.precision,
         device_map=device_map,
     ) as llm:
         formatted = llm.tokenizer.apply_chat_template(
@@ -152,8 +191,8 @@ def test_llm_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected)
         )
         out = llm.generate(
             formatted,
-            max_new_tokens=LLM_QUALITY_MAX_NEW_TOKENS,
-            temperature=LLM_QUALITY_TEMPERATURE,
+            max_new_tokens=budget,
+            temperature=GREEDY_TEMPERATURE,
             seed=LLM_QUALITY_SEED,
         )
         assert out.text, f'empty completion for prompt={prompt!r}'
@@ -161,44 +200,46 @@ def test_llm_quality_keywords(llama_cpp_llm_paths, device_map, prompt, expected)
         # stub, which reads as a missing keyword — report it as truncation.
         assert (
             out.profile.stop_reason != 'length'
-        ), f'completion truncated at {LLM_QUALITY_MAX_NEW_TOKENS} tokens: prompt={prompt!r} got={out.text!r}'
+        ), f'completion truncated at {budget} tokens: model={model.id!r} prompt={prompt!r} got={out.text!r}'
         # Hoist to a bool so pytest's assertion introspection doesn't echo
         # out.text 4-5x per failure.
         matched = expected.lower() in out.text.lower()
         assert matched, (
-            f'prompt={prompt!r} expected_substring={expected!r} ' f'device_map={device_map!r} got={out.text!r}'
+            f'prompt={prompt!r} expected_substring={expected!r} '
+            f'model={model.id!r} device_map={device_map!r} got={out.text!r}'
         )
 
 
 @pytest.mark.vlm
-@pytest.mark.parametrize('device_map', _VLM_BACKENDS)
-def test_vlm_quality_keywords(llama_cpp_vlm_paths, quality_image, device_map):
+@pytest.mark.parametrize(('model', 'device_map'), _VLM_MATRIX)
+def test_vlm_quality_keywords(cached, model, quality_image, device_map):
+    cached(model)
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        LLAMA_CPP_VLM_MODEL,
-        precision=LLAMA_CPP_VLM_PRECISION,
+        model.id,
+        precision=model.precision,
         device_map=device_map,
     ) as vlm:
         prompt = _vlm_prompt(vlm, quality_image, VLM_QUALITY_PROMPT)
         out = vlm.generate(
             prompt,
-            max_new_tokens=VLM_QUALITY_MAX_NEW_TOKENS,
-            temperature=VLM_QUALITY_TEMPERATURE,
+            max_new_tokens=model.quality_max_new_tokens or VLM_QUALITY_MAX_NEW_TOKENS,
+            temperature=GREEDY_TEMPERATURE,
             seed=VLM_QUALITY_SEED,
             images=[quality_image],
         )
-        assert out.text, f'empty caption for device_map={device_map!r}'
+        assert out.text, f'empty caption for model={model.id!r} device_map={device_map!r}'
         matched = any(kw in out.text.lower() for kw in VLM_QUALITY_KEYWORDS)
         assert matched, (
             f'caption did not match any expected keyword '
-            f'device_map={device_map!r} keywords={VLM_QUALITY_KEYWORDS} '
+            f'model={model.id!r} device_map={device_map!r} keywords={VLM_QUALITY_KEYWORDS} '
             f'got={out.text!r}'
         )
 
 
 def _forward_parity(device_map: str) -> tuple[list[list[tuple[int, float]]], list[float]]:
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
     ) as llm:
         top1_rows = llm.forward_logits(PARITY_INPUT_IDS, all_positions=True, top_n=1)
@@ -226,7 +267,7 @@ def test_mtp_multi_turn(llama_cpp_mtp_paths, device_map):
     # trip the org/repo validator.
     with geniex.AutoModelForCausalLM.from_pretrained(
         llama_cpp_mtp_paths['target'].model_path,
-        model_name=LLAMA_CPP_MTP_TARGET_MODEL,
+        model_name=_MTP_TARGET.id,
         device_map=f'llama_cpp:{device_map}',
         spec_type='draft-mtp',
         spec_draft_model=llama_cpp_mtp_paths['draft'].model_path,
@@ -245,8 +286,8 @@ _MEDIA_MARKER = '<__media__>'
 @pytest.mark.parametrize('device_map', ['cpu'])
 def test_chat_template_roles_and_sentinels(llama_cpp_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
     ) as llm:
         prompt = llm.tokenizer.apply_chat_template(
@@ -267,8 +308,8 @@ def test_chat_template_roles_and_sentinels(llama_cpp_llm_paths, device_map):
 @pytest.mark.parametrize('device_map', ['cpu'])
 def test_chat_template_enable_thinking(llama_cpp_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
     ) as llm:
         msgs = [{'role': 'user', 'content': 'hi'}]
@@ -298,8 +339,8 @@ def test_chat_template_tools_list_and_json_string_equivalent(llama_cpp_llm_paths
     }
     msgs = [{'role': 'user', 'content': "what's the weather in Paris?"}]
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
     ) as llm:
         from_list = llm.tokenizer.apply_chat_template(msgs, tokenize=False, tools=[tool])
@@ -316,8 +357,8 @@ def test_chat_template_content_load_override(llama_cpp_llm_paths, device_map):
         '{% if add_generation_prompt %}[assistant] {% endif %}'
     )
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
         chat_template_content=jinja,
     ) as llm:
@@ -343,12 +384,12 @@ def test_context_shift_fires_on_decode_overflow(llama_cpp_llm_paths, device_map)
     prompt = f'Repeat the following words verbatim: {prompt_body}\n\nAnswer: '
 
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
         n_ctx=n_ctx,
     ) as llm:
-        out = llm.generate(prompt, max_new_tokens=120, temperature=0.0, seed=0)
+        out = llm.generate(prompt, max_new_tokens=120, temperature=GREEDY_TEMPERATURE, seed=0)
 
     assert out.profile.stop_reason != 'context_length', f'context shift did not save the run: {out.profile}'
     assert out.profile.generated_tokens > 0
@@ -359,12 +400,12 @@ def test_context_shift_fires_on_decode_overflow(llama_cpp_llm_paths, device_map)
 @pytest.mark.parametrize('device_map', ['cpu'])
 def test_context_shift_not_triggered_when_nctx_is_ample(llama_cpp_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
-        LLAMA_CPP_LLM_MODEL,
-        precision=LLAMA_CPP_LLM_PRECISION,
+        _LLM.id,
+        precision=_LLM.precision,
         device_map=device_map,
         n_ctx=2048,
     ) as llm:
-        out = llm.generate('Say hi in one word.', max_new_tokens=8, temperature=0.0, seed=0)
+        out = llm.generate('Say hi in one word.', max_new_tokens=8, temperature=GREEDY_TEMPERATURE, seed=0)
 
     assert out.profile.stop_reason in {'eos', 'length', 'completed'}, out.profile
     assert out.profile.generated_tokens > 0
@@ -381,8 +422,8 @@ def test_mtmd_marker_prepended_per_image(llama_cpp_vlm_paths, test_image, qualit
     content.append({'type': 'text', 'text': 'describe the picture'})
 
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        LLAMA_CPP_VLM_MODEL,
-        precision=LLAMA_CPP_VLM_PRECISION,
+        _VLM.id,
+        precision=_VLM.precision,
         device_map=device_map,
     ) as vlm:
         prompt = vlm.tokenizer.apply_chat_template(
@@ -398,8 +439,8 @@ def test_mtmd_marker_prepended_per_image(llama_cpp_vlm_paths, test_image, qualit
 @pytest.mark.parametrize('device_map', ['cpu'])
 def test_mtmd_marker_absent_on_text_only_message(llama_cpp_vlm_paths, device_map):
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        LLAMA_CPP_VLM_MODEL,
-        precision=LLAMA_CPP_VLM_PRECISION,
+        _VLM.id,
+        precision=_VLM.precision,
         device_map=device_map,
     ) as vlm:
         prompt = vlm.tokenizer.apply_chat_template(
@@ -418,8 +459,8 @@ def test_mtmd_generate_rejects_missing_image_path(llama_cpp_vlm_paths, test_imag
     # generate() validates the images=[...] list against the filesystem.
     missing = str(Path(test_image).parent / 'does-not-exist.png')
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        LLAMA_CPP_VLM_MODEL,
-        precision=LLAMA_CPP_VLM_PRECISION,
+        _VLM.id,
+        precision=_VLM.precision,
         device_map=device_map,
     ) as vlm:
         vlm.tokenizer.apply_chat_template(

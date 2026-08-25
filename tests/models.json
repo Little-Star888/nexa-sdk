@@ -1,30 +1,57 @@
 {
   "models": {
-    "llama_cpp_llm": {
-      "id": "unsloth/Qwen3-4B-GGUF",
-      "precision": "Q4_0"
-    },
-    "llama_cpp_vlm": {
-      "id": "unsloth/gemma-4-E2B-it-GGUF",
-      "precision": "Q4_0"
-    },
-    "llama_cpp_mtp_target": {
-      "id": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
-      "precision": "Q4_0"
-    },
-    "llama_cpp_mtp_draft": {
-      "id": "RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf",
-      "precision": "Q4_0"
-    },
-    "qairt_llm": {
-      "id": "qualcomm/Qwen3-4B",
-      "precision": null,
-      "env_override": "GENIEX_QAIRT_MODEL"
-    },
-    "qairt_vlm": {
-      "id": "qualcomm/Qwen2.5-VL-7B-Instruct",
-      "precision": null,
-      "env_override": "GENIEX_QAIRT_VLM_MODEL"
-    }
+    "llama_cpp_llm": [
+      {
+        "id": "unsloth/Qwen3-4B-GGUF",
+        "precision": "Q4_0",
+        "hub": "hf",
+        "devices": ["cpu", "gpu", "npu", "hybrid"]
+      },
+      {
+        "id": "unsloth/gpt-oss-20b-GGUF",
+        "precision": "Q4_0",
+        "hub": "hf",
+        "devices": ["hybrid"],
+        "quality_max_new_tokens": 1024
+      }
+    ],
+    "llama_cpp_vlm": [
+      {
+        "id": "unsloth/gemma-4-E2B-it-GGUF",
+        "precision": "Q4_0",
+        "hub": "hf",
+        "devices": ["cpu", "gpu", "npu", "hybrid"]
+      }
+    ],
+    "llama_cpp_mtp_target": [
+      {
+        "id": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+        "precision": "Q4_0",
+        "hub": "hf",
+        "devices": ["npu"]
+      }
+    ],
+    "llama_cpp_mtp_draft": [
+      {
+        "id": "RachidAR/gemma-4-26B-A4B-it-qat-assistant-q4_0-gguf",
+        "precision": "Q4_0",
+        "hub": "hf",
+        "devices": []
+      }
+    ],
+    "qairt_llm": [
+      {
+        "id": "qualcomm/Qwen3-4B",
+        "devices": ["npu"],
+        "env_override": "GENIEX_QAIRT_MODEL"
+      }
+    ],
+    "qairt_vlm": [
+      {
+        "id": "qualcomm/Qwen2.5-VL-7B-Instruct",
+        "devices": ["npu"],
+        "env_override": "GENIEX_QAIRT_VLM_MODEL"
+      }
+    ]
   }
 }
