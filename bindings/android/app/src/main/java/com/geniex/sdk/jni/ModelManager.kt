@@ -44,6 +44,15 @@ internal class ModelManager {
     external fun listDetailed(): Array<ModelDetail>
 
     /**
+     * One cached model's metadata, without listing the whole store.
+     * [modelName] takes the same loose forms as [getPaths]: a bare AI Hub id is
+     * canonicalized to `qualcomm/<id>`, and any `:<precision>` suffix is
+     * ignored since the detail covers every downloaded precision.
+     * @return `null` if the model is not cached.
+     */
+    external fun getDetailed(modelName: String): ModelDetail?
+
+    /**
      * Resolve a model's remote candidate quantizations without downloading.
      * @return `null` if the model cannot be planned.
      */

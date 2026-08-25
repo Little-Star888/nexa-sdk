@@ -27,6 +27,7 @@ from ._types import (
     geniex_LlmGenerateInput,
     geniex_LlmGenerateOutput,
     geniex_LlmModelInfo,
+    geniex_ModelDetail,
     geniex_ModelListDetailedOutput,
     geniex_ModelPaths,
     geniex_ModelPullInput,
@@ -274,6 +275,12 @@ def _bind_all() -> None:
 
     lib.geniex_model_list_detailed_free.argtypes = [POINTER(geniex_ModelListDetailedOutput)]
     lib.geniex_model_list_detailed_free.restype = None
+
+    lib.geniex_model_get_detailed.argtypes = [c_char_p, POINTER(geniex_ModelDetail)]
+    lib.geniex_model_get_detailed.restype = c_int32
+
+    lib.geniex_model_detail_free.argtypes = [POINTER(geniex_ModelDetail)]
+    lib.geniex_model_detail_free.restype = None
 
     lib.geniex_model_query.argtypes = [
         POINTER(geniex_ModelPullInput),
