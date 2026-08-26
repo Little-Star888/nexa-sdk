@@ -235,29 +235,14 @@ func pickCachedPrecision(name string) (string, error) {
 		return "", nil
 	}
 
-	// ModelGetPaths on the bare name resolves the SDK's own pick; choosePrecision
-	// pre-selects the head, so that pick has to land there.
-	def, err := geniex_sdk.ModelGetPaths(name)
-	if err != nil {
-		return "", err
-	}
+	// choosePrecision pre-selects the head, which is a bare name's own pick.
 	// Size is left unset: ModelDetail.TotalSize aggregates every downloaded
 	// precision, and the SDK does not expose the per-precision figure its
 	// manifest already holds.
 	candidates := make([]geniex_sdk.PrecisionCandidate, len(precisions))
-	head := 0
 	for i, p := range precisions {
 		candidates[i].Precision = p
-		mp, err := geniex_sdk.ModelGetPaths(name + ":" + p)
-		if err != nil {
-			continue
-		}
-		if mp.ModelPath == def.ModelPath {
-			head = i
-		}
 	}
-	candidates[0], candidates[head] = candidates[head], candidates[0]
-
 	return choosePrecision("Select a precision from local folder", candidates)
 }
 
