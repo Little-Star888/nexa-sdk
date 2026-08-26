@@ -89,12 +89,6 @@ func ChatCompletions(c *gin.Context) {
 
 	slog.Info("ChatCompletions", "param", param)
 	name, _ := geniex_sdk.SplitNamePrecision(param.Model)
-	modelType, err := geniex_sdk.ModelGetType(name)
-	if err != nil {
-		slog.Error("Failed to get model type", "model", param.Model, "error", err)
-		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
 	paths, err := geniex_sdk.ModelGetPaths(name)
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", param.Model, "error", err)
@@ -125,7 +119,7 @@ func ChatCompletions(c *gin.Context) {
 		modelParam.NCtx = int32(param.MaxCompletionTokens.Value)
 	}
 
-	effectiveType := modelType
+	effectiveType := paths.ModelType
 	if effectiveType == geniex_sdk.ModelTypeVLM && param.SpecType != "" {
 		slog.Warn("spec_type set on VLM-classified model; running LLM path, image/audio content will be ignored",
 			"model", param.Model, "spec_type", param.SpecType)
@@ -149,7 +143,7 @@ func ChatCompletions(c *gin.Context) {
 		}
 		runChat(c, param, modelParam, messages, prepareVLM)
 	default:
-		slog.Error("Model type not support", "model_type", modelType)
+		slog.Error("Model type not support", "model_type", paths.ModelType)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": "model type not support"})
 		return
 	}

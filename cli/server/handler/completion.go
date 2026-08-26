@@ -120,20 +120,14 @@ func Completions(c *gin.Context) {
 	}
 
 	name, _ := geniex_sdk.SplitNamePrecision(string(req.Model))
-	modelType, err := geniex_sdk.ModelGetType(name)
-	if err != nil {
-		slog.Error("Failed to get model type", "model", req.Model, "error", err)
-		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
-	if modelType != geniex_sdk.ModelTypeLLM {
-		c.JSON(http.StatusBadRequest, map[string]any{"error": "completions is only supported for LLM models"})
-		return
-	}
 	paths, err := geniex_sdk.ModelGetPaths(name)
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if paths.ModelType != geniex_sdk.ModelTypeLLM {
+		c.JSON(http.StatusBadRequest, map[string]any{"error": "completions is only supported for LLM models"})
 		return
 	}
 
