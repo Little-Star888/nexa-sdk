@@ -278,6 +278,65 @@ async fn cancel_via_callback_returns_cancelled() {
     assert!(calls.load(Ordering::SeqCst) >= 1);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chunk_failure_stops_queued_chunks_from_starting() {
+    std::env::set_var("GENIEX_DL_CHUNK_SIZE", "16384");
+
+    let server = MockServer::start().await;
+    let body = make_body(32 * 16 * 1024, 0x5C);
+    let total_chunks = 32;
+
+    Mock::given(method("HEAD"))
+        .and(path("/org/repo/resolve/main/flaky.bin"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("Content-Length", body.len().to_string())
+                .append_header("Accept-Ranges", "bytes"),
+        )
+        .mount(&server)
+        .await;
+
+    let get_hits = Arc::new(AtomicUsize::new(0));
+    let get_hits_cl = get_hits.clone();
+    let body_arc = Arc::new(body.clone());
+    Mock::given(method("GET"))
+        .and(path("/org/repo/resolve/main/flaky.bin"))
+        .respond_with(move |req: &Request| {
+            get_hits_cl.fetch_add(1, Ordering::SeqCst);
+            let (start, len) = parse_range(req);
+            if start == 0 {
+                return ResponseTemplate::new(500);
+            }
+            let slice = body_arc[start as usize..(start + len) as usize].to_vec();
+            ResponseTemplate::new(206).set_body_bytes(slice)
+        })
+        .mount(&server)
+        .await;
+
+    let cfg = ExecutorConfig {
+        file_concurrency: 1,
+        chunk_concurrency: 2,
+        progress_interval: Duration::from_millis(100),
+    };
+    let tmp = tempdir().unwrap();
+    let files = vec![http_spec(
+        "flaky.bin",
+        Url::parse(&format!("{}/org/repo/resolve/main/flaky.bin", server.uri())).unwrap(),
+    )];
+
+    Executor::with_config(fast_transport(), cfg)
+        .run(&files, tmp.path(), None)
+        .await
+        .expect_err("the chunk failure must surface");
+
+    let hits = get_hits.load(Ordering::SeqCst);
+    assert!(
+        hits < total_chunks,
+        "queued chunks should bail once a chunk failed, but all {total_chunks} were attempted ({hits} GETs)",
+    );
+    std::env::remove_var("GENIEX_DL_CHUNK_SIZE");
+}
+
 #[tokio::test]
 async fn http_deflate_decodes_and_marks_done() {
     // Build a deflate-compressed body, serve it as a byte range, and
