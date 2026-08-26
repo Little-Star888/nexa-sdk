@@ -245,12 +245,14 @@ def _model_lines() -> list[str]:
         return []
     if not models:
         return []
-    lines = ['### Models', '', '| Slot | Model | Precision |', '|---|---|---|']
-    for slot, entry in models.items():
-        env = entry.get('env_override')
-        current_id = (env and os.environ.get(env)) or entry.get('id') or '—'
-        prec = entry.get('precision') or '—'
-        lines.append(f'| `{slot}` | `{current_id}` | `{prec}` |')
+    lines = ['### Models', '', '| Slot | Model | Precision | Devices |', '|---|---|---|---|']
+    for slot, entries in models.items():
+        for entry in entries:
+            env = entry.get('env_override')
+            current_id = (env and os.environ.get(env)) or entry.get('id') or '—'
+            prec = entry.get('precision') or '—'
+            devices = ', '.join(entry.get('devices') or []) or '—'
+            lines.append(f'| `{slot}` | `{current_id}` | `{prec}` | {devices} |')
     lines.append('')
     return lines
 

@@ -22,6 +22,10 @@ Thinking is disabled for the keyword cells. With it on, Qwen3 spends most of
 and the binding strips the trace — leaving a stub that looks like a missing
 keyword (qcom-ai-hub/geniex#1460).
 
+Sampling diverges from upstream in one place: both plugins read
+`temperature == 0.0` as "unset" and substitute 0.8, so `GREEDY_TEMPERATURE`
+uses the negative argmax sentinel both plugins accept instead.
+
 One intentional delta vs. upstream: VLM only ships the dog photo + first
 keyword set. Upstream also iterates a Qualcomm AIHub product image with
 vocabulary like person/phone/text; that second image is deferred to keep
@@ -32,6 +36,8 @@ from __future__ import annotations
 
 import math
 
+GREEDY_TEMPERATURE = -1.0
+
 # (prompt, expected_substring). Matched case-insensitively against `out.text`.
 LLM_QUALITY_PROMPTS: list[tuple[str, str]] = [
     ('The capital of France is', 'Paris'),
@@ -40,7 +46,6 @@ LLM_QUALITY_PROMPTS: list[tuple[str, str]] = [
 ]
 
 LLM_QUALITY_MAX_NEW_TOKENS = 256
-LLM_QUALITY_TEMPERATURE = 0.0  # 0.0 = defer to plugin default; see module docstring
 LLM_QUALITY_SEED = 1
 
 VLM_QUALITY_PROMPT = 'Describe this image in detail.'
@@ -58,8 +63,10 @@ VLM_QUALITY_KEYWORDS: tuple[str, ...] = (
 # room for a keyword to appear in the caption, and bounded enough to keep the
 # QDC Android wall-clock predictable across 4 VLM cells.
 VLM_QUALITY_MAX_NEW_TOKENS = 256
-VLM_QUALITY_TEMPERATURE = 0.0
 VLM_QUALITY_SEED = 1
+
+DETERMINISM_PROMPT = 'List three primary colours.'
+DETERMINISM_MAX_NEW_TOKENS = 48
 
 
 PARITY_INPUT_IDS: list[int] = [
