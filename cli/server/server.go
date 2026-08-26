@@ -75,19 +75,23 @@ func Serve() {
 	}
 
 	// Unhandled, Ctrl+C skips the deferred DeInit and pins NPU buffers till reboot.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- listen() }()
 
-	// stop() first in both arms, so a second Ctrl+C kills instead of being swallowed.
 	select {
 	case err := <-errCh: // listen only returns on failure here
-		stop()
 		fmt.Println(render.GetTheme().Error.Sprintf("HTTP/HTTPS Server Error: %v", err))
-	case <-ctx.Done():
-		stop()
+	case <-sigCh:
 		fmt.Println(render.GetTheme().Info.Sprint("Shutting down, releasing model resources..."))
+		// Escape hatch for a teardown a stuck request holds up; the buffers leak.
+		go func() {
+			<-sigCh
+			fmt.Println(render.GetTheme().Warning.Sprint("Received second interrupt, terminating immediately. Model resources stay reserved until reboot."))
+			os.Exit(1)
+		}()
 		srv.Shutdown(context.Background())
 	}
 }
