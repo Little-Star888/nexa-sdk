@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use crate::manifest::ModelType;
-use crate::manifest_builder::QUANT_PRIORITY;
+use crate::manifest_builder::quant_sort_key;
 use crate::mapping::canonicalize_model_name;
 use crate::pull::{build_source, PullRequest};
 use crate::source::Plan;
@@ -61,12 +61,6 @@ pub fn query_blocking(
 }
 
 fn model_query_from_plan(model_name: String, plan: Plan) -> ModelQuery {
-    let priority_idx = |q: &str| {
-        QUANT_PRIORITY
-            .iter()
-            .position(|p| *p == q)
-            .unwrap_or(usize::MAX)
-    };
     let mut candidates: Vec<QuantCandidate> = plan
         .manifest
         .model_file
@@ -76,9 +70,11 @@ fn model_query_from_plan(model_name: String, plan: Plan) -> ModelQuery {
             size: fi.size,
         })
         .collect();
+    // Rank only: a remote listing's size, not the tag, breaks ties here.
     candidates.sort_by(|a, b| {
-        priority_idx(&a.quant)
-            .cmp(&priority_idx(&b.quant))
+        quant_sort_key(&a.quant)
+            .0
+            .cmp(&quant_sort_key(&b.quant).0)
             .then_with(|| a.size.cmp(&b.size))
             .then_with(|| a.quant.cmp(&b.quant))
     });
