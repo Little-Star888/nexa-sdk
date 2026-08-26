@@ -157,11 +157,8 @@ ggml_threadpool_params build_threadpool_params(int n_threads, Device device) {
     ggml_threadpool_params tpp = ggml_threadpool_params_default(n_threads);
 
     if (pin) {
-        // Leave up to 2 cores free for the OS/other work, but only if n_threads leaves
-        // that slack; n_threads can now reach hardware_concurrency() (see
-        // resolve_n_threads), and reserving cores on top of an already-full thread
-        // count would either pin past the real core count or oversubscribe the
-        // remaining ones.
+        // Reserve up to 2 cores only if n_threads leaves that slack, to avoid pinning past
+        // the real core count or oversubscribing it now that n_threads can reach hardware_concurrency().
         int hw_threads     = static_cast<int>(std::thread::hardware_concurrency());
         int reserved_cores = hw_threads > 0 ? std::max(0, std::min(2, hw_threads - n_threads)) : 2;
         for (int i = 0; i < n_threads; ++i) {
