@@ -72,8 +72,7 @@ func ForwardLogits(c *gin.Context) {
 		return
 	}
 
-	name, _ := geniex_sdk.SplitNamePrecision(req.Model)
-	paths, err := geniex_sdk.ModelGetPaths(name)
+	paths, err := geniex_sdk.ModelGetPaths(req.Model)
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})

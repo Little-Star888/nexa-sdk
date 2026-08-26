@@ -88,8 +88,8 @@ func ChatCompletions(c *gin.Context) {
 	param.MaxCompletionTokens = openai.Int(param.MaxCompletionTokens.Or(param.MaxTokens.Value))
 
 	slog.Info("ChatCompletions", "param", param)
-	name, _ := geniex_sdk.SplitNamePrecision(param.Model)
-	paths, err := geniex_sdk.ModelGetPaths(name)
+	// Keep the precision: KeepAliveGet resolves this same string.
+	paths, err := geniex_sdk.ModelGetPaths(param.Model)
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", param.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})

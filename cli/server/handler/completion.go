@@ -119,8 +119,7 @@ func Completions(c *gin.Context) {
 		return
 	}
 
-	name, _ := geniex_sdk.SplitNamePrecision(string(req.Model))
-	paths, err := geniex_sdk.ModelGetPaths(name)
+	paths, err := geniex_sdk.ModelGetPaths(string(req.Model))
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
