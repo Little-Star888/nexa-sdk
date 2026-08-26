@@ -103,9 +103,12 @@ class LlamaPlugin : public Plugin {
                 GENIEX_LOG_WARN("Failed to set DLL search directory to {}", backend_dir.u8string());
             }
 #endif  // _WIN32
+#if defined(GGML_BACKEND_DL)
+            // Without DL, backends arrive via DT_NEEDED and self-register from GGML_USE_*.
             auto path = backend_dir.u8string();
             GENIEX_LOG_DEBUG("Loading GGML backend from path: {}", path);
             ggml_backend_load_all_from_path(path.c_str());
+#endif  // GGML_BACKEND_DL
         }
 
         llama_backend_init();
