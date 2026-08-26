@@ -63,12 +63,12 @@ func RetrieveModel(c *gin.Context) {
 	}
 
 	if quant == "" {
-		precisions := slices.Sorted(slices.Values(m.Precisions))
-		if len(precisions) == 0 {
+		// The head is a bare name's own pick; sorting would advertise another.
+		if len(m.Precisions) == 0 {
 			c.JSON(http.StatusNotFound, nil)
 			return
 		}
-		quant = precisions[0]
+		quant = m.Precisions[0]
 	} else if i := slices.IndexFunc(m.Precisions, func(p string) bool {
 		return strings.EqualFold(p, quant)
 	}); i < 0 {
