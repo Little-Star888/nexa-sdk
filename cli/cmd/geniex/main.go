@@ -41,13 +41,21 @@ func RootCmd() *cobra.Command {
 			// Re-apply now that --log is parsed; the main() call only saw GENIEX_LOG.
 			common.ApplyLogLevel()
 
-			subCmd := cmd.CalledAs()
+			// Cobra passes the leaf command being executed, so CalledAs() would
+			// yield `get` for `geniex config get`. "" is the bare `geniex`.
+			subCmd := ""
+			for c := cmd; c.HasParent(); c = c.Parent() {
+				if !c.Parent().HasParent() {
+					subCmd = c.Name()
+					break
+				}
+			}
 
 			// Skip ModelInit for commands that don't touch the model manager
 			if !slices.Contains([]string{
-				"geniex",
+				"",
 				"version", "update",
-				"help", "completion",
+				"help", "completion", cobra.ShellCompRequestCmd,
 			}, subCmd) {
 				s := store.Get()
 				if err := geniex_sdk.ModelInit(s.DataPath()); err != nil {
@@ -58,16 +66,20 @@ func RootCmd() *cobra.Command {
 			if !skipUpdate {
 				// `update` fetches and prints the latest version itself; the
 				// cached notify banner would be redundant and possibly stale.
-				if subCmd != "update" {
+				// Completion writes to stdout, which the shell parses.
+				if !slices.Contains([]string{
+					"update",
+					"completion", cobra.ShellCompRequestCmd,
+				}, subCmd) {
 					notifyUpdate()
 				}
 				// skip network probe for quick commands
 				if !slices.Contains([]string{
-					"geniex",
-					"remove", "rm", "clean", "list", "ls", "model",
+					"",
+					"remove", "clean", "list", "model",
 					"config",
 					"version", "update",
-					"help", "completion",
+					"help", "completion", cobra.ShellCompRequestCmd,
 				}, subCmd) {
 					go checkUpdate()
 				}
