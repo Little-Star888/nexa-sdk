@@ -681,6 +681,10 @@ components:
         id:
           type: string
           description: The model identifier
+        model_type:
+          type: string
+          enum: [llm, vlm]
+          description: GenieX extension — the model's type, so clients need no local model store
         object:
           type: string
           description: The object type, which is always "model"

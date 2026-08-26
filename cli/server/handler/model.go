@@ -14,6 +14,12 @@ import (
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 )
 
+// ModelResponse is the OpenAI model object plus GenieX's model_type extension.
+type ModelResponse struct {
+	openai.Model
+	ModelType string `json:"model_type"`
+}
+
 func ListModels(c *gin.Context) {
 	models, err := geniex_sdk.ModelListDetailed()
 	if err != nil {
@@ -77,8 +83,11 @@ func RetrieveModel(c *gin.Context) {
 	if quant != geniex_sdk.PrecisionNA {
 		id += ":" + quant
 	}
-	c.JSON(http.StatusOK, openai.Model{
-		ID:      id,
-		OwnedBy: strings.Split(m.Name, "/")[0],
+	c.JSON(http.StatusOK, ModelResponse{
+		Model: openai.Model{
+			ID:      id,
+			OwnedBy: strings.Split(m.Name, "/")[0],
+		},
+		ModelType: m.ModelType.String(),
 	})
 }

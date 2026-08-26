@@ -82,22 +82,19 @@ func run() *cobra.Command {
 		)
 
 		ctx := cmd.Context()
-		// check the server is reachable before opening the REPL
-		if _, err := client.Models.Get(ctx, fullName); err != nil {
+		// Doubles as the reachability probe. Only the server knows a remote model's type.
+		var model struct {
+			ModelType string `json:"model_type"`
+		}
+		if err := client.Get(ctx, "models/"+fullName, nil, &model); err != nil {
 			return tagServerError(err)
 		}
-
-		modelType, err := geniex_sdk.ModelGetType(name)
-		if err != nil {
-			return err
+		modelType, ok := geniex_sdk.ParseModelType(model.ModelType)
+		if !ok {
+			return fmt.Errorf("server reported an unsupported model type %q for %s", model.ModelType, fullName)
 		}
 
-		switch modelType {
-		case geniex_sdk.ModelTypeLLM, geniex_sdk.ModelTypeVLM:
-			return runCompletions(ctx, fullName, modelType)
-		default:
-			return fmt.Errorf("unsupported model type: %s", modelType)
-		}
+		return runCompletions(ctx, fullName, modelType)
 	}
 	return runCmd
 }

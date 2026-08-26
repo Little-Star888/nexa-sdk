@@ -54,6 +54,7 @@ func RootCmd() *cobra.Command {
 			// Skip ModelInit for commands that don't touch the model manager
 			if !slices.Contains([]string{
 				"",
+				"run", // pure HTTP client, no local store
 				"version", "update",
 				"help", "completion", cobra.ShellCompRequestCmd,
 			}, subCmd) {
