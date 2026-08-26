@@ -226,6 +226,7 @@ type listedModel struct {
 
 // downloadedPrecisions returns the model's precisions, optionally hiding the
 // PrecisionNA placeholder used by non-quantized models (table view only).
+// The SDK's order is kept: its head is a bare name's pick.
 func downloadedPrecisions(m geniex_sdk.ModelDetail, hidePrecisionNA bool) []string {
 	quants := make([]string, 0, len(m.Precisions))
 	for _, q := range m.Precisions {
@@ -234,7 +235,6 @@ func downloadedPrecisions(m geniex_sdk.ModelDetail, hidePrecisionNA bool) []stri
 		}
 		quants = append(quants, q)
 	}
-	slices.Sort(quants)
 	return quants
 }
 
