@@ -17,7 +17,6 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
-	"github.com/qualcomm/GenieX/cli/internal/store"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
 )
@@ -130,7 +129,7 @@ func Completions(c *gin.Context) {
 		return
 	}
 
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, store.Get().ResolveChipset(true), types.SpecParam{})
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, service.Chipset(), types.SpecParam{})
 	if err != nil {
 		slog.Error("Failed to resolve model params", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})

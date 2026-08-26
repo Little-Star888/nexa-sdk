@@ -19,7 +19,6 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
-	"github.com/qualcomm/GenieX/cli/internal/store"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
 )
@@ -99,7 +98,7 @@ func ChatCompletions(c *gin.Context) {
 	// Fill unset request knobs from the server-wide defaults and resolve the
 	// compute unit. Done before the MaxCompletionTokens floor so a body that
 	// omits nctx picks up the server default, not the floor.
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute, store.Get().ResolveChipset(true), types.SpecParam{
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute, service.Chipset(), types.SpecParam{
 		Type:       param.SpecType,
 		DraftModel: param.SpecDraftModel,
 		NMax:       param.SpecNMax,
