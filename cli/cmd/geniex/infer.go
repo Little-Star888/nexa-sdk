@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -185,9 +184,6 @@ func ensureModelAvailable(ctx context.Context, name, quant string) (*geniex_sdk.
 	key := name
 	if quant != "" {
 		key = name + ":" + quant
-		if err := checkPrecisionDownloaded(name, quant); err != nil {
-			return nil, err
-		}
 	}
 	paths, err := geniex_sdk.ModelGetPaths(key)
 	if geniex_sdk.IsModelNotFound(err) {
@@ -197,30 +193,18 @@ func ensureModelAvailable(ctx context.Context, name, quant string) (*geniex_sdk.
 		}
 		paths, err = geniex_sdk.ModelGetPaths(key)
 	}
+	// A cached model missing that precision fails as a generic invalid input;
+	// name the cached ones so ErrPrecisionNotFound's hint reaches the user.
+	if err != nil && quant != "" {
+		if m, detailErr := geniex_sdk.ModelGetDetailed(name); detailErr == nil {
+			// Nothing to name (qairt reports only N/A): the SDK's error stands.
+			if precisions := downloadedPrecisions(*m, true); len(precisions) > 0 {
+				return nil, fmt.Errorf("%w: %s has %s, not %q",
+					common.ErrPrecisionNotFound, name, strings.Join(precisions, ", "), quant)
+			}
+		}
+	}
 	return paths, err
-}
-
-// checkPrecisionDownloaded reports ErrPrecisionNotFound when a cached model has
-// no such precision, so the sentinel's hint (list / pull / drop the suffix)
-// reaches the user instead of the SDK's generic invalid-input error. A model
-// that isn't cached at all passes: the caller pulls it.
-func checkPrecisionDownloaded(name, quant string) error {
-	m, err := geniex_sdk.ModelGetDetailed(name)
-	if err != nil {
-		return nil
-	}
-	precisions := downloadedPrecisions(*m, true)
-	// Nothing to match against (a runtime like qairt reports only N/A), so let
-	// the SDK judge the key.
-	if len(precisions) == 0 {
-		return nil
-	}
-	// GGUF quant labels are matched case-insensitively by the SDK.
-	if slices.ContainsFunc(precisions, func(p string) bool { return strings.EqualFold(p, quant) }) {
-		return nil
-	}
-	return fmt.Errorf("%w: %s has %s, not %q",
-		common.ErrPrecisionNotFound, name, strings.Join(precisions, ", "), quant)
 }
 
 // pickCachedPrecision asks which of a cached model's downloaded precisions to
