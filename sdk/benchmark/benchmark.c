@@ -110,12 +110,12 @@ static int run_one_cell(options_t* o) {
             if (rout.warning) geniex_free(rout.warning);
             return 1;
         }
-        run_logits(o, device_id, ngl);
+        int rc_logits = run_logits(o, device_id, ngl);
         if (anchored) free(anchored);
         if (rout.device_id) geniex_free(rout.device_id);
         if (rout.warning) geniex_free(rout.warning);
         free_mm_paths(o);
-        return 0;
+        return rc_logits;
     }
 
     run_result_t* runs = (run_result_t*)calloc((size_t)o->repeat, sizeof(run_result_t));
@@ -139,15 +139,16 @@ static int run_one_cell(options_t* o) {
 
     int64_t model_size_bytes = compute_model_size(o->model_path);
 
-    if (o->output_json) write_json(o, device_id, ngl, model_size_bytes, runs, &a);
-    if (o->output_md) write_md_row(o, ngl, model_size_bytes, &a);
+    int result = 0;
+    if (o->output_json && write_json(o, device_id, ngl, model_size_bytes, runs, &a) != 0) result = 1;
+    if (o->output_md && write_md_row(o, ngl, model_size_bytes, &a) != 0) result = 1;
 
     free(runs);
     if (anchored) free(anchored);
     if (rout.device_id) geniex_free(rout.device_id);
     if (rout.warning) geniex_free(rout.warning);
     free_mm_paths(o);
-    return 0;
+    return result;
 }
 
 /* Run every cell listed in `o->matrix_file` inside one geniex_init / deinit.

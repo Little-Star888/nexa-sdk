@@ -25,13 +25,7 @@ static const char* const VLM_DEFAULT_PROMPT = "Describe the image.";
 
 /* ------------------------- token callback ------------------------- */
 
-/* Read once at startup; default 0 = no-op callback (the production case).
- * Hot path stays branch-predictable. */
-static int g_token_callback_delay_us = 0;
-
-void set_token_callback_delay_us(int us) { g_token_callback_delay_us = us; }
-
-static void busy_wait_us(int us) {
+static void busy_wait_us(int32_t us) {
     if (us <= 0) return;
 #ifdef _WIN32
     LARGE_INTEGER freq, t0, t1;
@@ -57,8 +51,7 @@ static void busy_wait_us(int us) {
  * binding pays for ctypes wrapper + GIL acquire/release. */
 static bool on_token(const char* token, void* user_data) {
     (void)token;
-    (void)user_data;
-    busy_wait_us(g_token_callback_delay_us);
+    busy_wait_us(((const options_t*)user_data)->token_callback_delay_us);
     return true;
 }
 
@@ -339,8 +332,9 @@ void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_
                 gin.input_ids       = tokens;
                 gin.input_ids_count = o->n_prompt;
             }
-            gin.config   = &gconfig;
-            gin.on_token = on_token;
+            gin.config    = &gconfig;
+            gin.on_token  = on_token;
+            gin.user_data = (void*)o;
 
             int32_t rc = geniex_llm_generate(llm, &gin, &gout);
             if (rc != GENIEX_SUCCESS) {
@@ -493,6 +487,7 @@ void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_
             gin.prompt_utf8 = final_prompt;
             gin.config      = &gconfig;
             gin.on_token    = on_token;
+            gin.user_data   = (void*)o;
 
             int32_t rc = geniex_vlm_generate(vlm, &gin, &gout);
             if (rc != GENIEX_SUCCESS) {
@@ -529,7 +524,7 @@ void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_
  * per row to `o->output_json`. Bypasses run_llm's warmup/repeat/aggregate path.
  * The forward-logits API takes input_ids only, so this is random-ids input
  * (bench has no tokenizer). */
-void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
+int run_logits(const options_t* o, const char* device_id, int32_t ngl) {
     geniex_LlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
     cin.model_path     = o->model_path;
@@ -572,8 +567,9 @@ void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
         fout.row_width,
         fout.row_width < fout.vocab_size ? " (rows truncated to top_n)" : "");
 
+    int rc_report = 0;
     if (o->output_json) {
-        write_logits_json(o, device_id, ngl, &fin, &fout);
+        rc_report = write_logits_json(o, device_id, ngl, &fin, &fout);
     } else {
         fprintf(stderr, "[warn] --logits without --output-json: logits computed but not written\n");
     }
@@ -582,4 +578,5 @@ void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
     geniex_free(fout.token_ids);
     free(tokens);
     geniex_llm_destroy(llm);
+    return rc_report;
 }

@@ -20,9 +20,9 @@ void print_summary(const options_t* o, const char* device_id, int32_t ngl, const
         device_id ? device_id : "",
         device_id ? ")" : "",
         ngl,
-        a->ttft_ms_med,
-        a->prefill_med,
-        a->decode_med,
+        a->ttft_ms.med,
+        a->prefill_tps.med,
+        a->decode_tps.med,
         a->gen_tokens_med);
 }
 
@@ -76,25 +76,25 @@ static void json_field_i64(FILE* f, const char* k, int64_t v, bool last) {
 /* One `"<key>": {"median": ..., "min": ..., ...}` line of the "agg" object.
  * The key is padded to a fixed width so the value objects line up in the
  * written file. */
-static void json_agg_stat(FILE* f, const char* key, double med, double lo, double hi, double mean, double sd) {
+static void json_agg_stat(FILE* f, const char* key, const stat_t* st) {
     char field[24];
     snprintf(field, sizeof(field), "\"%s\":", key);
     fprintf(f,
         "      %-15s{\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
         field,
-        med,
-        lo,
-        hi,
-        mean,
-        sd);
+        st->med,
+        st->lo,
+        st->hi,
+        st->mean,
+        st->sd);
 }
 
-void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
+int write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
     const run_result_t* runs, const agg_t* a) {
     FILE* f = fopen(o->output_json, "w");
     if (!f) {
         fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
-        exit(1);
+        return 1;
     }
     fprintf(f, "{\n");
     json_field_str(f, "schema_version", "4", false);
@@ -153,15 +153,16 @@ void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t 
     }
     fprintf(f, "    ],\n");
     fprintf(f, "    \"agg\": {\n");
-    json_agg_stat(f, "ttft_ms", a->ttft_ms_med, a->ttft_ms_lo, a->ttft_ms_hi, a->ttft_ms_mean, a->ttft_ms_sd);
-    json_agg_stat(f, "prefill_tps", a->prefill_med, a->prefill_lo, a->prefill_hi, a->prefill_mean, a->prefill_sd);
-    json_agg_stat(f, "decode_tps", a->decode_med, a->decode_lo, a->decode_hi, a->decode_mean, a->decode_sd);
+    json_agg_stat(f, "ttft_ms", &a->ttft_ms);
+    json_agg_stat(f, "prefill_tps", &a->prefill_tps);
+    json_agg_stat(f, "decode_tps", &a->decode_tps);
     fprintf(f, "      \"gen_tokens\":  {\"median\": %.6f},\n", a->gen_tokens_med);
     fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f},\n", a->prompt_tokens_med);
     fprintf(f, "      \"media_ms\":{\"median\": %.6f}\n", a->media_ms_med);
     fprintf(f, "    }\n");
     fprintf(f, "}\n");
     fclose(f);
+    return 0;
 }
 
 /* Write one row of the SDK's top-N output as a JSON array of [token_id, logit]
@@ -178,12 +179,12 @@ static void write_top_n_row(FILE* f, const int32_t* ids, const float* logits, in
 /* Write the prefill-only logits report for --logits. Emits shape metadata plus,
  * per row, the top-N [token_id, logit] pairs. Records the top-N truncation
  * explicitly so a consumer never mistakes it for the full vocabulary. */
-void write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
+int write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
     const geniex_LlmForwardLogitsOutput* fout) {
     FILE* f = fopen(o->output_json, "w");
     if (!f) {
         fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
-        exit(1);
+        return 1;
     }
     const bool truncated = fout->row_width < fout->vocab_size;
 
@@ -212,6 +213,7 @@ void write_logits_json(const options_t* o, const char* device_id, int32_t ngl, c
     fprintf(f, "    ]\n");
     fprintf(f, "}\n");
     fclose(f);
+    return 0;
 }
 
 /* ----------------------------- Markdown ----------------------------- */
@@ -262,7 +264,7 @@ static void format_size(int64_t bytes, char* buf, size_t bufsz) {
     }
 }
 
-void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a) {
+int write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a) {
     /* Write llama-bench-style row. First call writes the header + separator;
      * subsequent calls append a single row. Detect "first call" by checking
      * whether the file currently exists / is non-empty. */
@@ -272,7 +274,7 @@ void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, con
     FILE* f = fopen(o->output_md, "a");
     if (!f) {
         fprintf(stderr, "ERROR: cannot open %s for append\n", o->output_md);
-        exit(1);
+        return 1;
     }
     if (first) {
         fprintf(f,
@@ -309,13 +311,14 @@ void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, con
         o->device,
         ngl_buf,
         test_buf,
-        a->ttft_ms_med,
-        a->ttft_ms_sd,
+        a->ttft_ms.med,
+        a->ttft_ms.sd,
         media_buf,
-        a->prefill_med,
-        a->prefill_sd,
-        a->decode_med,
-        a->decode_sd);
+        a->prefill_tps.med,
+        a->prefill_tps.sd,
+        a->decode_tps.med,
+        a->decode_tps.sd);
     free(model);
     fclose(f);
+    return 0;
 }

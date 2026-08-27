@@ -152,48 +152,49 @@ static void require_min(int32_t value, int32_t min, const char* flag) {
 }
 
 void parse_args(int argc, char** argv, options_t* o) {
-    o->plugin             = NULL;
-    o->device             = "auto";
-    o->device_id          = NULL;
-    o->model_path         = NULL;
-    o->tokenizer_path     = NULL;
-    o->mmproj_path        = NULL;
-    o->mm_model_path      = NULL;
-    o->mm_mmproj          = NULL;
-    o->mm_tokenizer       = NULL;
-    o->mm_draft_model     = NULL;
-    o->force_vlm          = false;
-    o->mm_is_vlm          = false;
-    o->image_count        = 0;
-    o->audio_count        = 0;
-    o->n_prompt           = 512;
-    o->prompt_buf         = NULL;
-    o->max_new_tokens     = 128;
-    o->temperature        = 0.0f;
-    o->seed               = 42;
-    o->warmup             = 1;
-    o->repeat             = 5;
-    o->reset_between_runs = true;
-    o->accuracy           = false;
-    o->logits_mode        = false;
-    o->logits_last_only   = false;
-    o->logits_top_n       = 20;
-    o->n_ctx              = 0;
-    o->n_threads          = 0;
-    o->ngl_override       = -1;
-    o->spec_type          = NULL;
-    o->draft_model        = NULL;
-    o->draft_tokens       = 0;
-    o->draft_min          = 0;
-    o->draft_p_min        = 0.0f;
-    o->output_json        = NULL;
-    o->output_md          = NULL;
-    o->cell_id            = NULL;
-    o->matrix_file        = NULL;
-    o->output_json_dir    = NULL;
-    o->mm_data_dir        = NULL;
-    o->mm_chipset         = NULL;
-    o->mm_hub             = NULL;
+    o->plugin                  = NULL;
+    o->device                  = "auto";
+    o->device_id               = NULL;
+    o->model_path              = NULL;
+    o->tokenizer_path          = NULL;
+    o->mmproj_path             = NULL;
+    o->mm_model_path           = NULL;
+    o->mm_mmproj               = NULL;
+    o->mm_tokenizer            = NULL;
+    o->mm_draft_model          = NULL;
+    o->force_vlm               = false;
+    o->mm_is_vlm               = false;
+    o->image_count             = 0;
+    o->audio_count             = 0;
+    o->n_prompt                = 512;
+    o->prompt_buf              = NULL;
+    o->max_new_tokens          = 128;
+    o->temperature             = 0.0f;
+    o->seed                    = 42;
+    o->warmup                  = 1;
+    o->repeat                  = 5;
+    o->reset_between_runs      = true;
+    o->accuracy                = false;
+    o->logits_mode             = false;
+    o->logits_last_only        = false;
+    o->logits_top_n            = 20;
+    o->token_callback_delay_us = 0;
+    o->n_ctx                   = 0;
+    o->n_threads               = 0;
+    o->ngl_override            = -1;
+    o->spec_type               = NULL;
+    o->draft_model             = NULL;
+    o->draft_tokens            = 0;
+    o->draft_min               = 0;
+    o->draft_p_min             = 0.0f;
+    o->output_json             = NULL;
+    o->output_md               = NULL;
+    o->cell_id                 = NULL;
+    o->matrix_file             = NULL;
+    o->output_json_dir         = NULL;
+    o->mm_data_dir             = NULL;
+    o->mm_chipset              = NULL;
+    o->mm_hub                  = NULL;
 
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
@@ -286,7 +287,7 @@ void parse_args(int argc, char** argv, options_t* o) {
         } else if (strcmp(a, "--hub") == 0) {
             o->mm_hub = arg_value(argc, argv, &i, a);
         } else if (strcmp(a, "--token-callback-delay-us") == 0) {
-            set_token_callback_delay_us(atoi(arg_value(argc, argv, &i, a)));
+            o->token_callback_delay_us = atoi(arg_value(argc, argv, &i, a));
         } else {
             fprintf(stderr, "ERROR: unknown arg %s\n", a);
             usage(argv[0]);

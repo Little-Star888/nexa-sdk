@@ -82,8 +82,9 @@ typedef struct {
     /* Prefill-only raw-logits mode (--logits): one forward pass over the prompt,
      * no decode loop. Bypasses the timing/warmup/repeat machinery entirely. */
     bool    logits_mode;
-    bool    logits_last_only; /* default: every position; set to emit only the last token's row */
-    int32_t logits_top_n;     /* per row, emit only the top-N (token_id, logit) pairs */
+    bool    logits_last_only;        /* default: every position; set to emit only the last token's row */
+    int32_t logits_top_n;            /* per row, emit only the top-N (token_id, logit) pairs */
+    int32_t token_callback_delay_us; /* per-token busy-wait in on_token; 0 = no-op */
     int32_t n_ctx;
     int32_t n_threads;
     int32_t ngl_override; /* -1 = use resolved alias default; >=0 overrides */
@@ -109,9 +110,10 @@ typedef struct {
     const char* mm_hub;      /* "auto" | "hf" | "aihub" | "modelscope" | "volces" — default auto */
 } options_t;
 
+/* One measured run. Every failure path exits the process, so there is no
+ * per-run error state to carry. */
 typedef struct {
     int32_t     run_idx;
-    bool        is_warmup;
     int64_t     ttft_us;
     int64_t     media_us; /* image/audio encoder time; 0 for text-only */
     int64_t     prompt_time_us;
@@ -121,14 +123,19 @@ typedef struct {
     double      prefill_tps;
     double      decode_tps;
     const char* stop_reason; /* not freed; lifetime tied to SDK output */
-    int32_t     status;      /* 0 ok */
-    char        err[256];
 } run_result_t;
 
+/* One metric reduced over the measured runs. n=1 yields sd=0 (sample stdev
+ * with one observation is undefined; 0 matches llama-bench's `123.4 ± 0.0`). */
 typedef struct {
-    double ttft_ms_med, ttft_ms_lo, ttft_ms_hi, ttft_ms_mean, ttft_ms_sd;
-    double prefill_med, prefill_lo, prefill_hi, prefill_mean, prefill_sd;
-    double decode_med, decode_lo, decode_hi, decode_mean, decode_sd;
+    double med, lo, hi, mean, sd;
+} stat_t;
+
+typedef struct {
+    stat_t ttft_ms;
+    stat_t prefill_tps;
+    stat_t decode_tps;
+    /* Token counts and media time are reported as a median only. */
     double gen_tokens_med;
     double prompt_tokens_med;
     double media_ms_med;
@@ -178,27 +185,28 @@ void mm_shutdown(void);
 
 /* -------------------------------- run.c ------------------------------- */
 
-/* Optional per-token sleep for the on_token-overhead study
- * (--token-callback-delay-us); 0 keeps the callback a no-op. */
-void set_token_callback_delay_us(int us);
 /* warmup + repeat generation runs; writes `o->repeat` measured results. */
 void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out);
 void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out);
-/* --logits: one prefill-only forward pass, writes its own JSON report. */
-void run_logits(const options_t* o, const char* device_id, int32_t ngl);
+/* --logits: one prefill-only forward pass, writes its own JSON report.
+ * 0 on success, 1 when that report could not be written. */
+int run_logits(const options_t* o, const char* device_id, int32_t ngl);
 
 /* ------------------------------- stats.c ------------------------------ */
 
 /* Reduce `n` measured runs to median / min / max / mean / stdev. */
-void aggregate(const run_result_t* runs, int n, agg_t* a);
+void aggregate(const run_result_t* runs, int32_t n, agg_t* a);
 
 /* ------------------------------ report.c ----------------------------- */
 
 void print_summary(const options_t* o, const char* device_id, int32_t ngl, const agg_t* a);
-void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
+/* The three writers return 0 on success and 1 when the destination could not
+ * be opened. An unwritable report is a cell-level failure: matrix mode counts
+ * it and moves to the next cell rather than losing the rest of the sweep. */
+int write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
     const run_result_t* runs, const agg_t* a);
-void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a);
-void write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
+int write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a);
+int write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
     const geniex_LlmForwardLogitsOutput* fout);
 
 #endif /* GENIEX_BENCH_H */
