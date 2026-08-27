@@ -29,11 +29,7 @@ func resolveDraftModelPath(draft string) (string, error) {
 		return draft, nil
 	}
 	name, precision := geniex_sdk.SplitNamePrecision(draft)
-	key := name
-	if precision != "" {
-		key = name + ":" + precision
-	}
-	paths, err := geniex_sdk.ModelGetPaths(key)
+	paths, err := geniex_sdk.ModelGetPaths(geniex_sdk.JoinNamePrecision(name, precision))
 	if err != nil {
 		return "", fmt.Errorf("resolve draft model %q: %w", draft, err)
 	}
