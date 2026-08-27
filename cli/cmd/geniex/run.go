@@ -69,10 +69,7 @@ func run() *cobra.Command {
 
 	runCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		name, quant := geniex_sdk.SplitNamePrecision(args[0])
-		fullName := name
-		if quant != "" {
-			fullName = name + ":" + quant
-		}
+		fullName := geniex_sdk.JoinNamePrecision(name, quant)
 
 		client = openai.NewClient(
 			option.WithBaseURL(fmt.Sprintf("http://%s/v1", config.Get().Host)),

@@ -21,8 +21,8 @@ import (
 
 // LCOV_EXCL_START
 
-// PrecisionNA is the precision placeholder the SDK records for non-quantized
-// (e.g. QAIRT) models.
+// PrecisionNA is the key the SDK records while a model's precision is still
+// undetermined: it means "unknown", not "unquantized".
 const PrecisionNA = "N/A"
 
 // ModelType mirrors geniex_ModelType.
@@ -75,6 +75,15 @@ func SplitNamePrecision(arg string) (string, string) {
 	return name, precision
 }
 
+// JoinNamePrecision builds the "name:precision" key the SDK accepts. Inverse of
+// SplitNamePrecision minus its URL strip; PrecisionNA is a label like any other.
+func JoinNamePrecision(name, precision string) string {
+	if precision == "" {
+		return name
+	}
+	return name + ":" + precision
+}
+
 // HubSource mirrors geniex_HubSource.
 type HubSource int32
 
@@ -100,6 +109,19 @@ func ResolveHub(name string, hub HubSource) (HubSource, error) {
 		return hub, modelError(res)
 	}
 	return HubSource(out), nil
+}
+
+// ResolveAlias expands a short alias (e.g. "qwen3") to "org/repo[:precision]".
+// pull / get_paths never consult the table, so resolve first to let an alias win.
+func ResolveAlias(alias string) (string, bool) {
+	cAlias := C.CString(alias)
+	defer C.free(unsafe.Pointer(cAlias))
+	var out *C.char
+	if res := C.geniex_model_resolve_alias(cAlias, &out); res != C.GENIEX_SUCCESS {
+		return "", false
+	}
+	defer free(unsafe.Pointer(out))
+	return C.GoString(out), true
 }
 
 // FileProgress mirrors geniex_FileProgress.

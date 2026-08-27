@@ -30,12 +30,8 @@ func ListModels(c *gin.Context) {
 	res := make([]openai.Model, 0, len(models))
 	for _, m := range models {
 		for _, q := range m.Precisions {
-			id := m.Name
-			if q != geniex_sdk.PrecisionNA {
-				id += ":" + q
-			}
 			res = append(res, openai.Model{
-				ID:      id,
+				ID:      geniex_sdk.JoinNamePrecision(m.Name, q),
 				OwnedBy: strings.Split(m.Name, "/")[0],
 			})
 		}
@@ -79,13 +75,9 @@ func RetrieveModel(c *gin.Context) {
 		quant = m.Precisions[i]
 	}
 
-	id := m.Name
-	if quant != geniex_sdk.PrecisionNA {
-		id += ":" + quant
-	}
 	c.JSON(http.StatusOK, ModelResponse{
 		Model: openai.Model{
-			ID:      id,
+			ID:      geniex_sdk.JoinNamePrecision(m.Name, quant),
 			OwnedBy: strings.Split(m.Name, "/")[0],
 		},
 		ModelType: m.ModelType.String(),

@@ -119,10 +119,7 @@ func remove() *cobra.Command {
 		var errs []error
 		for _, arg := range args {
 			name, quant := geniex_sdk.SplitNamePrecision(arg)
-			key := name
-			if quant != "" {
-				key = name + ":" + quant
-			}
+			key := geniex_sdk.JoinNamePrecision(name, quant)
 			if err := geniex_sdk.ModelRemove(key); err != nil {
 				errs = append(errs, fmt.Errorf("remove %s: %w", key, err))
 				continue
@@ -545,10 +542,7 @@ func pullModel(ctx context.Context, name, quant string) error {
 
 	fmt.Println(render.GetTheme().Success.Sprint("✔  Download success"))
 
-	key := name
-	if quant != "" {
-		key = name + ":" + quant
-	}
+	key := geniex_sdk.JoinNamePrecision(name, quant)
 	if m, err := geniex_sdk.ModelGetDetailed(name); err == nil && m.TotalSize > 0 {
 		fmt.Println(render.GetTheme().Info.Sprintf("   Size:      %s", humanize.IBytes(uint64(m.TotalSize))))
 	}

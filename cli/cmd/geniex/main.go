@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -35,7 +34,7 @@ func RootCmd() *cobra.Command {
 		Use:           "geniex",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Re-apply now that --log is parsed; the main() call only saw GENIEX_LOG.
 			common.ApplyLogLevel()
 
@@ -58,7 +57,8 @@ func RootCmd() *cobra.Command {
 			}, subCmd) {
 				s := store.Get()
 				if err := geniex_sdk.ModelInit(s.DataPath()); err != nil {
-					slog.Error("failed to initialize model manager", "err", err)
+					// Carrying on fails every later call as NOT_INITIALIZED.
+					return fmt.Errorf("initialize model manager at %s: %w", s.DataPath(), err)
 				}
 			}
 
@@ -82,6 +82,12 @@ func RootCmd() *cobra.Command {
 					go checkUpdate()
 				}
 			}
+			return nil
+		},
+		// Mirrors the ModelInit above. Unchecked: the SDK's deinit is a no-op that
+		// never fails, the same reason Cobra skipping it on error is free.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			geniex_sdk.ModelDeinit()
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVer, _ := cmd.Flags().GetBool("version"); showVer {
