@@ -120,38 +120,40 @@ static void split_id(char* buf, const char** name_out, const char** quant_out) {
     }
 }
 
-/* Resolve a model-manager id to local paths, downloading if missing. On
- * success populates o->mm_model_path / mm_mmproj / mm_tokenizer (heap-
- * owned) and rewrites o->model_path / mmproj_path / tokenizer_path to
- * point at them. Returns 0 on success.
- *
- * Calls geniex_model_init() lazily (idempotent for the matrix-mode case
- * where many cells share one process). */
-int resolve_via_mm(options_t* o, const char* id_in) {
-    if (!g_mm_inited) {
-        int32_t rc = geniex_model_init(o->mm_data_dir);
-        if (rc != GENIEX_SUCCESS) {
-            const char* m = geniex_model_last_error_message();
-            fprintf(stderr, "ERROR: geniex_model_init: %s (%d)\n", m ? m : "?", rc);
-            return 1;
-        }
-        g_mm_inited = true;
+/* geniex_model_init is one-shot per process; call it lazily so matrix mode
+ * (many cells, one process) can ask on every cell. */
+static int mm_init_once(const char* data_dir) {
+    if (g_mm_inited) return 0;
+    int32_t rc = geniex_model_init(data_dir);
+    if (rc != GENIEX_SUCCESS) {
+        const char* m = geniex_model_last_error_message();
+        fprintf(stderr, "ERROR: geniex_model_init: %s (%d)\n", m ? m : "?", rc);
+        return 1;
     }
+    g_mm_inited = true;
+    return 0;
+}
+
+/* Resolve model-manager id `id` to `out`, downloading on cache miss. `kind`
+ * labels the progress line ("" for the main model, "draft " for the draft).
+ * Returns 0 on success; on success the caller owns every string in `out` and
+ * releases the leftovers with geniex_model_paths_free. */
+static int mm_resolve(const options_t* o, const char* id, const char* kind, geniex_ModelPaths* out) {
+    if (mm_init_once(o->mm_data_dir) != 0) return 1;
 
     /* Copy the id into a writable buffer for in-place split_id(). */
-    size_t n   = strlen(id_in);
+    size_t n   = strlen(id);
     char*  buf = (char*)malloc(n + 1);
     if (!buf) return 1;
-    memcpy(buf, id_in, n + 1);
+    memcpy(buf, id, n + 1);
     const char* name;
     const char* quant;
     split_id(buf, &name, &quant);
 
+    memset(out, 0, sizeof(*out));
     /* Try `get_paths` first — already cached is the common path on the
      * second cell of a matrix. Fall through to pull on file-not-found. */
-    geniex_ModelPaths paths;
-    memset(&paths, 0, sizeof(paths));
-    int32_t rc = geniex_model_get_paths(id_in, &paths);
+    int32_t rc = geniex_model_get_paths(id, out);
     if (rc != GENIEX_SUCCESS) {
         geniex_ModelPullInput in;
         memset(&in, 0, sizeof(in));
@@ -161,23 +163,33 @@ int resolve_via_mm(options_t* o, const char* id_in) {
         in.hub         = parse_hub(o->mm_hub);
         in.chipset     = o->mm_chipset;
         in.model_type  = GENIEX_MODEL_TYPE_AUTO;
-        fprintf(stderr, "[mm  ] pulling %s%s%s ...\n", name, quant ? ":" : "", quant ? quant : "");
+        fprintf(stderr, "[mm  ] pulling %s%s%s%s ...\n", kind, name, quant ? ":" : "", quant ? quant : "");
         rc = geniex_model_pull(&in);
         if (rc != GENIEX_SUCCESS) {
             const char* m = geniex_model_last_error_message();
-            fprintf(stderr, "ERROR: geniex_model_pull(%s): %s (%d)\n", id_in, m ? m : "?", rc);
+            fprintf(stderr, "ERROR: geniex_model_pull(%s): %s (%d)\n", id, m ? m : "?", rc);
             free(buf);
             return 1;
         }
-        rc = geniex_model_get_paths(id_in, &paths);
+        rc = geniex_model_get_paths(id, out);
         if (rc != GENIEX_SUCCESS) {
             const char* m = geniex_model_last_error_message();
-            fprintf(stderr, "ERROR: geniex_model_get_paths(%s): %s (%d)\n", id_in, m ? m : "?", rc);
+            fprintf(stderr, "ERROR: geniex_model_get_paths(%s): %s (%d)\n", id, m ? m : "?", rc);
             free(buf);
             return 1;
         }
     }
     free(buf);
+    return 0;
+}
+
+/* Resolve a model-manager id to local paths, downloading if missing. On
+ * success populates o->mm_model_path / mm_mmproj / mm_tokenizer (heap-
+ * owned) and rewrites o->model_path / mmproj_path / tokenizer_path to
+ * point at them. Returns 0 on success. */
+int resolve_via_mm(options_t* o, const char* id_in) {
+    geniex_ModelPaths paths;
+    if (mm_resolve(o, id_in, "", &paths) != 0) return 1;
 
     /* Take ownership of the heap strings the SDK handed us. */
     o->mm_model_path = paths.model_path;
@@ -220,56 +232,18 @@ int resolve_via_mm(options_t* o, const char* id_in) {
  * open it as a file, and silently falls back to non-speculative decode. */
 int resolve_draft_via_mm(options_t* o) {
     if (!o->draft_model || looks_like_path(o->draft_model)) return 0;
-    if (!g_mm_inited) {
-        int32_t rc = geniex_model_init(o->mm_data_dir);
-        if (rc != GENIEX_SUCCESS) {
-            const char* m = geniex_model_last_error_message();
-            fprintf(stderr, "ERROR: geniex_model_init: %s (%d)\n", m ? m : "?", rc);
-            return 1;
-        }
-        g_mm_inited = true;
-    }
-    size_t n   = strlen(o->draft_model);
-    char*  buf = (char*)malloc(n + 1);
-    if (!buf) return 1;
-    memcpy(buf, o->draft_model, n + 1);
-    const char* name;
-    const char* quant;
-    split_id(buf, &name, &quant);
+
+    /* Capture the id before o->draft_model is repointed at the resolved path,
+     * so the log below reports id -> path rather than path -> path. */
+    const char*       id = o->draft_model;
     geniex_ModelPaths paths;
-    memset(&paths, 0, sizeof(paths));
-    int32_t rc = geniex_model_get_paths(o->draft_model, &paths);
-    if (rc != GENIEX_SUCCESS) {
-        geniex_ModelPullInput in;
-        memset(&in, 0, sizeof(in));
-        in.struct_size = (uint32_t)sizeof(in);
-        in.model_name  = name;
-        in.quant       = quant;
-        in.hub         = parse_hub(o->mm_hub);
-        in.chipset     = o->mm_chipset;
-        in.model_type  = GENIEX_MODEL_TYPE_AUTO;
-        fprintf(stderr, "[mm  ] pulling draft %s%s%s ...\n", name, quant ? ":" : "", quant ? quant : "");
-        rc = geniex_model_pull(&in);
-        if (rc != GENIEX_SUCCESS) {
-            const char* m = geniex_model_last_error_message();
-            fprintf(stderr, "ERROR: geniex_model_pull(%s): %s (%d)\n", o->draft_model, m ? m : "?", rc);
-            free(buf);
-            return 1;
-        }
-        rc = geniex_model_get_paths(o->draft_model, &paths);
-        if (rc != GENIEX_SUCCESS) {
-            const char* m = geniex_model_last_error_message();
-            fprintf(stderr, "ERROR: geniex_model_get_paths(%s): %s (%d)\n", o->draft_model, m ? m : "?", rc);
-            free(buf);
-            return 1;
-        }
-    }
-    free(buf);
+    if (mm_resolve(o, id, "draft ", &paths) != 0) return 1;
+
     o->mm_draft_model = paths.model_path;
     paths.model_path  = NULL;
     geniex_model_paths_free(&paths);
     o->draft_model = o->mm_draft_model;
-    fprintf(stderr, "[mm  ] resolved draft %s -> %s\n", o->draft_model, o->mm_draft_model);
+    fprintf(stderr, "[mm  ] resolved draft %s -> %s\n", id, o->mm_draft_model);
     return 0;
 }
 
@@ -359,6 +333,26 @@ char* resolve_local_anchor(const char* path) {
     closedir(d);
 #endif
     return best;
+}
+
+/* Release the mm_* paths a cell took ownership of and NULL them out. */
+void free_mm_paths(options_t* o) {
+    if (o->mm_model_path) {
+        geniex_free(o->mm_model_path);
+        o->mm_model_path = NULL;
+    }
+    if (o->mm_mmproj) {
+        geniex_free(o->mm_mmproj);
+        o->mm_mmproj = NULL;
+    }
+    if (o->mm_tokenizer) {
+        geniex_free(o->mm_tokenizer);
+        o->mm_tokenizer = NULL;
+    }
+    if (o->mm_draft_model) {
+        geniex_free(o->mm_draft_model);
+        o->mm_draft_model = NULL;
+    }
 }
 
 void mm_shutdown(void) {

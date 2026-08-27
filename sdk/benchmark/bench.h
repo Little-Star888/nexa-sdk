@@ -134,6 +134,9 @@ typedef struct {
     double media_ms_med;
 } agg_t;
 
+/* Report label for a cell: the --cell-id / matrix col 1 value, or "cell". */
+static inline const char* cell_name(const options_t* o) { return o->cell_id ? o->cell_id : "cell"; }
+
 /* ------------------------------- util.c ------------------------------- */
 
 /* Print `what` plus the SDK message for `code` to stderr and exit(1). */
@@ -168,6 +171,8 @@ char* resolve_local_anchor(const char* path);
 int resolve_via_mm(options_t* o, const char* id_in);
 /* Same for o->draft_model when it is a model id rather than a path. */
 int resolve_draft_via_mm(options_t* o);
+/* Release the mm_* paths a cell took ownership of and NULL them out. */
+void free_mm_paths(options_t* o);
 /* Best-effort geniex_model_deinit() when the manager was initialised. */
 void mm_shutdown(void);
 

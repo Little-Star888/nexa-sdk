@@ -111,6 +111,118 @@ static void append_prompt_if_nonempty(const char** prompts, int32_t* n, char* se
     if (*s) prompts[(*n)++] = seg;
 }
 
+/* Build the prompt list the run loops iterate over.
+ *
+ * `prompt_buf` NULL (no --prompt-file) yields a single NULL entry, which the
+ * LLM loop reads as "random-ids prefill" and the VLM loop as "template
+ * VLM_DEFAULT_PROMPT". Otherwise the buffer is split on lines that are exactly
+ * "---" (a "\n---\n" separator, ignoring leading/trailing whitespace on that
+ * line): each separator line is overwritten with a NUL so the preceding segment
+ * ends there. No separator => the whole buffer is one prompt, so the same split
+ * works for timing and --accuracy runs without branching on the mode.
+ *
+ * The returned entries point into `prompt_buf`; the array is the caller's to
+ * free. Returns NULL, after printing the error, when every segment is empty. */
+static const char** build_prompt_list(char* prompt_buf, int32_t* n_out) {
+    if (!prompt_buf) {
+        const char** prompts = (const char**)malloc(sizeof(char*));
+        if (!prompts) {
+            fprintf(stderr, "ERROR: oom\n");
+            exit(1);
+        }
+        prompts[0] = NULL;
+        *n_out     = 1;
+        return prompts;
+    }
+
+    /* Upper bound: one more segment than newlines. */
+    int32_t cap = 1;
+    for (char* p = prompt_buf; *p; ++p)
+        if (*p == '\n') cap++;
+    const char** prompts = (const char**)malloc((size_t)cap * sizeof(char*));
+    if (!prompts) {
+        fprintf(stderr, "ERROR: oom\n");
+        exit(1);
+    }
+    int32_t n_prompts = 0;
+
+    char* seg = prompt_buf; /* start of the current segment, NULL at EOF */
+    for (char* line = prompt_buf; line;) {
+        char* nl = strchr(line, '\n');
+        if (nl) *nl = '\0'; /* isolate this line for the separator test */
+
+        /* Is `line` exactly "---" once surrounding whitespace is ignored? */
+        char* t = line;
+        while (*t == ' ' || *t == '\t' || *t == '\r') t++;
+        rstrip(t);
+        bool is_sep = (strcmp(t, "---") == 0);
+
+        if (is_sep) {
+            /* End the preceding segment. When it spans real lines (seg <
+             * line) terminate at the newline before this separator so the
+             * trailing "\n" is dropped; an empty segment (seg == line, e.g.
+             * a leading or back-to-back separator) collapses to "". */
+            if (line > seg)
+                line[-1] = '\0';
+            else if (seg)
+                *seg = '\0';
+            append_prompt_if_nonempty(prompts, &n_prompts, seg);
+            seg = nl ? nl + 1 : NULL;
+        } else if (nl) {
+            *nl = '\n'; /* not a separator: restore so segment text is intact */
+        }
+        line = nl ? nl + 1 : NULL;
+    }
+    /* Trailing segment (the whole buffer when there is no "---"). */
+    append_prompt_if_nonempty(prompts, &n_prompts, seg);
+    if (n_prompts == 0) {
+        fprintf(stderr, "ERROR: --prompt-file has no non-empty prompts\n");
+        free(prompts);
+        return NULL;
+    }
+    *n_out = n_prompts;
+    return prompts;
+}
+
+/* Random-ids prefill (mirrors llama-bench test_prompt): query vocab + BOS via
+ * geniex_llm_get_model_info, fill `o->n_prompt` positions with
+ * rand() % vocab_size, then overwrite pos 0 with BOS when the model wants one.
+ * `pp` is therefore exactly n_prompt.
+ *
+ * Destroys `llm` and exits when the plugin has no model info; `hint` names the
+ * way out for the calling mode. Caller frees the returned array. */
+static int32_t* make_random_tokens(geniex_LLM* llm, const options_t* o, const char* hint) {
+    geniex_LlmModelInfo info;
+    int32_t             rc_info = geniex_llm_get_model_info(llm, &info);
+    if (rc_info != GENIEX_SUCCESS || info.vocab_size <= 0) {
+        const char* msg = geniex_get_error_message((geniex_ErrorCode)rc_info);
+        fprintf(stderr,
+            "ERROR: %s plugin does not support random-ids prefill "
+            "(geniex_llm_get_model_info: %s, code=%d). %s\n",
+            o->plugin,
+            msg ? msg : "?",
+            rc_info,
+            hint);
+        geniex_llm_destroy(llm);
+        exit(1);
+    }
+
+    int32_t* tokens = (int32_t*)malloc((size_t)o->n_prompt * sizeof(int32_t));
+    if (!tokens) {
+        fprintf(stderr, "ERROR: oom allocating %d prompt tokens\n", o->n_prompt);
+        geniex_llm_destroy(llm);
+        exit(1);
+    }
+    srand((unsigned)o->seed);
+    for (int32_t k = 0; k < o->n_prompt; ++k) {
+        tokens[k] = (int32_t)(rand() % info.vocab_size);
+    }
+    if (info.add_bos && info.bos_token >= 0 && o->n_prompt > 0) {
+        tokens[0] = info.bos_token;
+    }
+    return tokens;
+}
+
 /* --------------------------- result recording -------------------------- */
 
 /* Adjust the reported prefill metrics for the engine's real prefill work.
@@ -124,6 +236,22 @@ static void normalize_prefill_metrics(run_result_t* r, const char* plugin) {
     int64_t padded   = ((r->prompt_tokens + QAIRT_PREFILL_CHUNK - 1) / QAIRT_PREFILL_CHUNK) * QAIRT_PREFILL_CHUNK;
     r->prompt_tokens = padded;
     r->prefill_tps   = r->prompt_time_us > 0 ? (double)padded / ((double)r->prompt_time_us / 1e6) : 0.0;
+}
+
+/* Copy one generate() call's profile data into the results array. */
+static void record_run(run_result_t* r, int32_t run_idx, const geniex_ProfileData* p, const char* plugin) {
+    memset(r, 0, sizeof(*r));
+    r->run_idx        = run_idx;
+    r->ttft_us        = p->ttft;
+    r->media_us       = p->media_time;
+    r->prompt_time_us = p->prompt_time;
+    r->decode_time_us = p->decode_time;
+    r->prompt_tokens  = p->prompt_tokens;
+    r->gen_tokens     = p->generated_tokens;
+    r->prefill_tps    = p->prefill_speed;
+    r->decode_tps     = p->decoding_speed;
+    r->stop_reason    = p->stop_reason;
+    normalize_prefill_metrics(r, plugin);
 }
 
 /* Print generated text with a `[gen ]` prefix on every line, so multi-line
@@ -157,42 +285,17 @@ void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_
      *   - prompt_buf != NULL: feed prompt_utf8 verbatim (the plugin tokenizes).
      *     `pp` is the tokenizer's count, NOT n_prompt. Required for plugins
      *     that don't accept input_ids (today: qairt). The buffer is split into
-     *     one prompt per "---"-delimited segment (see the loop below).
+     *     one prompt per "---"-delimited segment by build_prompt_list().
      *   - prompt_buf == NULL: random-ids mode (mirrors llama-bench
      *     test_prompt) — query vocab + BOS via geniex_llm_get_model_info,
      *     fill n_prompt positions with rand() % vocab_size, overwrite pos 0
      *     with BOS when add_bos. `pp` is exactly n_prompt. */
     int32_t* tokens = NULL;
     if (!o->prompt_buf) {
-        geniex_LlmModelInfo info;
-        int32_t             rc_info = geniex_llm_get_model_info(llm, &info);
-        if (rc_info != GENIEX_SUCCESS || info.vocab_size <= 0) {
-            const char* msg = geniex_get_error_message((geniex_ErrorCode)rc_info);
-            fprintf(stderr,
-                "ERROR: %s plugin does not support random-ids prefill "
-                "(geniex_llm_get_model_info: %s, code=%d). "
-                "Pass --prompt-file PATH to use text-prompt mode instead, "
-                "or see https://github.com/qualcomm/GenieX/issues/1008.\n",
-                o->plugin,
-                msg ? msg : "?",
-                rc_info);
-            geniex_llm_destroy(llm);
-            exit(1);
-        }
-
-        tokens = (int32_t*)malloc((size_t)o->n_prompt * sizeof(int32_t));
-        if (!tokens) {
-            fprintf(stderr, "ERROR: oom allocating %d prompt tokens\n", o->n_prompt);
-            geniex_llm_destroy(llm);
-            exit(1);
-        }
-        srand((unsigned)o->seed);
-        for (int32_t k = 0; k < o->n_prompt; ++k) {
-            tokens[k] = (int32_t)(rand() % info.vocab_size);
-        }
-        if (info.add_bos && info.bos_token >= 0 && o->n_prompt > 0) {
-            tokens[0] = info.bos_token;
-        }
+        tokens = make_random_tokens(llm,
+            o,
+            "Pass --prompt-file PATH to use text-prompt mode instead, "
+            "or see https://github.com/qualcomm/GenieX/issues/1008.");
     }
 
     geniex_SamplerConfig    sampler;
@@ -200,64 +303,12 @@ void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_
     fill_sampler(&sampler, o);
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/false);
 
-    /* Prompt list for the outer loop:
-     *   - random-ids mode (prompt_buf == NULL): a single NULL entry.
-     *   - --prompt-file: split prompt_buf on lines that are exactly "---"
-     *     (a "\n---\n" separator, ignoring leading/trailing whitespace on that
-     *     line). No separator => the whole file is one prompt, so the same
-     *     split works for both accuracy and timing runs without branching on
-     *     the mode. Multiple prompts reset the KV cache between segments.
-     * Each separator line is overwritten with a NUL so the preceding segment
-     * ends there; `prompts` points into prompt_buf and is freed here. */
-    const char** prompts   = NULL;
-    int32_t      n_prompts = 1;
-    if (o->prompt_buf) {
-        /* Upper bound: one more segment than newlines. */
-        int32_t cap = 1;
-        for (char* p = o->prompt_buf; *p; ++p)
-            if (*p == '\n') cap++;
-        prompts   = (const char**)malloc((size_t)cap * sizeof(char*));
-        n_prompts = 0;
-
-        char* seg = o->prompt_buf; /* start of the current segment, NULL at EOF */
-        for (char* line = o->prompt_buf; line;) {
-            char* nl = strchr(line, '\n');
-            if (nl) *nl = '\0'; /* isolate this line for the separator test */
-
-            /* Is `line` exactly "---" once surrounding whitespace is ignored? */
-            char* t = line;
-            while (*t == ' ' || *t == '\t' || *t == '\r') t++;
-            rstrip(t);
-            bool is_sep = (strcmp(t, "---") == 0);
-
-            if (is_sep) {
-                /* End the preceding segment. When it spans real lines (seg <
-                 * line) terminate at the newline before this separator so the
-                 * trailing "\n" is dropped; an empty segment (seg == line, e.g.
-                 * a leading or back-to-back separator) collapses to "". */
-                if (line > seg)
-                    line[-1] = '\0';
-                else if (seg)
-                    *seg = '\0';
-                append_prompt_if_nonempty(prompts, &n_prompts, seg);
-                seg = nl ? nl + 1 : NULL;
-            } else if (nl) {
-                *nl = '\n'; /* not a separator: restore so segment text is intact */
-            }
-            line = nl ? nl + 1 : NULL;
-        }
-        /* Trailing segment (the whole file when there is no "---"). */
-        append_prompt_if_nonempty(prompts, &n_prompts, seg);
-        if (n_prompts == 0) {
-            fprintf(stderr, "ERROR: --prompt-file has no non-empty prompts\n");
-            free(prompts);
-            free(tokens);
-            geniex_llm_destroy(llm);
-            exit(1);
-        }
-    } else {
-        prompts    = (const char**)malloc(sizeof(char*));
-        prompts[0] = NULL; /* random-ids */
+    int32_t      n_prompts = 0;
+    const char** prompts   = build_prompt_list(o->prompt_buf, &n_prompts);
+    if (!prompts) {
+        free(tokens);
+        geniex_llm_destroy(llm);
+        exit(1);
     }
 
     int32_t total = o->warmup + o->repeat;
@@ -295,26 +346,14 @@ void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_
             if (rc != GENIEX_SUCCESS) {
                 const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
                 fprintf(stderr, "ERROR: geniex_llm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
+                free(prompts);
                 free(tokens);
                 geniex_llm_destroy(llm);
                 exit(1);
             }
 
             if (!is_warmup) {
-                run_result_t* r = &out[run_idx];
-                memset(r, 0, sizeof(*r));
-                r->run_idx        = run_idx;
-                r->ttft_us        = gout.profile_data.ttft;
-                r->media_us       = gout.profile_data.media_time;
-                r->prompt_time_us = gout.profile_data.prompt_time;
-                r->decode_time_us = gout.profile_data.decode_time;
-                r->prompt_tokens  = gout.profile_data.prompt_tokens;
-                r->gen_tokens     = gout.profile_data.generated_tokens;
-                r->prefill_tps    = gout.profile_data.prefill_speed;
-                r->decode_tps     = gout.profile_data.decoding_speed;
-                r->stop_reason    = gout.profile_data.stop_reason;
-                r->status         = 0;
-                normalize_prefill_metrics(r, o->plugin);
+                record_run(&out[run_idx], run_idx, &gout.profile_data, o->plugin);
             }
 
             if (!is_warmup && o->accuracy && gout.full_text) {
@@ -405,47 +444,11 @@ void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_
     fill_sampler(&sampler, o);
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/true);
 
-    const char** prompts   = NULL;
-    int32_t      n_prompts = 1;
-    if (o->prompt_buf) {
-        /* --prompt-file: feed the file content verbatim, same as the LLM loop.
-         * Supports "---"-delimited segments. */
-        int32_t cap = 1;
-        for (char* p = o->prompt_buf; *p; ++p)
-            if (*p == '\n') cap++;
-        prompts   = (const char**)malloc((size_t)cap * sizeof(char*));
-        n_prompts = 0;
-
-        char* seg = o->prompt_buf;
-        for (char* line = o->prompt_buf; line;) {
-            char* nl = strchr(line, '\n');
-            if (nl) *nl = '\0';
-            char* t = line;
-            while (*t == ' ' || *t == '\t' || *t == '\r') t++;
-            rstrip(t);
-            bool is_sep = (strcmp(t, "---") == 0);
-            if (is_sep) {
-                if (line > seg)
-                    line[-1] = '\0';
-                else if (seg)
-                    *seg = '\0';
-                append_prompt_if_nonempty(prompts, &n_prompts, seg);
-                seg = nl ? nl + 1 : NULL;
-            } else if (nl) {
-                *nl = '\n';
-            }
-            line = nl ? nl + 1 : NULL;
-        }
-        append_prompt_if_nonempty(prompts, &n_prompts, seg);
-        if (n_prompts == 0) {
-            fprintf(stderr, "ERROR: --prompt-file has no non-empty prompts\n");
-            free(prompts);
-            geniex_vlm_destroy(vlm);
-            exit(1);
-        }
-    } else {
-        prompts    = (const char**)malloc(sizeof(char*));
-        prompts[0] = NULL; /* no --prompt-file: build_vlm_prompt uses VLM_DEFAULT_PROMPT */
+    int32_t      n_prompts = 0;
+    const char** prompts   = build_prompt_list(o->prompt_buf, &n_prompts);
+    if (!prompts) {
+        geniex_vlm_destroy(vlm);
+        exit(1);
     }
 
     int32_t total = o->warmup + o->repeat;
@@ -502,20 +505,7 @@ void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_
             }
 
             if (!is_warmup) {
-                run_result_t* r = &out[run_idx];
-                memset(r, 0, sizeof(*r));
-                r->run_idx        = run_idx;
-                r->ttft_us        = gout.profile_data.ttft;
-                r->media_us       = gout.profile_data.media_time;
-                r->prompt_time_us = gout.profile_data.prompt_time;
-                r->decode_time_us = gout.profile_data.decode_time;
-                r->prompt_tokens  = gout.profile_data.prompt_tokens;
-                r->gen_tokens     = gout.profile_data.generated_tokens;
-                r->prefill_tps    = gout.profile_data.prefill_speed;
-                r->decode_tps     = gout.profile_data.decoding_speed;
-                r->stop_reason    = gout.profile_data.stop_reason;
-                r->status         = 0;
-                normalize_prefill_metrics(r, o->plugin);
+                record_run(&out[run_idx], run_idx, &gout.profile_data, o->plugin);
             }
 
             if (!is_warmup && o->accuracy && gout.full_text) {
@@ -551,33 +541,7 @@ void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
     geniex_LLM* llm = NULL;
     check(geniex_llm_create(&cin, &llm), "geniex_llm_create");
 
-    geniex_LlmModelInfo info;
-    int32_t             rc_info = geniex_llm_get_model_info(llm, &info);
-    if (rc_info != GENIEX_SUCCESS || info.vocab_size <= 0) {
-        const char* msg = geniex_get_error_message((geniex_ErrorCode)rc_info);
-        fprintf(stderr,
-            "ERROR: %s plugin does not support random-ids prefill required by --logits "
-            "(geniex_llm_get_model_info: %s, code=%d).\n",
-            o->plugin,
-            msg ? msg : "?",
-            rc_info);
-        geniex_llm_destroy(llm);
-        exit(1);
-    }
-
-    int32_t* tokens = (int32_t*)malloc((size_t)o->n_prompt * sizeof(int32_t));
-    if (!tokens) {
-        fprintf(stderr, "ERROR: oom allocating %d prompt tokens\n", o->n_prompt);
-        geniex_llm_destroy(llm);
-        exit(1);
-    }
-    srand((unsigned)o->seed);
-    for (int32_t k = 0; k < o->n_prompt; ++k) {
-        tokens[k] = (int32_t)(rand() % info.vocab_size);
-    }
-    if (info.add_bos && info.bos_token >= 0 && o->n_prompt > 0) {
-        tokens[0] = info.bos_token;
-    }
+    int32_t* tokens = make_random_tokens(llm, o, "--logits requires it; --prompt-file is not supported with --logits.");
 
     geniex_LlmForwardLogitsInput  fin;
     geniex_LlmForwardLogitsOutput fout;
@@ -599,7 +563,7 @@ void run_logits(const options_t* o, const char* device_id, int32_t ngl) {
 
     fprintf(stdout,
         "[ok  ] %s  plugin=%s device=%s ngl=%d logits n_rows=%d vocab=%d top_n=%d%s\n",
-        o->cell_id ? o->cell_id : "cell",
+        cell_name(o),
         o->plugin,
         o->device,
         ngl,

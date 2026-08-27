@@ -144,6 +144,13 @@ static const char* arg_value(int argc, char** argv, int* i, const char* flag) {
     return argv[*i];
 }
 
+static void require_min(int32_t value, int32_t min, const char* flag) {
+    if (value < min) {
+        fprintf(stderr, "ERROR: %s must be >=%d\n", flag, min);
+        exit(2);
+    }
+}
+
 void parse_args(int argc, char** argv, options_t* o) {
     o->plugin             = NULL;
     o->device             = "auto";
@@ -299,40 +306,24 @@ void parse_args(int argc, char** argv, options_t* o) {
             fprintf(stderr, "ERROR: --logits uses random token ids; --prompt-file is not supported with it\n");
             exit(2);
         }
-        if (o->logits_top_n < 1) {
-            fprintf(stderr, "ERROR: --logits-top-n must be >=1\n");
+        require_min(o->logits_top_n, 1, "--logits-top-n");
+    }
+
+    /* In matrix mode --plugin/--device/--model come from each line of the
+     * matrix file, not from argv. Checked before the run-count sanity below so
+     * a single-cell invocation still reports the missing required flag first. */
+    if (!o->matrix_file) {
+        if (!o->plugin) {
+            fprintf(stderr, "ERROR: --plugin is required\n");
+            exit(2);
+        }
+        if (!o->model_path) {
+            fprintf(stderr, "ERROR: --model is required\n");
             exit(2);
         }
     }
 
-    if (o->matrix_file) {
-        /* In matrix mode, --plugin/--device/--model come from each line of
-         * the matrix file, not from argv. */
-        if (o->repeat < 1) {
-            fprintf(stderr, "ERROR: --repetitions must be >=1\n");
-            exit(2);
-        }
-        if (o->n_prompt < 1) {
-            fprintf(stderr, "ERROR: --n-prompt must be >=1\n");
-            exit(2);
-        }
-        return;
-    }
-
-    if (!o->plugin) {
-        fprintf(stderr, "ERROR: --plugin is required\n");
-        exit(2);
-    }
-    if (!o->model_path) {
-        fprintf(stderr, "ERROR: --model is required\n");
-        exit(2);
-    }
-    if (o->repeat < 1) {
-        fprintf(stderr, "ERROR: --repetitions must be >=1\n");
-        exit(2);
-    }
-    if (o->n_prompt < 1) {
-        fprintf(stderr, "ERROR: --n-prompt must be >=1\n");
-        exit(2);
-    }
+    /* Run-count sanity, checked for both modes. */
+    require_min(o->repeat, 1, "--repetitions");
+    require_min(o->n_prompt, 1, "--n-prompt");
 }

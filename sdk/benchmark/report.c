@@ -13,7 +13,7 @@ void print_summary(const options_t* o, const char* device_id, int32_t ngl, const
     fprintf(stdout,
         "[ok  ] %s  plugin=%s device=%s%s%s%s ngl=%d "
         "ttft=%.1fms prefill=%.1ftps decode=%.1ftps gen=%.0f tok\n",
-        o->cell_id ? o->cell_id : "cell",
+        cell_name(o),
         o->plugin,
         o->device,
         device_id ? "(id=" : "",
@@ -69,11 +69,24 @@ static void json_field_str(FILE* f, const char* k, const char* v, bool last) {
     fprintf(f, last ? "\n" : ",\n");
 }
 
-static void json_field_dbl(FILE* f, const char* k, double v, bool last) {
-    fprintf(f, "    \"%s\": %.6f%s", k, v, last ? "\n" : ",\n");
-}
 static void json_field_i64(FILE* f, const char* k, int64_t v, bool last) {
     fprintf(f, "    \"%s\": %lld%s", k, (long long)v, last ? "\n" : ",\n");
+}
+
+/* One `"<key>": {"median": ..., "min": ..., ...}` line of the "agg" object.
+ * The key is padded to a fixed width so the value objects line up in the
+ * written file. */
+static void json_agg_stat(FILE* f, const char* key, double med, double lo, double hi, double mean, double sd) {
+    char field[24];
+    snprintf(field, sizeof(field), "\"%s\":", key);
+    fprintf(f,
+        "      %-15s{\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
+        field,
+        med,
+        lo,
+        hi,
+        mean,
+        sd);
 }
 
 void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
@@ -85,7 +98,7 @@ void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t 
     }
     fprintf(f, "{\n");
     json_field_str(f, "schema_version", "4", false);
-    json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
+    json_field_str(f, "cell_id", cell_name(o), false);
     json_field_str(f, "plugin", o->plugin, false);
     json_field_str(f, "device", o->device, false);
     json_field_str(f, "device_id", device_id, false);
@@ -140,35 +153,15 @@ void write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t 
     }
     fprintf(f, "    ],\n");
     fprintf(f, "    \"agg\": {\n");
-    fprintf(f,
-        "      \"ttft_ms\":     {\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
-        a->ttft_ms_med,
-        a->ttft_ms_lo,
-        a->ttft_ms_hi,
-        a->ttft_ms_mean,
-        a->ttft_ms_sd);
-    fprintf(f,
-        "      \"prefill_tps\": {\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
-        a->prefill_med,
-        a->prefill_lo,
-        a->prefill_hi,
-        a->prefill_mean,
-        a->prefill_sd);
-    fprintf(f,
-        "      \"decode_tps\":  {\"median\": %.6f, \"min\": %.6f, \"max\": %.6f, \"mean\": %.6f, \"stdev\": %.6f},\n",
-        a->decode_med,
-        a->decode_lo,
-        a->decode_hi,
-        a->decode_mean,
-        a->decode_sd);
+    json_agg_stat(f, "ttft_ms", a->ttft_ms_med, a->ttft_ms_lo, a->ttft_ms_hi, a->ttft_ms_mean, a->ttft_ms_sd);
+    json_agg_stat(f, "prefill_tps", a->prefill_med, a->prefill_lo, a->prefill_hi, a->prefill_mean, a->prefill_sd);
+    json_agg_stat(f, "decode_tps", a->decode_med, a->decode_lo, a->decode_hi, a->decode_mean, a->decode_sd);
     fprintf(f, "      \"gen_tokens\":  {\"median\": %.6f},\n", a->gen_tokens_med);
     fprintf(f, "      \"prompt_tokens\":{\"median\": %.6f},\n", a->prompt_tokens_med);
     fprintf(f, "      \"media_ms\":{\"median\": %.6f}\n", a->media_ms_med);
     fprintf(f, "    }\n");
     fprintf(f, "}\n");
     fclose(f);
-    /* keep static-analysis happy */
-    (void)json_field_dbl;
 }
 
 /* Write one row of the SDK's top-N output as a JSON array of [token_id, logit]
@@ -196,7 +189,7 @@ void write_logits_json(const options_t* o, const char* device_id, int32_t ngl, c
 
     fprintf(f, "{\n");
     json_field_str(f, "schema_version", "logits-1", false);
-    json_field_str(f, "cell_id", o->cell_id ? o->cell_id : "cell", false);
+    json_field_str(f, "cell_id", cell_name(o), false);
     json_field_str(f, "plugin", o->plugin, false);
     json_field_str(f, "device", o->device, false);
     json_field_str(f, "device_id", device_id, false);
@@ -310,7 +303,7 @@ void write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, con
 
     fprintf(f,
         "| %s | %s | %s | %s | %s | %s | %.1f ± %.1f | %s | %.1f ± %.1f | %.1f ± %.1f |\n",
-        model ? model : (o->cell_id ? o->cell_id : "cell"),
+        model ? model : cell_name(o),
         size_buf,
         o->plugin,
         o->device,

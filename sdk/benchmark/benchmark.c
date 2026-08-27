@@ -114,22 +114,7 @@ static int run_one_cell(options_t* o) {
         if (anchored) free(anchored);
         if (rout.device_id) geniex_free(rout.device_id);
         if (rout.warning) geniex_free(rout.warning);
-        if (o->mm_model_path) {
-            geniex_free(o->mm_model_path);
-            o->mm_model_path = NULL;
-        }
-        if (o->mm_mmproj) {
-            geniex_free(o->mm_mmproj);
-            o->mm_mmproj = NULL;
-        }
-        if (o->mm_tokenizer) {
-            geniex_free(o->mm_tokenizer);
-            o->mm_tokenizer = NULL;
-        }
-        if (o->mm_draft_model) {
-            geniex_free(o->mm_draft_model);
-            o->mm_draft_model = NULL;
-        }
+        free_mm_paths(o);
         return 0;
     }
 
@@ -161,22 +146,7 @@ static int run_one_cell(options_t* o) {
     if (anchored) free(anchored);
     if (rout.device_id) geniex_free(rout.device_id);
     if (rout.warning) geniex_free(rout.warning);
-    if (o->mm_model_path) {
-        geniex_free(o->mm_model_path);
-        o->mm_model_path = NULL;
-    }
-    if (o->mm_mmproj) {
-        geniex_free(o->mm_mmproj);
-        o->mm_mmproj = NULL;
-    }
-    if (o->mm_tokenizer) {
-        geniex_free(o->mm_tokenizer);
-        o->mm_tokenizer = NULL;
-    }
-    if (o->mm_draft_model) {
-        geniex_free(o->mm_draft_model);
-        o->mm_draft_model = NULL;
-    }
+    free_mm_paths(o);
     return 0;
 }
 
