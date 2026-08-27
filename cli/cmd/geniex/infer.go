@@ -180,10 +180,7 @@ func infer() *cobra.Command {
 // ensureModelAvailable resolves a model's on-disk paths, pulling it first if it
 // isn't cached. An empty quant lets the SDK pick among the downloaded ones.
 func ensureModelAvailable(ctx context.Context, name, quant string) (*geniex_sdk.ModelPaths, error) {
-	key := name
-	if quant != "" {
-		key = name + ":" + quant
-	}
+	key := geniex_sdk.JoinNamePrecision(name, quant)
 	paths, err := geniex_sdk.ModelGetPaths(key)
 	if geniex_sdk.IsModelNotFound(err) {
 		fmt.Println(render.GetTheme().Info.Sprintf("Model is not currently cached, downloading..."))
