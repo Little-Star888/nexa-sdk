@@ -89,8 +89,8 @@ static void json_agg_stat(FILE* f, const char* key, const stat_t* st) {
         st->sd);
 }
 
-int write_cell_json(
-    const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs, const agg_t* a) {
+int write_cell_json(const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs,
+    int32_t n_runs, const agg_t* a) {
     FILE* f = fopen(o->output_json, "w");
     if (!f) {
         fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
@@ -130,7 +130,7 @@ int write_cell_json(
     }
     fprintf(f, "\n    },\n");
     fprintf(f, "    \"runs\": [\n");
-    for (int i = 0; i < o->repeat; ++i) {
+    for (int32_t i = 0; i < n_runs; ++i) {
         const run_result_t* r = &runs[i];
         fprintf(f,
             "      {\"run_idx\": %d, \"ttft_us\": %lld, \"media_us\": %lld, "
@@ -149,7 +149,7 @@ int write_cell_json(
             r->stop_reason ? "\"" : "null",
             r->stop_reason ? r->stop_reason : "",
             r->stop_reason ? "\"" : "",
-            (i + 1 < o->repeat) ? "," : "");
+            (i + 1 < n_runs) ? "," : "");
     }
     fprintf(f, "    ],\n");
     fprintf(f, "    \"agg\": {\n");

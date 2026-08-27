@@ -119,7 +119,9 @@ static int run_one_cell(options_t* o) {
         goto done;
     }
 
-    runs = (run_result_t*)calloc((size_t)o->repeat, sizeof(run_result_t));
+    /* warmup + repeat runs per prompt; only the measured ones are recorded. */
+    int32_t n_runs = o->repeat * o->prompt_count;
+    runs           = (run_result_t*)calloc((size_t)n_runs, sizeof(run_result_t));
     if (!runs) {
         fprintf(stderr, "ERROR: oom\n");
         result = 1;
@@ -133,11 +135,11 @@ static int run_one_cell(options_t* o) {
     }
 
     agg_t a;
-    aggregate_runs(runs, o->repeat, &a);
+    aggregate_runs(runs, n_runs, &a);
     print_summary(o, &dev, &a);
 
     int64_t model_size_bytes = model_disk_bytes(o->model_path);
-    if (o->output_json && write_cell_json(o, &dev, model_size_bytes, runs, &a) != 0) result = 1;
+    if (o->output_json && write_cell_json(o, &dev, model_size_bytes, runs, n_runs, &a) != 0) result = 1;
     if (o->output_md && write_md_row(o, &dev, model_size_bytes, &a) != 0) result = 1;
 
 done:
@@ -244,6 +246,7 @@ int main(int argc, char** argv) {
         rc = run_one_cell(&o);
     }
 
+    free(o.prompts);
     if (o.prompt_buf) free(o.prompt_buf);
     /* Release the model-manager runtime before geniex_deinit. */
     mm_shutdown();

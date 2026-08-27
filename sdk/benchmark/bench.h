@@ -70,15 +70,22 @@ typedef struct {
     int32_t     audio_count;
 
     int32_t n_prompt;   /* LLM random-ids prefill length (llama-bench -p), used when prompt_buf is NULL */
-    char*   prompt_buf; /* heap-owned text prompt loaded via --prompt-file; NULL = use random-ids.
-                         * Split into multiple prompts on lines that are exactly "---". */
-    int32_t max_new_tokens;
-    float   temperature;
-    int32_t seed;
-    int32_t warmup;
-    int32_t repeat;
-    bool    reset_between_runs; /* true => geniex_llm_reset() before each run, freeing KV */
-    bool    accuracy;           /* true => single run (warmup=0, repeat=1), print generated text */
+    char*   prompt_buf; /* heap-owned raw --prompt-file text; NULL = random-ids */
+    /* prompt_buf split once at parse time on lines that are exactly "---";
+     * entries point into prompt_buf, which is NUL-terminated in place. A
+     * single NULL entry means random-ids. Splitting here rather than per cell
+     * keeps it out of the run loops, so every cell of a matrix sees the same
+     * list instead of the leftovers of the previous cell's tokenisation.
+     * Multiple segments are accepted only under --accuracy. */
+    const char** prompts;
+    int32_t      prompt_count;
+    int32_t      max_new_tokens;
+    float        temperature;
+    int32_t      seed;
+    int32_t      warmup;
+    int32_t      repeat;
+    bool         reset_between_runs; /* true => geniex_llm_reset() before each run, freeing KV */
+    bool         accuracy;           /* true => single run (warmup=0, repeat=1), print generated text */
 
     /* Prefill-only raw-logits mode (--logits): one forward pass over the prompt,
      * no decode loop. Bypasses the timing/warmup/repeat machinery entirely. */
@@ -194,7 +201,8 @@ void mm_shutdown(void);
 
 /* -------------------------------- run.c ------------------------------- */
 
-/* warmup + repeat generation runs; writes `o->repeat` measured results. */
+/* warmup + repeat generation runs per prompt; both write exactly
+ * `o->repeat * o->prompt_count` measured results into `out`. */
 void run_llm(const options_t* o, const device_t* dev, run_result_t* out);
 void run_vlm(const options_t* o, const device_t* dev, run_result_t* out);
 /* --logits: one prefill-only forward pass, writes its own JSON report.
@@ -211,8 +219,8 @@ void print_summary(const options_t* o, const device_t* dev, const agg_t* a);
 /* The three writers return 0 on success and 1 when the destination could not
  * be opened. An unwritable report is a cell-level failure: matrix mode counts
  * it and moves to the next cell rather than losing the rest of the sweep. */
-int write_cell_json(
-    const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs, const agg_t* a);
+int write_cell_json(const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs,
+    int32_t n_runs, const agg_t* a);
 int write_md_row(const options_t* o, const device_t* dev, int64_t model_size_bytes, const agg_t* a);
 int write_logits_json(const options_t* o, const device_t* dev, const geniex_LlmForwardLogitsInput* fin,
     const geniex_LlmForwardLogitsOutput* fout);

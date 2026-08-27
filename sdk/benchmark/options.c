@@ -76,12 +76,14 @@ static void usage(const char* argv0) {
         "                         For qairt, `pp` and prefill tok/s are reported over\n"
         "                         the padded length ceil(pp/128)*128, matching the\n"
         "                         engine's 128-token prefill chunking (#1194).\n"
-        "                         Batch prompts by separating them with a line that\n"
-        "                         is exactly `---`; each segment runs as its own\n"
-        "                         prompt (KV cache reset between segments), delimited\n"
-        "                         in stdout by a `[sep ] prompt i/n` marker. A file\n"
-        "                         with no `---` line is a single prompt, so this works\n"
-        "                         the same in timing and --accuracy runs.\n"
+        "                         Under --accuracy only, a line that is exactly `---`\n"
+        "                         splits the file into several prompts; each runs on\n"
+        "                         its own KV cache, is marked `[sep ] prompt i/n` on\n"
+        "                         stdout and gets its own entry in the JSON `runs`\n"
+        "                         array. Every other mode feeds the file verbatim as\n"
+        "                         one prompt, `---` lines included: the segments differ\n"
+        "                         in length, so a tok/s median across them would mix\n"
+        "                         populations.\n"
         "  --no-reset-between-runs\n"
         "                         keep KV cache across measured runs (default is\n"
         "                         to call geniex_llm_reset() before every run so\n"
@@ -149,6 +151,92 @@ static void require_min(int32_t value, int32_t min, const char* flag) {
         fprintf(stderr, "ERROR: %s must be >=%d\n", flag, min);
         exit(2);
     }
+}
+
+/* Is this line exactly "---", ignoring surrounding whitespace? Read-only on
+ * purpose: an rstrip()-based test leaves NULs in prompt_buf and the prompt,
+ * read as a C string, ends at the first one. */
+static bool is_separator(const char* line) {
+    while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+    if (line[0] != '-' || line[1] != '-' || line[2] != '-') return false;
+    line += 3;
+    while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+    return *line == '\n' || *line == '\0';
+}
+
+/* A one-entry list holding `p` verbatim; `p` may be NULL for random-ids. */
+static const char** one_prompt(const char* p, int32_t* n_out) {
+    const char** prompts = (const char**)malloc(sizeof(char*));
+    if (!prompts) {
+        fprintf(stderr, "ERROR: oom\n");
+        exit(1);
+    }
+    prompts[0] = p;
+    *n_out     = 1;
+    return prompts;
+}
+
+/* Append `seg` to the prompt list unless it is NULL or all whitespace, so
+ * stray/leading/trailing "---" separators don't produce empty prompts. */
+static void append_prompt_if_nonempty(const char** prompts, int32_t* n, char* seg) {
+    if (!seg) return;
+    const char* s = seg;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+    if (*s) prompts[(*n)++] = seg;
+}
+
+/* Split --prompt-file's text into the list the run loops iterate over.
+ *
+ * `prompt_buf` NULL (no --prompt-file) yields a single NULL entry, which the
+ * LLM loop reads as "random-ids prefill" and the VLM loop as "template
+ * VLM_DEFAULT_PROMPT". Otherwise the buffer is split on lines that are exactly
+ * "---", ignoring leading/trailing whitespace on that line: each separator is
+ * overwritten with a NUL so the preceding segment ends there.
+ *
+ * Entries point into `prompt_buf`. Returns NULL, after printing the error,
+ * when every segment is empty. */
+static const char** build_prompt_list(char* prompt_buf, int32_t* n_out) {
+    if (!prompt_buf) return one_prompt(NULL, n_out);
+
+    /* Upper bound: one more segment than newlines. */
+    int32_t cap = 1;
+    for (char* p = prompt_buf; *p; ++p)
+        if (*p == '\n') cap++;
+    const char** prompts = (const char**)malloc((size_t)cap * sizeof(char*));
+    if (!prompts) {
+        fprintf(stderr, "ERROR: oom\n");
+        exit(1);
+    }
+    int32_t n_prompts = 0;
+
+    /* Only separator lines are overwritten, so every segment keeps its text
+     * byte for byte. */
+    char* seg = prompt_buf; /* start of the current segment, NULL at EOF */
+    for (char* line = prompt_buf; line;) {
+        char* nl = strchr(line, '\n');
+        if (is_separator(line)) {
+            /* End the preceding segment. When it spans real lines (seg <
+             * line) terminate at the newline before this separator so the
+             * trailing "\n" is dropped; an empty segment (seg == line, e.g.
+             * a leading or back-to-back separator) collapses to "". */
+            if (line > seg)
+                line[-1] = '\0';
+            else if (seg)
+                *seg = '\0';
+            append_prompt_if_nonempty(prompts, &n_prompts, seg);
+            seg = nl ? nl + 1 : NULL;
+        }
+        line = nl ? nl + 1 : NULL;
+    }
+    /* Trailing segment (the whole buffer when there is no "---"). */
+    append_prompt_if_nonempty(prompts, &n_prompts, seg);
+    if (n_prompts == 0) {
+        fprintf(stderr, "ERROR: --prompt-file has no non-empty prompts\n");
+        free(prompts);
+        return NULL;
+    }
+    *n_out = n_prompts;
+    return prompts;
 }
 
 void parse_args(int argc, char** argv, options_t* o) {
@@ -308,6 +396,18 @@ void parse_args(int argc, char** argv, options_t* o) {
             exit(2);
         }
         require_min(o->logits_top_n, 1, "--logits-top-n");
+    }
+
+    /* Resolve the prompt list once, here, rather than in each run loop.
+     *
+     * Splitting on `---` is an --accuracy feature: it exists to eyeball
+     * several prompts' output in one invocation. Every other mode feeds the
+     * file verbatim as a single prompt — the segments have different lengths,
+     * so a median of prefill_tps across them would mix populations. */
+    o->prompts =
+        o->accuracy ? build_prompt_list(o->prompt_buf, &o->prompt_count) : one_prompt(o->prompt_buf, &o->prompt_count);
+    if (!o->prompts) {
+        exit(2);
     }
 
     /* In matrix mode --plugin/--device/--model come from each line of the

@@ -155,7 +155,12 @@ Run `geniex-bench --help` for the full flag list.
 - `--accuracy` pins a single run (`--warmup 0 -r 1`) and prints the generated
   text to stdout (`[gen ] ...`); use it to sanity-check output quality rather
   than timing. Pair with `--prompt-file`, since the default random-ids prefill
-  yields meaningless text.
+  yields meaningless text. Only in this mode does a line that is exactly `---`
+  split the prompt file into several prompts: each runs on its own KV cache, is
+  marked `[sep ] prompt i/n` on stdout, and gets its own entry in the JSON
+  `runs` array. Every other mode feeds the file verbatim as one prompt,
+  because the segments differ in length and a tok/s median across them would
+  mix populations.
 - `--logits` runs one prefill-only forward pass (no decode loop, no timing) over
   `-p N` random ids and writes every position's top-N logits to `--output-json`
   (`--logits-top-n`, default 20; `--logits-last-only` for the last row only).

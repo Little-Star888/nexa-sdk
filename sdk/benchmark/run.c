@@ -90,90 +90,6 @@ static void fill_model_config(geniex_ModelConfig* c, const options_t* o, int32_t
     c->spec_p_min       = o->draft_p_min;
 }
 
-/* ----------------------------- prompt input ---------------------------- */
-
-/* Append `seg` to the prompt list unless it is NULL or all whitespace, so
- * stray/leading/trailing "---" separators don't produce empty prompts. */
-static void append_prompt_if_nonempty(const char** prompts, int32_t* n, char* seg) {
-    if (!seg) return;
-    const char* s = seg;
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
-    if (*s) prompts[(*n)++] = seg;
-}
-
-/* Build the prompt list the run loops iterate over.
- *
- * `prompt_buf` NULL (no --prompt-file) yields a single NULL entry, which the
- * LLM loop reads as "random-ids prefill" and the VLM loop as "template
- * VLM_DEFAULT_PROMPT". Otherwise the buffer is split on lines that are exactly
- * "---" (a "\n---\n" separator, ignoring leading/trailing whitespace on that
- * line): each separator line is overwritten with a NUL so the preceding segment
- * ends there. No separator => the whole buffer is one prompt, so the same split
- * works for timing and --accuracy runs without branching on the mode.
- *
- * The returned entries point into `prompt_buf`; the array is the caller's to
- * free. Returns NULL, after printing the error, when every segment is empty. */
-static const char** build_prompt_list(char* prompt_buf, int32_t* n_out) {
-    if (!prompt_buf) {
-        const char** prompts = (const char**)malloc(sizeof(char*));
-        if (!prompts) {
-            fprintf(stderr, "ERROR: oom\n");
-            exit(1);
-        }
-        prompts[0] = NULL;
-        *n_out     = 1;
-        return prompts;
-    }
-
-    /* Upper bound: one more segment than newlines. */
-    int32_t cap = 1;
-    for (char* p = prompt_buf; *p; ++p)
-        if (*p == '\n') cap++;
-    const char** prompts = (const char**)malloc((size_t)cap * sizeof(char*));
-    if (!prompts) {
-        fprintf(stderr, "ERROR: oom\n");
-        exit(1);
-    }
-    int32_t n_prompts = 0;
-
-    char* seg = prompt_buf; /* start of the current segment, NULL at EOF */
-    for (char* line = prompt_buf; line;) {
-        char* nl = strchr(line, '\n');
-        if (nl) *nl = '\0'; /* isolate this line for the separator test */
-
-        /* Is `line` exactly "---" once surrounding whitespace is ignored? */
-        char* t = line;
-        while (*t == ' ' || *t == '\t' || *t == '\r') t++;
-        rstrip(t);
-        bool is_sep = (strcmp(t, "---") == 0);
-
-        if (is_sep) {
-            /* End the preceding segment. When it spans real lines (seg <
-             * line) terminate at the newline before this separator so the
-             * trailing "\n" is dropped; an empty segment (seg == line, e.g.
-             * a leading or back-to-back separator) collapses to "". */
-            if (line > seg)
-                line[-1] = '\0';
-            else if (seg)
-                *seg = '\0';
-            append_prompt_if_nonempty(prompts, &n_prompts, seg);
-            seg = nl ? nl + 1 : NULL;
-        } else if (nl) {
-            *nl = '\n'; /* not a separator: restore so segment text is intact */
-        }
-        line = nl ? nl + 1 : NULL;
-    }
-    /* Trailing segment (the whole buffer when there is no "---"). */
-    append_prompt_if_nonempty(prompts, &n_prompts, seg);
-    if (n_prompts == 0) {
-        fprintf(stderr, "ERROR: --prompt-file has no non-empty prompts\n");
-        free(prompts);
-        return NULL;
-    }
-    *n_out = n_prompts;
-    return prompts;
-}
-
 /* Random-ids prefill (mirrors llama-bench test_prompt): query vocab + BOS via
  * geniex_llm_get_model_info, fill `o->n_prompt` positions with
  * rand() % vocab_size, then overwrite pos 0 with BOS when the model wants one.
@@ -287,19 +203,12 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
     fill_sampler(&sampler, o);
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/false);
 
-    int32_t      n_prompts = 0;
-    const char** prompts   = build_prompt_list(o->prompt_buf, &n_prompts);
-    if (!prompts) {
-        free(tokens);
-        geniex_llm_destroy(llm);
-        exit(1);
-    }
-
-    int32_t total = o->warmup + o->repeat;
-    for (int32_t pi = 0; pi < n_prompts; ++pi) {
-        const char* cur_prompt = prompts[pi];
-        if (n_prompts > 1) {
-            fprintf(stdout, "[sep ] prompt %d/%d\n", pi + 1, n_prompts);
+    int32_t total   = o->warmup + o->repeat;
+    int32_t out_idx = 0; /* results are written across all prompts, not per prompt */
+    for (int32_t pi = 0; pi < o->prompt_count; ++pi) {
+        const char* cur_prompt = o->prompts[pi];
+        if (o->prompt_count > 1) {
+            fprintf(stdout, "[sep ] prompt %d/%d\n", pi + 1, o->prompt_count);
         }
         for (int32_t i = 0; i < total; ++i) {
             bool    is_warmup = (i < o->warmup);
@@ -309,7 +218,7 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
              * start of a new prompt segment, so batched prompts never inherit
              * the previous segment's KV cache even under
              * --no-reset-between-runs. */
-            if (o->reset_between_runs || (n_prompts > 1 && i == 0)) {
+            if (o->reset_between_runs || (o->prompt_count > 1 && i == 0)) {
                 check(geniex_llm_reset(llm), "geniex_llm_reset");
             }
 
@@ -331,14 +240,14 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
             if (rc != GENIEX_SUCCESS) {
                 const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
                 fprintf(stderr, "ERROR: geniex_llm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
-                free(prompts);
                 free(tokens);
                 geniex_llm_destroy(llm);
                 exit(1);
             }
 
             if (!is_warmup) {
-                record_run(&out[run_idx], run_idx, &gout.profile_data, o->plugin);
+                record_run(&out[out_idx], out_idx, &gout.profile_data, o->plugin);
+                out_idx++;
             }
 
             if (!is_warmup && o->accuracy && gout.full_text) {
@@ -357,7 +266,6 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
         }
     }
 
-    free(prompts);
     free(tokens);
     check(geniex_llm_destroy(llm), "geniex_llm_destroy");
 }
@@ -429,18 +337,12 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
     fill_sampler(&sampler, o);
     fill_gen_config(&gconfig, &sampler, o, /*with_media=*/true);
 
-    int32_t      n_prompts = 0;
-    const char** prompts   = build_prompt_list(o->prompt_buf, &n_prompts);
-    if (!prompts) {
-        geniex_vlm_destroy(vlm);
-        exit(1);
-    }
-
-    int32_t total = o->warmup + o->repeat;
-    for (int32_t pi = 0; pi < n_prompts; ++pi) {
-        const char* cur_prompt = prompts[pi];
-        if (n_prompts > 1) {
-            fprintf(stdout, "[sep ] prompt %d/%d\n", pi + 1, n_prompts);
+    int32_t total   = o->warmup + o->repeat;
+    int32_t out_idx = 0; /* results are written across all prompts, not per prompt */
+    for (int32_t pi = 0; pi < o->prompt_count; ++pi) {
+        const char* cur_prompt = o->prompts[pi];
+        if (o->prompt_count > 1) {
+            fprintf(stdout, "[sep ] prompt %d/%d\n", pi + 1, o->prompt_count);
         }
         for (int32_t i = 0; i < total; ++i) {
             bool    is_warmup = (i < o->warmup);
@@ -457,7 +359,6 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
             } else {
                 built_prompt = build_vlm_prompt(vlm, o, VLM_DEFAULT_PROMPT);
                 if (!built_prompt) {
-                    free(prompts);
                     geniex_vlm_destroy(vlm);
                     exit(1);
                 }
@@ -485,13 +386,13 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
                 const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
                 fprintf(stderr, "ERROR: geniex_vlm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
                 if (built_prompt) geniex_free(built_prompt);
-                free(prompts);
                 geniex_vlm_destroy(vlm);
                 exit(1);
             }
 
             if (!is_warmup) {
-                record_run(&out[run_idx], run_idx, &gout.profile_data, o->plugin);
+                record_run(&out[out_idx], out_idx, &gout.profile_data, o->plugin);
+                out_idx++;
             }
 
             if (!is_warmup && o->accuracy && gout.full_text) {
@@ -504,7 +405,6 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
         }
     }
 
-    free(prompts);
     check(geniex_vlm_destroy(vlm), "geniex_vlm_destroy");
 }
 
