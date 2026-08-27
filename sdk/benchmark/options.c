@@ -158,12 +158,12 @@ void parse_args(int argc, char** argv, options_t* o) {
     o->model_path              = NULL;
     o->tokenizer_path          = NULL;
     o->mmproj_path             = NULL;
-    o->mm_model_path           = NULL;
-    o->mm_mmproj               = NULL;
-    o->mm_tokenizer            = NULL;
-    o->mm_draft_model          = NULL;
+    o->mm.model_path           = NULL;
+    o->mm.mmproj               = NULL;
+    o->mm.tokenizer            = NULL;
+    o->mm.draft_model          = NULL;
     o->force_vlm               = false;
-    o->mm_is_vlm               = false;
+    o->mm.is_vlm               = false;
     o->image_count             = 0;
     o->audio_count             = 0;
     o->n_prompt                = 512;

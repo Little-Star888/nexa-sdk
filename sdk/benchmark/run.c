@@ -262,14 +262,14 @@ static void print_gen_text(const char* text) {
 
 /* ----------------------------- LLM run loop ----------------------------- */
 
-void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out) {
+void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
     geniex_LlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
     cin.model_path     = o->model_path;
     cin.tokenizer_path = o->tokenizer_path; /* may be NULL */
     cin.plugin_id      = o->plugin;
-    cin.device_id      = device_id; /* may be NULL */
-    fill_model_config(&cin.config, o, ngl);
+    cin.device_id      = dev->id; /* may be NULL */
+    fill_model_config(&cin.config, o, dev->ngl);
 
     geniex_LLM* llm = NULL;
     check(geniex_llm_create(&cin, &llm), "geniex_llm_create");
@@ -420,15 +420,15 @@ static char* build_vlm_prompt(geniex_VLM* vlm, const options_t* o, const char* b
     return tout.formatted_text;
 }
 
-void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out) {
+void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
     geniex_VlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
     cin.model_path     = o->model_path;
     cin.mmproj_path    = o->mmproj_path;
     cin.tokenizer_path = o->tokenizer_path;
     cin.plugin_id      = o->plugin;
-    cin.device_id      = device_id;
-    fill_model_config(&cin.config, o, ngl);
+    cin.device_id      = dev->id;
+    fill_model_config(&cin.config, o, dev->ngl);
 
     geniex_VLM* vlm = NULL;
     check(geniex_vlm_create(&cin, &vlm), "geniex_vlm_create");
@@ -524,14 +524,14 @@ void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_
  * per row to `o->output_json`. Bypasses run_llm's warmup/repeat/aggregate path.
  * The forward-logits API takes input_ids only, so this is random-ids input
  * (bench has no tokenizer). */
-int run_logits(const options_t* o, const char* device_id, int32_t ngl) {
+int run_logits(const options_t* o, const device_t* dev) {
     geniex_LlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
     cin.model_path     = o->model_path;
     cin.tokenizer_path = o->tokenizer_path; /* may be NULL */
     cin.plugin_id      = o->plugin;
-    cin.device_id      = device_id; /* may be NULL */
-    fill_model_config(&cin.config, o, ngl);
+    cin.device_id      = dev->id; /* may be NULL */
+    fill_model_config(&cin.config, o, dev->ngl);
 
     geniex_LLM* llm = NULL;
     check(geniex_llm_create(&cin, &llm), "geniex_llm_create");
@@ -561,7 +561,7 @@ int run_logits(const options_t* o, const char* device_id, int32_t ngl) {
         cell_name(o),
         o->plugin,
         o->device,
-        ngl,
+        dev->ngl,
         fout.n_rows,
         fout.vocab_size,
         fout.row_width,
@@ -569,7 +569,7 @@ int run_logits(const options_t* o, const char* device_id, int32_t ngl) {
 
     int rc_report = 0;
     if (o->output_json) {
-        rc_report = write_logits_json(o, device_id, ngl, &fin, &fout);
+        rc_report = write_logits_json(o, dev, &fin, &fout);
     } else {
         fprintf(stderr, "[warn] --logits without --output-json: logits computed but not written\n");
     }

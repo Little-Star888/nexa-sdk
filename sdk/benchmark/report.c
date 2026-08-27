@@ -9,17 +9,17 @@
 
 #include "bench.h"
 
-void print_summary(const options_t* o, const char* device_id, int32_t ngl, const agg_t* a) {
+void print_summary(const options_t* o, const device_t* dev, const agg_t* a) {
     fprintf(stdout,
         "[ok  ] %s  plugin=%s device=%s%s%s%s ngl=%d "
         "ttft=%.1fms prefill=%.1ftps decode=%.1ftps gen=%.0f tok\n",
         cell_name(o),
         o->plugin,
         o->device,
-        device_id ? "(id=" : "",
-        device_id ? device_id : "",
-        device_id ? ")" : "",
-        ngl,
+        dev->id ? "(id=" : "",
+        dev->id ? dev->id : "",
+        dev->id ? ")" : "",
+        dev->ngl,
         a->ttft_ms.med,
         a->prefill_tps.med,
         a->decode_tps.med,
@@ -89,8 +89,8 @@ static void json_agg_stat(FILE* f, const char* key, const stat_t* st) {
         st->sd);
 }
 
-int write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
-    const run_result_t* runs, const agg_t* a) {
+int write_json(
+    const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs, const agg_t* a) {
     FILE* f = fopen(o->output_json, "w");
     if (!f) {
         fprintf(stderr, "ERROR: cannot open %s for write\n", o->output_json);
@@ -101,7 +101,7 @@ int write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t m
     json_field_str(f, "cell_id", cell_name(o), false);
     json_field_str(f, "plugin", o->plugin, false);
     json_field_str(f, "device", o->device, false);
-    json_field_str(f, "device_id", device_id, false);
+    json_field_str(f, "device_id", dev->id, false);
     json_field_str(f, "model_path", o->model_path, false);
     json_field_i64(f, "model_size_bytes", model_size_bytes, false);
     json_field_str(f, "qairt_version", geniex_get_plugin_version("qairt"), false);
@@ -118,7 +118,7 @@ int write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t m
         o->seed,
         o->n_ctx,
         o->n_threads,
-        ngl);
+        dev->ngl);
     if (o->spec_type) {
         fprintf(f, ",\n      \"spec_type\": ");
         json_write_quoted(f, o->spec_type);
@@ -179,7 +179,7 @@ static void write_top_n_row(FILE* f, const int32_t* ids, const float* logits, in
 /* Write the prefill-only logits report for --logits. Emits shape metadata plus,
  * per row, the top-N [token_id, logit] pairs. Records the top-N truncation
  * explicitly so a consumer never mistakes it for the full vocabulary. */
-int write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
+int write_logits_json(const options_t* o, const device_t* dev, const geniex_LlmForwardLogitsInput* fin,
     const geniex_LlmForwardLogitsOutput* fout) {
     FILE* f = fopen(o->output_json, "w");
     if (!f) {
@@ -193,9 +193,9 @@ int write_logits_json(const options_t* o, const char* device_id, int32_t ngl, co
     json_field_str(f, "cell_id", cell_name(o), false);
     json_field_str(f, "plugin", o->plugin, false);
     json_field_str(f, "device", o->device, false);
-    json_field_str(f, "device_id", device_id, false);
+    json_field_str(f, "device_id", dev->id, false);
     json_field_str(f, "model_path", o->model_path, false);
-    json_field_i64(f, "n_gpu_layers", ngl, false);
+    json_field_i64(f, "n_gpu_layers", dev->ngl, false);
     json_field_i64(f, "n_prompt", fin->input_ids_count, false);
     fprintf(f, "    \"all_positions\": %s,\n", fin->all_positions ? "true" : "false");
     json_field_i64(f, "n_rows", fout->n_rows, false);
@@ -264,7 +264,7 @@ static void format_size(int64_t bytes, char* buf, size_t bufsz) {
     }
 }
 
-int write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a) {
+int write_md_row(const options_t* o, const device_t* dev, int64_t model_size_bytes, const agg_t* a) {
     /* Write llama-bench-style row. First call writes the header + separator;
      * subsequent calls append a single row. Detect "first call" by checking
      * whether the file currently exists / is non-empty. */
@@ -289,10 +289,10 @@ int write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, cons
     char  test_buf[32];
     char* model = model_label(o->cell_id, o->plugin, o->device);
     format_size(model_size_bytes, size_buf, sizeof(size_buf));
-    if (strcmp(o->plugin, "qairt") == 0 || ngl <= 0) {
+    if (strcmp(o->plugin, "qairt") == 0 || dev->ngl <= 0) {
         snprintf(ngl_buf, sizeof(ngl_buf), "-");
     } else {
-        snprintf(ngl_buf, sizeof(ngl_buf), "%d", ngl);
+        snprintf(ngl_buf, sizeof(ngl_buf), "%d", dev->ngl);
     }
     snprintf(
         test_buf, sizeof(test_buf), "pp%lld+tg%lld", (long long)a->prompt_tokens_med, (long long)a->gen_tokens_med);

@@ -84,17 +84,18 @@ static int run_one_cell(options_t* o) {
     if (rout.warning) {
         fprintf(stderr, "[warn] %s\n", rout.warning);
     }
-    const char* device_id = o->device_id ? o->device_id : rout.device_id;
-    int32_t     ngl       = rout.ngl;
+    device_t dev;
+    dev.id  = o->device_id ? o->device_id : rout.device_id;
+    dev.ngl = rout.ngl;
     /* --n-gpu-layers overrides the resolved value. */
     if (o->ngl_override >= 0) {
-        ngl = o->ngl_override;
+        dev.ngl = o->ngl_override;
     }
 
     /* The qairt plugin doesn't consume n_gpu_layers or n_ctx; force both to 0
      * to match `_build_model_config()` in bindings/python/geniex/auto.py:179. */
     if (strcmp(o->plugin, "qairt") == 0) {
-        ngl      = 0;
+        dev.ngl  = 0;
         o->n_ctx = 0;
     }
 
@@ -110,7 +111,7 @@ static int run_one_cell(options_t* o) {
             if (rout.warning) geniex_free(rout.warning);
             return 1;
         }
-        int rc_logits = run_logits(o, device_id, ngl);
+        int rc_logits = run_logits(o, &dev);
         if (anchored) free(anchored);
         if (rout.device_id) geniex_free(rout.device_id);
         if (rout.warning) geniex_free(rout.warning);
@@ -128,20 +129,20 @@ static int run_one_cell(options_t* o) {
     }
 
     if (is_vlm) {
-        run_vlm(o, device_id, ngl, runs);
+        run_vlm(o, &dev, runs);
     } else {
-        run_llm(o, device_id, ngl, runs);
+        run_llm(o, &dev, runs);
     }
 
     agg_t a;
     aggregate(runs, o->repeat, &a);
-    print_summary(o, device_id, ngl, &a);
+    print_summary(o, &dev, &a);
 
     int64_t model_size_bytes = compute_model_size(o->model_path);
 
     int result = 0;
-    if (o->output_json && write_json(o, device_id, ngl, model_size_bytes, runs, &a) != 0) result = 1;
-    if (o->output_md && write_md_row(o, ngl, model_size_bytes, &a) != 0) result = 1;
+    if (o->output_json && write_json(o, &dev, model_size_bytes, runs, &a) != 0) result = 1;
+    if (o->output_md && write_md_row(o, &dev, model_size_bytes, &a) != 0) result = 1;
 
     free(runs);
     if (anchored) free(anchored);

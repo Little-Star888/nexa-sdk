@@ -55,14 +55,17 @@ typedef struct {
     const char* model_path;
     const char* tokenizer_path;
     const char* mmproj_path;
-    /* Heap-owned copies populated when the model is resolved through the
-     * model manager; freed at the end of run_one_cell. */
-    char*       mm_model_path;
-    char*       mm_mmproj;
-    char*       mm_tokenizer;
-    char*       mm_draft_model;
     bool        force_vlm; /* run VLM path even without an mmproj (QAIRT bundles) */
-    bool        mm_is_vlm; /* manager classified the resolved model as VLM (geniex_ModelType) */
+    /* Written by resolve.c, never by argv: what the model manager resolved
+     * this cell's id to. The four paths are heap-owned; free_mm_paths()
+     * releases them at the end of run_one_cell. */
+    struct {
+        char* model_path;
+        char* mmproj;
+        char* tokenizer;
+        char* draft_model;
+        bool  is_vlm; /* manager classified it as VLM (geniex_ModelType) */
+    } mm;
     const char* image_paths[MAX_PATHS];
     int32_t     image_count;
     const char* audio_paths[MAX_PATHS];
@@ -141,6 +144,14 @@ typedef struct {
     double media_ms_med;
 } agg_t;
 
+/* What geniex_resolve_device settled on for this cell, after the --device-id
+ * and --n-gpu-layers overrides. Produced once in run_one_cell and consumed
+ * together by every run loop and report writer. */
+typedef struct {
+    const char* id; /* NULL lets the plugin pick */
+    int32_t     ngl;
+} device_t;
+
 /* Report label for a cell: the --cell-id / matrix col 1 value, or "cell". */
 static inline const char* cell_name(const options_t* o) { return o->cell_id ? o->cell_id : "cell"; }
 
@@ -186,11 +197,11 @@ void mm_shutdown(void);
 /* -------------------------------- run.c ------------------------------- */
 
 /* warmup + repeat generation runs; writes `o->repeat` measured results. */
-void run_llm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out);
-void run_vlm(const options_t* o, const char* device_id, int32_t ngl, run_result_t* out);
+void run_llm(const options_t* o, const device_t* dev, run_result_t* out);
+void run_vlm(const options_t* o, const device_t* dev, run_result_t* out);
 /* --logits: one prefill-only forward pass, writes its own JSON report.
  * 0 on success, 1 when that report could not be written. */
-int run_logits(const options_t* o, const char* device_id, int32_t ngl);
+int run_logits(const options_t* o, const device_t* dev);
 
 /* ------------------------------- stats.c ------------------------------ */
 
@@ -199,14 +210,14 @@ void aggregate(const run_result_t* runs, int32_t n, agg_t* a);
 
 /* ------------------------------ report.c ----------------------------- */
 
-void print_summary(const options_t* o, const char* device_id, int32_t ngl, const agg_t* a);
+void print_summary(const options_t* o, const device_t* dev, const agg_t* a);
 /* The three writers return 0 on success and 1 when the destination could not
  * be opened. An unwritable report is a cell-level failure: matrix mode counts
  * it and moves to the next cell rather than losing the rest of the sweep. */
-int write_json(const options_t* o, const char* device_id, int32_t ngl, int64_t model_size_bytes,
-    const run_result_t* runs, const agg_t* a);
-int write_md_row(const options_t* o, int32_t ngl, int64_t model_size_bytes, const agg_t* a);
-int write_logits_json(const options_t* o, const char* device_id, int32_t ngl, const geniex_LlmForwardLogitsInput* fin,
+int write_json(
+    const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs, const agg_t* a);
+int write_md_row(const options_t* o, const device_t* dev, int64_t model_size_bytes, const agg_t* a);
+int write_logits_json(const options_t* o, const device_t* dev, const geniex_LlmForwardLogitsInput* fin,
     const geniex_LlmForwardLogitsOutput* fout);
 
 #endif /* GENIEX_BENCH_H */

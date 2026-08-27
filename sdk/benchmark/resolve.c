@@ -184,7 +184,7 @@ static int mm_resolve(const options_t* o, const char* id, const char* kind, geni
 }
 
 /* Resolve a model-manager id to local paths, downloading if missing. On
- * success populates o->mm_model_path / mm_mmproj / mm_tokenizer (heap-
+ * success populates o->mm.model_path / mm_mmproj / mm_tokenizer (heap-
  * owned) and rewrites o->model_path / mmproj_path / tokenizer_path to
  * point at them. Returns 0 on success. */
 int resolve_via_mm(options_t* o, const char* id_in) {
@@ -192,22 +192,22 @@ int resolve_via_mm(options_t* o, const char* id_in) {
     if (mm_resolve(o, id_in, "", &paths) != 0) return 1;
 
     /* Take ownership of the heap strings the SDK handed us. */
-    o->mm_model_path = paths.model_path;
-    o->mm_mmproj     = paths.mmproj_path;
-    o->mm_tokenizer  = paths.tokenizer_path;
+    o->mm.model_path = paths.model_path;
+    o->mm.mmproj     = paths.mmproj_path;
+    o->mm.tokenizer  = paths.tokenizer_path;
     /* Capture the manager's LLM/VLM classification (geniex_ModelType) — the
      * CLI's _is_vlm() signal (3). */
-    o->mm_is_vlm     = (paths.model_type == GENIEX_MODEL_TYPE_VLM);
+    o->mm.is_vlm     = (paths.model_type == GENIEX_MODEL_TYPE_VLM);
     paths.model_path = paths.mmproj_path = paths.tokenizer_path = NULL;
     /* model_dir / model_name / plugin_id aren't consumed here; free via the
      * paths_free() helper to keep the allocator pairing intact. */
     geniex_model_paths_free(&paths);
 
-    o->model_path = o->mm_model_path;
+    o->model_path = o->mm.model_path;
     /* QAIRT VLM bundles have no mmproj and the dispatcher has no LLM factory
      * for VLM model_ids, so a VLM bundle in run_llm hard-fails. Force
      * the VLM run loop when the manager classified it as VLM. */
-    if (o->mm_is_vlm && o->plugin && strcmp(o->plugin, "qairt") == 0 && !o->force_vlm) {
+    if (o->mm.is_vlm && o->plugin && strcmp(o->plugin, "qairt") == 0 && !o->force_vlm) {
         fprintf(stderr, "[mm  ] %s is a VLM bundle; forcing VLM run loop\n", id_in);
         o->force_vlm = true;
     }
@@ -220,11 +220,11 @@ int resolve_via_mm(options_t* o, const char* id_in) {
      * regardless of model semantics (#1090). An explicit --mmproj-path or
      * matrix col 6 still wins, so VLM cells that name their projector keep
      * working. */
-    if (o->force_vlm && o->mmproj_path == NULL && o->mm_mmproj) {
-        o->mmproj_path = o->mm_mmproj;
+    if (o->force_vlm && o->mmproj_path == NULL && o->mm.mmproj) {
+        o->mmproj_path = o->mm.mmproj;
     }
-    if (o->mm_tokenizer) o->tokenizer_path = o->mm_tokenizer;
-    fprintf(stderr, "[mm  ] resolved %s -> %s\n", id_in, o->mm_model_path);
+    if (o->mm.tokenizer) o->tokenizer_path = o->mm.tokenizer;
+    fprintf(stderr, "[mm  ] resolved %s -> %s\n", id_in, o->mm.model_path);
     return 0;
 }
 
@@ -239,11 +239,11 @@ int resolve_draft_via_mm(options_t* o) {
     geniex_ModelPaths paths;
     if (mm_resolve(o, id, "draft ", &paths) != 0) return 1;
 
-    o->mm_draft_model = paths.model_path;
+    o->mm.draft_model = paths.model_path;
     paths.model_path  = NULL;
     geniex_model_paths_free(&paths);
-    o->draft_model = o->mm_draft_model;
-    fprintf(stderr, "[mm  ] resolved draft %s -> %s\n", id, o->mm_draft_model);
+    o->draft_model = o->mm.draft_model;
+    fprintf(stderr, "[mm  ] resolved draft %s -> %s\n", id, o->mm.draft_model);
     return 0;
 }
 
@@ -337,21 +337,21 @@ char* resolve_local_anchor(const char* path) {
 
 /* Release the mm_* paths a cell took ownership of and NULL them out. */
 void free_mm_paths(options_t* o) {
-    if (o->mm_model_path) {
-        geniex_free(o->mm_model_path);
-        o->mm_model_path = NULL;
+    if (o->mm.model_path) {
+        geniex_free(o->mm.model_path);
+        o->mm.model_path = NULL;
     }
-    if (o->mm_mmproj) {
-        geniex_free(o->mm_mmproj);
-        o->mm_mmproj = NULL;
+    if (o->mm.mmproj) {
+        geniex_free(o->mm.mmproj);
+        o->mm.mmproj = NULL;
     }
-    if (o->mm_tokenizer) {
-        geniex_free(o->mm_tokenizer);
-        o->mm_tokenizer = NULL;
+    if (o->mm.tokenizer) {
+        geniex_free(o->mm.tokenizer);
+        o->mm.tokenizer = NULL;
     }
-    if (o->mm_draft_model) {
-        geniex_free(o->mm_draft_model);
-        o->mm_draft_model = NULL;
+    if (o->mm.draft_model) {
+        geniex_free(o->mm.draft_model);
+        o->mm.draft_model = NULL;
     }
 }
 
