@@ -1,8 +1,13 @@
 # geniex-bench — C inference benchmark example
 
-Single-file C example that drives the public geniex C API. One invocation
-runs one `(plugin, device, model)` cell (warmup + repeated measured runs)
-and prints / writes TTFT, prefill_tps, decode_tps, gen_tokens.
+C example that drives the public geniex C API. One invocation runs one
+`(plugin, device, model)` cell (warmup + repeated measured runs) and prints /
+writes TTFT, prefill_tps, decode_tps, gen_tokens.
+
+The sources are split by concern — `benchmark.c` holds `main()` and the
+single-cell / matrix drivers, with argv parsing, model resolution, the run
+loops, aggregation and report writing in their own files. See
+[`bench.h`](bench.h) for the module map and the shared types.
 
 Flag naming follows llama.cpp's
 [`llama-bench`](../../third-party/llama.cpp/tools/llama-bench/README.md) —

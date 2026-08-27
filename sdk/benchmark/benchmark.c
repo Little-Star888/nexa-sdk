@@ -38,6 +38,14 @@
  * `geniex_init` / `geniex_deinit` so multiple cells in matrix mode share
  * one plugin-init pass. */
 static int run_one_cell(options_t* o) {
+    /* Single exit through `done`: the model-manager paths in o->mm are
+     * heap-owned by this cell, so every failure path has to release them. */
+    int                        result   = 0;
+    char*                      anchored = NULL;
+    run_result_t*              runs     = NULL;
+    geniex_ResolveDeviceOutput rout;
+    memset(&rout, 0, sizeof(rout));
+
     /* Model-manager branch: column 4 (matrix) or `-m` (single-cell) is a
      * model id. Resolve to local paths (pulling on first use); subsequent
      * cells with the same id hit the cache. mmproj/tokenizer columns from
@@ -45,7 +53,8 @@ static int run_one_cell(options_t* o) {
      * full path tuple. */
     if (!looks_like_path(o->model_path)) {
         if (resolve_model_id(o, o->model_path) != 0) {
-            return 1;
+            result = 1;
+            goto done;
         }
     } else if (o->plugin && strcmp(o->plugin, "qairt") == 0 && !o->force_vlm && local_bundle_is_vlm(o->model_path)) {
         /* Local QAIRT VLM bundle (resolve_model_id skipped for path inputs):
@@ -55,10 +64,11 @@ static int run_one_cell(options_t* o) {
     }
 
     if (resolve_draft_id(o) != 0) {
-        return 1;
+        result = 1;
+        goto done;
     }
 
-    char* anchored = resolve_local_anchor(o->model_path);
+    anchored = resolve_local_anchor(o->model_path);
     if (anchored) {
         fprintf(stderr, "[info] resolved model dir to anchor: %s\n", anchored);
         o->model_path = anchored;
@@ -71,13 +81,11 @@ static int run_one_cell(options_t* o) {
     rin.plugin_id   = o->plugin;
     rin.mode        = o->device;
     rin.ngl_default = -1;
-    geniex_ResolveDeviceOutput rout;
-    memset(&rout, 0, sizeof(rout));
-    int32_t rc = geniex_resolve_device(&rin, &rout);
+    int32_t rc      = geniex_resolve_device(&rin, &rout);
     if (rc != GENIEX_SUCCESS) {
         fprintf(stderr, "ERROR: geniex_resolve_device: %s (%d)\n", geniex_get_error_message((geniex_ErrorCode)rc), rc);
-        if (anchored) free(anchored);
-        return 1;
+        result = 1;
+        goto done;
     }
     if (rout.warning) {
         fprintf(stderr, "[warn] %s\n", rout.warning);
@@ -100,30 +108,22 @@ static int run_one_cell(options_t* o) {
     bool is_vlm = (o->mmproj_path != NULL) || o->force_vlm;
 
     /* --logits is a prefill-only forward pass, not a timing run: it skips the
-     * warmup/repeat/aggregate_runs machinery and writes its own report. LLM only. */
+     * warmup/repeat/aggregate_runs machinery and writes its own report. */
     if (o->logits_mode) {
         if (is_vlm) {
             fprintf(stderr, "ERROR: --logits is not supported for VLM models\n");
-            if (anchored) free(anchored);
-            if (rout.device_id) geniex_free(rout.device_id);
-            if (rout.warning) geniex_free(rout.warning);
-            return 1;
+            result = 1;
+        } else {
+            result = run_logits(o, &dev);
         }
-        int rc_logits = run_logits(o, &dev);
-        if (anchored) free(anchored);
-        if (rout.device_id) geniex_free(rout.device_id);
-        if (rout.warning) geniex_free(rout.warning);
-        free_mm_paths(o);
-        return rc_logits;
+        goto done;
     }
 
-    run_result_t* runs = (run_result_t*)calloc((size_t)o->repeat, sizeof(run_result_t));
+    runs = (run_result_t*)calloc((size_t)o->repeat, sizeof(run_result_t));
     if (!runs) {
         fprintf(stderr, "ERROR: oom\n");
-        if (anchored) free(anchored);
-        if (rout.device_id) geniex_free(rout.device_id);
-        if (rout.warning) geniex_free(rout.warning);
-        return 1;
+        result = 1;
+        goto done;
     }
 
     if (is_vlm) {
@@ -137,13 +137,12 @@ static int run_one_cell(options_t* o) {
     print_summary(o, &dev, &a);
 
     int64_t model_size_bytes = model_disk_bytes(o->model_path);
-
-    int result = 0;
     if (o->output_json && write_cell_json(o, &dev, model_size_bytes, runs, &a) != 0) result = 1;
     if (o->output_md && write_md_row(o, &dev, model_size_bytes, &a) != 0) result = 1;
 
+done:
     free(runs);
-    if (anchored) free(anchored);
+    free(anchored);
     if (rout.device_id) geniex_free(rout.device_id);
     if (rout.warning) geniex_free(rout.warning);
     free_mm_paths(o);

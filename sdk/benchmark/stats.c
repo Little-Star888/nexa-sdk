@@ -5,7 +5,6 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "bench.h"
 
@@ -15,40 +14,40 @@ static int cmp_double(const void* a, const void* b) {
     return (da > db) - (da < db);
 }
 
-/* Reduce `values` to median / min / max / mean / sample stdev. Sorts a private
- * copy, so the caller's buffer is untouched. */
-static stat_t summarize(const double* values, int32_t n) {
-    double* tmp = (double*)malloc(sizeof(double) * (size_t)n);
-    if (!tmp) {
-        fprintf(stderr, "ERROR: oom\n");
-        exit(1);
-    }
-    memcpy(tmp, values, sizeof(double) * (size_t)n);
-    qsort(tmp, (size_t)n, sizeof(double), cmp_double);
+/* Reduce `values` to median / min / max / mean / sample stdev, sorting it in
+ * place. n=1 yields sd=0. Requires n >= 1: lo/hi index values[0] and
+ * values[n-1] unconditionally. */
+static stat_t summarize(double* values, int32_t n) {
+    qsort(values, (size_t)n, sizeof(double), cmp_double);
 
     stat_t st;
-    st.lo  = tmp[0];
-    st.hi  = tmp[n - 1];
-    st.med = (n % 2 == 1) ? tmp[n / 2] : 0.5 * (tmp[n / 2 - 1] + tmp[n / 2]);
+    st.lo  = values[0];
+    st.hi  = values[n - 1];
+    st.med = (n % 2 == 1) ? values[n / 2] : 0.5 * (values[n / 2 - 1] + values[n / 2]);
 
     double sum = 0.0;
-    for (int32_t i = 0; i < n; ++i) sum += tmp[i];
+    for (int32_t i = 0; i < n; ++i) sum += values[i];
     st.mean = sum / (double)n;
 
     st.sd = 0.0;
     if (n >= 2) {
         double sq = 0.0;
         for (int32_t i = 0; i < n; ++i) {
-            double d = tmp[i] - st.mean;
+            double d = values[i] - st.mean;
             sq += d * d;
         }
         st.sd = sqrt(sq / (double)(n - 1));
     }
-    free(tmp);
     return st;
 }
 
 void aggregate_runs(const run_result_t* runs, int32_t n, agg_t* a) {
+    /* parse_args validates --repetitions >= 1, so this only fires on a caller
+     * bug — but summarize() would read out of bounds rather than say so. */
+    if (n < 1) {
+        fprintf(stderr, "ERROR: aggregate_runs: n=%d\n", n);
+        exit(1);
+    }
     double* tmp = (double*)malloc(sizeof(double) * (size_t)n);
     if (!tmp) {
         fprintf(stderr, "ERROR: oom\n");
