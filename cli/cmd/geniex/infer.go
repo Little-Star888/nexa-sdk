@@ -30,6 +30,7 @@ var (
 	// disableStream *bool // reuse in run.go
 	ngl           int32
 	nctx          int32
+	ubatch        int32
 	maxTokens     int32
 	stop          []string
 	stopFile      string
@@ -144,12 +145,8 @@ func infer() *cobra.Command {
 			return err
 		}
 
-		// Host-aware default (e.g. RB3 Gen 2 → cpu) before resolution, so the
-		// --verbose line and any server request see the same alias.
-		var overridden bool
-		if computeUnit, overridden = config.ComputeDefault(computeUnit, store.Get().ResolveChipset(true)); overridden {
-			fmt.Println(render.GetTheme().Info.Sprintf("Defaulting to --compute %s for this device; pass --compute to override.", computeUnit))
-		}
+		// Runs before device resolution so --verbose and the SDK see the same alias.
+		computeUnit, ubatch = config.ChipsetDefaults(computeUnit, ubatch, store.Get().ResolveChipset(true))
 
 		effectiveType := paths.ModelType
 		if effectiveType == geniex_sdk.ModelTypeVLM && specType != "" {
@@ -384,6 +381,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 		DeviceID:  deviceID,
 		Config: geniex_sdk.ModelConfig{
 			NCtx:           nctxResolved,
+			NUbatch:        ubatch,
 			NGpuLayers:     nglResolved,
 			SpecType:       resolvedSpecType,
 			SpecDraftModel: specDraftModel,
@@ -546,6 +544,7 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 		DeviceID:   deviceID,
 		Config: geniex_sdk.ModelConfig{
 			NCtx:       nctxResolved,
+			NUbatch:    ubatch,
 			NGpuLayers: nglResolved,
 		},
 	})

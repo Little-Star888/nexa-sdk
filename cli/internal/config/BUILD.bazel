@@ -3,18 +3,21 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "config",
     srcs = [
-        "compute.go",
+        "chipset.go",
         "config.go",
     ],
     importpath = "github.com/qualcomm/GenieX/cli/internal/config",
     visibility = ["//cli:__subpackages__"],
-    deps = ["@com_github_spf13_viper//:viper"],
+    deps = [
+        "//cli/internal/render",
+        "@com_github_spf13_viper//:viper",
+    ],
 )
 
 go_test(
     name = "config_test",
     srcs = [
-        "compute_test.go",
+        "chipset_test.go",
         "config_test.go",
     ],
     embed = [":config"],
