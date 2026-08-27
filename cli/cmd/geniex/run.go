@@ -22,9 +22,8 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/render"
 )
 
-// tagServerError tags transport-layer dial errors as ErrServerUnreachable
-// so PrintError can render the "is geniex serve running?" hint. HTTP-level
-// errors (4xx/5xx) flow through untouched.
+// tagServerError tags transport-layer dial errors as ErrServerUnreachable so
+// PrintError renders the "is geniex serve running?" hint. HTTP errors pass through.
 func tagServerError(err error) error {
 	var ne *net.OpError
 	if errors.As(err, &ne) {
@@ -33,10 +32,9 @@ func tagServerError(err error) error {
 	return err
 }
 
-// tagStreamError converts a streaming error into its source SDKError when the
-// server attached our `code` extension (an int32 SDKError) to the SSE error
-// event, so Processor can react to e.g. ErrLlmTokenizationContextLength.
-// Falls back to tagServerError for transport-layer errors.
+// tagStreamError recovers the source SDKError from the `code` extension the
+// server attaches to an SSE error event, so Processor can react to e.g.
+// ErrLlmTokenizationContextLength. Transport errors fall back to tagServerError.
 func tagStreamError(err error) error {
 	var se *ssestream.StreamError
 	if errors.As(err, &se) {
