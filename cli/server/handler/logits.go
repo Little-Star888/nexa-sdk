@@ -15,12 +15,9 @@ import (
 	"github.com/qualcomm/GenieX/cli/server/types"
 )
 
-// ForwardLogitsRequest is the body for POST /v1/logits.
-//
-// This is a prefill-only forward pass (raw logits), not the OpenAI generative
-// logprobs semantics: the model runs one non-autoregressive pass over the input
-// and returns the raw LM-head logits. Input is pre-tokenized (InputIDs); the
-// server has no public tokenizer to accept text here.
+// ForwardLogitsRequest is the body for POST /v1/logits: one prefill-only forward
+// pass returning raw LM-head logits, not OpenAI's generative logprobs. Input is
+// pre-tokenized — the server has no public tokenizer to accept text.
 type ForwardLogitsRequest struct {
 	Model    string  `json:"model"`
 	InputIDs []int32 `json:"input_ids"`
@@ -39,10 +36,9 @@ type ForwardLogitsRequest struct {
 
 const defaultLogitsTopN = 20
 
-// ForwardLogitsResponse carries the per-position rows. Each row is top-N
-// [token_id, logit] pairs sorted by descending logit (like geniex-bench). When
-// top_n is 0 each row is the full vocabulary, ordered by token id, and token id
-// is the column index — TokenIDs is then omitted.
+// ForwardLogitsResponse carries the per-position rows: top-N [token_id, logit]
+// pairs by descending logit (like geniex-bench). With top_n 0 a row is the full
+// vocabulary indexed by token id, and TokenIDs is omitted.
 type ForwardLogitsResponse struct {
 	Model     string       `json:"model"`
 	NRows     int          `json:"n_rows"`

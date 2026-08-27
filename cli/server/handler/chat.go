@@ -52,10 +52,9 @@ type ChatCompletionRequest struct {
 }
 
 func defaultChatCompletionRequest() ChatCompletionRequest {
-	// Prefill llama_cpp knobs with the server-wide defaults (--nctx / --ngl /
-	// --compute). ShouldBindJSON only overwrites fields present in the body, so
-	// an omitted knob keeps the server default while an explicit value (incl.
-	// ngl 0 = pure CPU, -1 = all layers) passes through verbatim.
+	// Prefill the llama_cpp knobs with the server-wide defaults (--nctx / --ngl /
+	// --compute): ShouldBindJSON only overwrites fields present in the body, so an
+	// omitted knob keeps the default and an explicit one (incl. ngl 0) wins.
 	cfg := config.Get()
 	return ChatCompletionRequest{
 		ChatCompletionNewParams: ChatCompletionNewParams{
@@ -95,9 +94,8 @@ func ChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// Fill unset request knobs from the server-wide defaults and resolve the
-	// compute unit. Done before the MaxCompletionTokens floor so a body that
-	// omits nctx picks up the server default, not the floor.
+	// Fill unset knobs from the server defaults before the MaxCompletionTokens
+	// floor, so a body that omits nctx picks up the default, not the floor.
 	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute, service.Chipset(), types.SpecParam{
 		Type:       param.SpecType,
 		DraftModel: param.SpecDraftModel,
@@ -312,9 +310,8 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 			class = reasoningClass()
 		}
 		profile, _, err := gen(prompt, sink(class, &content, &reasoning))
-		// A prompt that never fit is a client error (400). A window exhausted
-		// mid-generation is a normal truncated completion (finish_reason=length),
-		// so it falls through to the regular response below.
+		// A prompt that never fit is a 400; a window exhausted mid-generation is a
+		// normal truncated completion (finish_reason=length), handled below.
 		if errors.Is(err, geniex_sdk.ErrLlmGenerationPromptTooLong) {
 			writePromptTooLong(c, profile)
 			return
