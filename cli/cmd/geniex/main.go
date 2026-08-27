@@ -84,6 +84,11 @@ func RootCmd() *cobra.Command {
 			}
 			return nil
 		},
+		// Mirrors the ModelInit above. Unchecked: the SDK's deinit is a no-op that
+		// never fails, the same reason Cobra skipping it on error is free.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			geniex_sdk.ModelDeinit()
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVer, _ := cmd.Flags().GetBool("version"); showVer {
 				runVersion()
