@@ -31,6 +31,14 @@ var sampleListModels = []geniex_sdk.ModelDetail{
 	},
 }
 
+// IQ4_XS is unlisted in the SDK's priority table, so sorting would promote it.
+func TestDownloadedPrecisionsKeepsSDKOrder(t *testing.T) {
+	m := geniex_sdk.ModelDetail{Precisions: []string{"Q4_K_M", "IQ4_XS"}}
+	if want := []string{"Q4_K_M", "IQ4_XS"}; !slices.Equal(downloadedPrecisions(m, true), want) {
+		t.Errorf("downloadedPrecisions = %v, want %v", downloadedPrecisions(m, true), want)
+	}
+}
+
 func TestPrintListTable(t *testing.T) {
 	out, _, _ := testutil.CaptureOutput(t, func() error {
 		printListTable(sampleListModels, false)

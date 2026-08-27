@@ -27,9 +27,7 @@ var (
 	testMode   bool
 )
 
-// RootCmd creates the main GenieX CLI command with all subcommands.
-// It sets up the command tree structure for model management,
-// inference, and server operations.
+// RootCmd builds the CLI command tree.
 func RootCmd() *cobra.Command {
 	cobra.EnableCommandSorting = false
 
@@ -54,6 +52,7 @@ func RootCmd() *cobra.Command {
 			// Skip ModelInit for commands that don't touch the model manager
 			if !slices.Contains([]string{
 				"",
+				"run", // pure HTTP client, no local store
 				"version", "update",
 				"help", "completion", cobra.ShellCompRequestCmd,
 			}, subCmd) {
@@ -64,9 +63,8 @@ func RootCmd() *cobra.Command {
 			}
 
 			if !skipUpdate {
-				// `update` fetches and prints the latest version itself; the
-				// cached notify banner would be redundant and possibly stale.
-				// Completion writes to stdout, which the shell parses.
+				// `update` prints the latest version itself; completion's
+				// stdout is parsed by the shell.
 				if !slices.Contains([]string{
 					"update",
 					"completion", cobra.ShellCompRequestCmd,

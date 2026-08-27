@@ -22,9 +22,8 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/render"
 )
 
-// tagServerError tags transport-layer dial errors as ErrServerUnreachable
-// so PrintError can render the "is geniex serve running?" hint. HTTP-level
-// errors (4xx/5xx) flow through untouched.
+// tagServerError tags transport-layer dial errors as ErrServerUnreachable so
+// PrintError renders the "is geniex serve running?" hint. HTTP errors pass through.
 func tagServerError(err error) error {
 	var ne *net.OpError
 	if errors.As(err, &ne) {
@@ -33,10 +32,9 @@ func tagServerError(err error) error {
 	return err
 }
 
-// tagStreamError converts a streaming error into its source SDKError when the
-// server attached our `code` extension (an int32 SDKError) to the SSE error
-// event, so Processor can react to e.g. ErrLlmTokenizationContextLength.
-// Falls back to tagServerError for transport-layer errors.
+// tagStreamError recovers the source SDKError from the `code` extension the
+// server attaches to an SSE error event, so Processor can react to e.g.
+// ErrLlmTokenizationContextLength. Transport errors fall back to tagServerError.
 func tagStreamError(err error) error {
 	var se *ssestream.StreamError
 	if errors.As(err, &se) {
@@ -82,22 +80,19 @@ func run() *cobra.Command {
 		)
 
 		ctx := cmd.Context()
-		// check the server is reachable before opening the REPL
-		if _, err := client.Models.Get(ctx, fullName); err != nil {
+		// Doubles as the reachability probe. Only the server knows a remote model's type.
+		var model struct {
+			ModelType string `json:"model_type"`
+		}
+		if err := client.Get(ctx, "models/"+fullName, nil, &model); err != nil {
 			return tagServerError(err)
 		}
-
-		modelType, err := geniex_sdk.ModelGetType(name)
-		if err != nil {
-			return err
+		modelType, ok := geniex_sdk.ParseModelType(model.ModelType)
+		if !ok {
+			return fmt.Errorf("server reported an unsupported model type %q for %s", model.ModelType, fullName)
 		}
 
-		switch modelType {
-		case geniex_sdk.ModelTypeLLM, geniex_sdk.ModelTypeVLM:
-			return runCompletions(ctx, fullName, modelType)
-		default:
-			return fmt.Errorf("unsupported model type: %s", modelType)
-		}
+		return runCompletions(ctx, fullName, modelType)
 	}
 	return runCmd
 }

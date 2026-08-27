@@ -19,7 +19,6 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
-	"github.com/qualcomm/GenieX/cli/internal/store"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
 )
@@ -53,10 +52,9 @@ type ChatCompletionRequest struct {
 }
 
 func defaultChatCompletionRequest() ChatCompletionRequest {
-	// Prefill llama_cpp knobs with the server-wide defaults (--nctx / --ngl /
-	// --compute). ShouldBindJSON only overwrites fields present in the body, so
-	// an omitted knob keeps the server default while an explicit value (incl.
-	// ngl 0 = pure CPU, -1 = all layers) passes through verbatim.
+	// Prefill the llama_cpp knobs with the server-wide defaults (--nctx / --ngl /
+	// --compute): ShouldBindJSON only overwrites fields present in the body, so an
+	// omitted knob keeps the default and an explicit one (incl. ngl 0) wins.
 	cfg := config.Get()
 	return ChatCompletionRequest{
 		ChatCompletionNewParams: ChatCompletionNewParams{
@@ -88,24 +86,17 @@ func ChatCompletions(c *gin.Context) {
 	param.MaxCompletionTokens = openai.Int(param.MaxCompletionTokens.Or(param.MaxTokens.Value))
 
 	slog.Info("ChatCompletions", "param", param)
-	name, _ := geniex_sdk.SplitNamePrecision(param.Model)
-	modelType, err := geniex_sdk.ModelGetType(name)
-	if err != nil {
-		slog.Error("Failed to get model type", "model", param.Model, "error", err)
-		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
-	paths, err := geniex_sdk.ModelGetPaths(name)
+	// Keep the precision: KeepAliveGet resolves this same string.
+	paths, err := geniex_sdk.ModelGetPaths(param.Model)
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", param.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
 
-	// Fill unset request knobs from the server-wide defaults and resolve the
-	// compute unit. Done before the MaxCompletionTokens floor so a body that
-	// omits nctx picks up the server default, not the floor.
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute, store.Get().ResolveChipset(true), types.SpecParam{
+	// Fill unset knobs from the server defaults before the MaxCompletionTokens
+	// floor, so a body that omits nctx picks up the default, not the floor.
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, param.NCtx, param.Ngl, param.Compute, service.Chipset(), types.SpecParam{
 		Type:       param.SpecType,
 		DraftModel: param.SpecDraftModel,
 		NMax:       param.SpecNMax,
@@ -125,7 +116,7 @@ func ChatCompletions(c *gin.Context) {
 		modelParam.NCtx = int32(param.MaxCompletionTokens.Value)
 	}
 
-	effectiveType := modelType
+	effectiveType := paths.ModelType
 	if effectiveType == geniex_sdk.ModelTypeVLM && param.SpecType != "" {
 		slog.Warn("spec_type set on VLM-classified model; running LLM path, image/audio content will be ignored",
 			"model", param.Model, "spec_type", param.SpecType)
@@ -149,7 +140,7 @@ func ChatCompletions(c *gin.Context) {
 		}
 		runChat(c, param, modelParam, messages, prepareVLM)
 	default:
-		slog.Error("Model type not support", "model_type", modelType)
+		slog.Error("Model type not support", "model_type", paths.ModelType)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": "model type not support"})
 		return
 	}
@@ -319,9 +310,8 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 			class = reasoningClass()
 		}
 		profile, _, err := gen(prompt, sink(class, &content, &reasoning))
-		// A prompt that never fit is a client error (400). A window exhausted
-		// mid-generation is a normal truncated completion (finish_reason=length),
-		// so it falls through to the regular response below.
+		// A prompt that never fit is a 400; a window exhausted mid-generation is a
+		// normal truncated completion (finish_reason=length), handled below.
 		if errors.Is(err, geniex_sdk.ErrLlmGenerationPromptTooLong) {
 			writePromptTooLong(c, profile)
 			return

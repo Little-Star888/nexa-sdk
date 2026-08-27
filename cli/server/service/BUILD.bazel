@@ -13,6 +13,7 @@ go_library(
         "//bindings/go:geniex_sdk_go",
         "//cli/internal/config",
         "//cli/internal/render",
+        "//cli/internal/store",
         "//cli/server/middleware",
         "//cli/server/types",
     ],

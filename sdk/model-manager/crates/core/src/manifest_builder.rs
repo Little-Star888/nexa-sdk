@@ -32,9 +32,20 @@ pub struct ManifestHint {
 
 /// Quantization priority order (earlier = preferred). Consumed by
 /// [`extract_quant`] as a tiebreaker among composite tags in one filename
-/// and by [`crate::query`] to sort candidates so callers can grab the
+/// and by [`quant_sort_key`] to order candidates so callers can grab the
 /// head as the recommended pick.
 pub const QUANT_PRIORITY: &[&str] = &["Q4_0", "Q4_K_M", "Q8_0"];
+
+/// Total order over quantization tags: [`QUANT_PRIORITY`] first, then the
+/// unlisted ones, each group alphabetical. A bare `org/repo` resolves through
+/// this ranking, so the head of a sorted list is the tag it loads.
+pub fn quant_sort_key(quant: &str) -> (usize, &str) {
+    let rank = QUANT_PRIORITY
+        .iter()
+        .position(|p| *p == quant)
+        .unwrap_or(QUANT_PRIORITY.len());
+    (rank, quant)
+}
 
 /// Infer a manifest from an explicit list of filenames + their sizes.
 /// Used when the caller already holds the listing (HF `model_info`,
@@ -445,6 +456,14 @@ fn file_info(name: &str, sizes: &HashMap<String, i64>) -> ModelFileInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quant_sort_key_ranks_priority_first_then_alphabetical() {
+        let mut tags = vec!["Q8_0", "IQ4_XS", "Q4_K_M", "BF16", "Q4_0"];
+        tags.sort_by(|a, b| quant_sort_key(a).cmp(&quant_sort_key(b)));
+        // An unlisted tag never outranks a listed one by sorting earlier.
+        assert_eq!(tags, vec!["Q4_0", "Q4_K_M", "Q8_0", "BF16", "IQ4_XS"]);
+    }
 
     fn sizes_of(names: &[(&str, i64)]) -> (Vec<String>, HashMap<String, i64>) {
         let mut m = HashMap::new();

@@ -10,7 +10,7 @@ use fs2::FileExt;
 use crate::config::StoreConfig;
 use crate::error::{Error, Result};
 use crate::manifest::{ModelManifest, ModelType};
-use crate::manifest_builder::QUANT_PRIORITY;
+use crate::manifest_builder::quant_sort_key;
 use crate::mapping::canonicalize_model_name;
 use crate::validation::{validate_model_name, validate_relative_file};
 
@@ -331,21 +331,14 @@ pub(crate) fn resolve_model_paths(
 }
 
 fn pick_downloaded_by_priority(manifest: &ModelManifest) -> Result<String> {
-    let downloaded: Vec<&str> = manifest
+    manifest
         .model_file
         .iter()
         .filter(|(_, v)| v.downloaded)
         .map(|(k, _)| k.as_str())
-        .collect();
-    if downloaded.is_empty() {
-        return Err(Error::ModelNotFound(manifest.name.clone()));
-    }
-    for pref in QUANT_PRIORITY {
-        if let Some(hit) = downloaded.iter().find(|q| **q == *pref) {
-            return Ok((*hit).to_string());
-        }
-    }
-    Ok(downloaded.iter().min().copied().unwrap().to_string())
+        .min_by(|a, b| quant_sort_key(a).cmp(&quant_sort_key(b)))
+        .map(str::to_string)
+        .ok_or_else(|| Error::ModelNotFound(manifest.name.clone()))
 }
 
 /// Read and parse `geniex.json` with a hard size cap.
@@ -427,6 +420,39 @@ mod tests {
             tokenizer_file: ModelFileInfo::default(),
             extra_files: vec![],
         }
+    }
+
+    #[test]
+    fn bare_name_pick_is_the_head_of_the_reported_order() {
+        let mut m = sample_manifest("Org/Repo");
+        // IQ4_XS sorts first alphabetically but is unlisted; Q8_0 is not downloaded.
+        m.model_file.insert(
+            "IQ4_XS".to_string(),
+            ModelFileInfo {
+                name: "model-IQ4_XS.gguf".to_string(),
+                downloaded: true,
+                size: 50,
+            },
+        );
+        m.model_file.insert(
+            "Q8_0".to_string(),
+            ModelFileInfo {
+                name: "model-Q8_0.gguf".to_string(),
+                downloaded: false,
+                size: 200,
+            },
+        );
+
+        let mut reported: Vec<&str> = m
+            .model_file
+            .iter()
+            .filter(|(_, fi)| fi.downloaded)
+            .map(|(q, _)| q.as_str())
+            .collect();
+        reported.sort_by(|a, b| quant_sort_key(a).cmp(&quant_sort_key(b)));
+        assert_eq!(reported, vec!["Q4_K_M", "IQ4_XS"]);
+
+        assert_eq!(pick_downloaded_by_priority(&m).unwrap(), reported[0]);
     }
 
     #[test]
