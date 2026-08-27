@@ -21,8 +21,8 @@ import (
 
 // LCOV_EXCL_START
 
-// PrecisionNA is the precision placeholder the SDK records for non-quantized
-// (e.g. QAIRT) models.
+// PrecisionNA is the key the SDK records while a model's precision is still
+// undetermined: it means "unknown", not "unquantized".
 const PrecisionNA = "N/A"
 
 // ModelType mirrors geniex_ModelType.
@@ -73,6 +73,15 @@ func SplitNamePrecision(arg string) (string, string) {
 		return name, ""
 	}
 	return name, precision
+}
+
+// JoinNamePrecision builds the "name:precision" key the SDK accepts. Inverse of
+// SplitNamePrecision minus its URL strip; PrecisionNA is a label like any other.
+func JoinNamePrecision(name, precision string) string {
+	if precision == "" {
+		return name
+	}
+	return name + ":" + precision
 }
 
 // HubSource mirrors geniex_HubSource.
