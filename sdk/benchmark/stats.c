@@ -48,7 +48,7 @@ static stat_t summarize(const double* values, int32_t n) {
     return st;
 }
 
-void aggregate(const run_result_t* runs, int32_t n, agg_t* a) {
+void aggregate_runs(const run_result_t* runs, int32_t n, agg_t* a) {
     double* tmp = (double*)malloc(sizeof(double) * (size_t)n);
     if (!tmp) {
         fprintf(stderr, "ERROR: oom\n");

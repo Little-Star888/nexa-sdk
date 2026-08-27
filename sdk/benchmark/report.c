@@ -89,7 +89,7 @@ static void json_agg_stat(FILE* f, const char* key, const stat_t* st) {
         st->sd);
 }
 
-int write_json(
+int write_cell_json(
     const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs, const agg_t* a) {
     FILE* f = fopen(o->output_json, "w");
     if (!f) {
@@ -247,7 +247,7 @@ static char* model_label(const char* cell_id, const char* plugin, const char* de
     return out;
 }
 
-static void format_size(int64_t bytes, char* buf, size_t bufsz) {
+static void format_bytes(int64_t bytes, char* buf, size_t bufsz) {
     if (bytes <= 0) {
         snprintf(buf, bufsz, "-");
         return;
@@ -288,7 +288,7 @@ int write_md_row(const options_t* o, const device_t* dev, int64_t model_size_byt
     char  ngl_buf[16];
     char  test_buf[32];
     char* model = model_label(o->cell_id, o->plugin, o->device);
-    format_size(model_size_bytes, size_buf, sizeof(size_buf));
+    format_bytes(model_size_bytes, size_buf, sizeof(size_buf));
     if (strcmp(o->plugin, "qairt") == 0 || dev->ngl <= 0) {
         snprintf(ngl_buf, sizeof(ngl_buf), "-");
     } else {

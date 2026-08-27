@@ -43,15 +43,13 @@ typedef struct {
     const char* plugin;
     const char* device;
     const char* device_id;
-    /* model_path is either an absolute filesystem path (treated as a local
-     * model directory or .gguf file) or a model-manager id of the form
-     * `org/repo[:quant]`. The model-id branch resolves via geniex_model_*
-     * (pulling if missing) and the resulting paths are written back into
-     * `mm_model_path` / `mm_mmproj` / `mm_tokenizer`. `mm_model_path` and
-     * `mm_tokenizer` always shadow their `_path` siblings; `mm_mmproj` only
-     * shadows `mmproj_path` when the user explicitly opted into VLM (via
-     * --vlm or matrix col 8), so a passively-present mmproj in the bundle
-     * cannot redirect a `-p N` LLM bench into the VLM run loop (#1090). */
+    /* A filesystem path (model dir or .gguf) or a model-manager id
+     * `org/repo[:quant]`; resolve_model_id() handles the latter.
+     *
+     * Shadowing rule: mm.model_path and mm.tokenizer always win over these,
+     * but mm.mmproj wins only when VLM was explicitly requested (--vlm or
+     * matrix col 8). Otherwise a passively-present mmproj in a bundle would
+     * redirect a `-p N` LLM bench into the VLM run loop (#1090). */
     const char* model_path;
     const char* tokenizer_path;
     const char* mmproj_path;
@@ -161,13 +159,13 @@ static inline const char* cell_name(const options_t* o) { return o->cell_id ? o-
 void die(int32_t code, const char* what);
 /* die() unless `code` is GENIEX_SUCCESS. */
 void check(int32_t code, const char* what);
-/* Strip trailing CR/LF/whitespace in place and return the input pointer. */
+/* Strips trailing CR/LF/space/tab in place; returns `s`. */
 char* rstrip(char* s);
 /* Load a whole file into a heap buffer (caller frees); exits on any failure. */
 char* slurp(const char* path);
-/* Total bytes the model occupies on disk: st_size for a .gguf file, recursive
- * sum of regular children for a bundle directory. 0 on stat failure. */
-int64_t compute_model_size(const char* path);
+/* st_size for a .gguf, recursive sum of regular children for a bundle dir,
+ * 0 on stat failure. */
+int64_t model_disk_bytes(const char* path);
 
 /* ------------------------------ options.c ----------------------------- */
 
@@ -177,19 +175,19 @@ void parse_args(int argc, char** argv, options_t* o);
 
 /* ------------------------------ resolve.c ----------------------------- */
 
-/* True when `s` looks like a filesystem path rather than a model-manager id. */
+/* Distinguishes a filesystem path from a model-manager id. */
 bool looks_like_path(const char* s);
-/* True when the local QAIRT bundle at `model_path` declares vision support. */
+/* Reads metadata.json's genie.supports_vision; false on any read/parse miss. */
 bool local_bundle_is_vlm(const char* model_path);
 /* If `path` is a directory, return a heap path to a regular file inside it
  * (the SDK derives the model dir via parent_path()). NULL for a plain file. */
 char* resolve_local_anchor(const char* path);
-/* Resolve model-manager id `id_in` to local paths, pulling if missing, and
- * point o->model_path / mmproj_path / tokenizer_path at them. 0 on success. */
-int resolve_via_mm(options_t* o, const char* id_in);
-/* Same for o->draft_model when it is a model id rather than a path. */
-int resolve_draft_via_mm(options_t* o);
-/* Release the mm_* paths a cell took ownership of and NULL them out. */
+/* Fills o->mm and repoints o->model_path / mmproj_path / tokenizer_path at
+ * it, pulling on cache miss. 0 on success. */
+int resolve_model_id(options_t* o, const char* id_in);
+/* Same for o->draft_model when it is an id rather than a path. */
+int resolve_draft_id(options_t* o);
+/* Frees o->mm's four paths and NULLs them, so calling it twice is safe. */
 void free_mm_paths(options_t* o);
 /* Best-effort geniex_model_deinit() when the manager was initialised. */
 void mm_shutdown(void);
@@ -205,8 +203,7 @@ int run_logits(const options_t* o, const device_t* dev);
 
 /* ------------------------------- stats.c ------------------------------ */
 
-/* Reduce `n` measured runs to median / min / max / mean / stdev. */
-void aggregate(const run_result_t* runs, int32_t n, agg_t* a);
+void aggregate_runs(const run_result_t* runs, int32_t n, agg_t* a);
 
 /* ------------------------------ report.c ----------------------------- */
 
@@ -214,7 +211,7 @@ void print_summary(const options_t* o, const device_t* dev, const agg_t* a);
 /* The three writers return 0 on success and 1 when the destination could not
  * be opened. An unwritable report is a cell-level failure: matrix mode counts
  * it and moves to the next cell rather than losing the rest of the sweep. */
-int write_json(
+int write_cell_json(
     const options_t* o, const device_t* dev, int64_t model_size_bytes, const run_result_t* runs, const agg_t* a);
 int write_md_row(const options_t* o, const device_t* dev, int64_t model_size_bytes, const agg_t* a);
 int write_logits_json(const options_t* o, const device_t* dev, const geniex_LlmForwardLogitsInput* fin,

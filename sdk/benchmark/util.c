@@ -54,7 +54,7 @@ char* slurp(const char* path) {
     return buf;
 }
 
-int64_t compute_model_size(const char* path) {
+int64_t model_disk_bytes(const char* path) {
     struct stat st;
     if (stat(path, &st) != 0) return 0;
     if (S_ISREG(st.st_mode)) return (int64_t)st.st_size;
@@ -78,7 +78,7 @@ int64_t compute_model_size(const char* path) {
             return total;
         }
         snprintf(cand, need, "%s/%s", path, name);
-        total += compute_model_size(cand);
+        total += model_disk_bytes(cand);
         free(cand);
     } while (FindNextFileA(h, &ffd));
     FindClose(h);
@@ -95,7 +95,7 @@ int64_t compute_model_size(const char* path) {
             return total;
         }
         snprintf(cand, need, "%s/%s", path, e->d_name);
-        total += compute_model_size(cand);
+        total += model_disk_bytes(cand);
         free(cand);
     }
     closedir(d);

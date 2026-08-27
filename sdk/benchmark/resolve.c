@@ -15,16 +15,9 @@
  * the flag must live outside the struct. */
 static bool g_mm_inited = false;
 
-/* Heuristic: model-manager ids are always `org/repo[:quant]` shape — at
- * least one '/', no leading '/' or '\\', no Windows drive prefix, no '.' in
- * the leading segment. Anything else (absolute path, ./relative, plain
- * filename like `model.gguf`, an existing directory) routes to the path
- * branch.
- *
- * Edge case: a bare `model.gguf` in the current working directory — a path
- * — has no '/' so this returns true, which is the correct branch.
- * Conversely an org/repo without quant (e.g. `unsloth/Qwen3-4B-GGUF`) has
- * '/' in the middle and falls through to the model-id branch. */
+/* A model-manager id is `org/repo[:quant]`: an embedded '/', no leading
+ * '/' '.' or '\\', no drive prefix. Everything else is a path — including a
+ * bare `model.gguf`, which has no '/' and so belongs in the cwd branch. */
 bool looks_like_path(const char* s) {
     if (!s || !*s) return true;
     if (s[0] == '/' || s[0] == '.' || s[0] == '\\') return true;
@@ -183,11 +176,7 @@ static int mm_resolve(const options_t* o, const char* id, const char* kind, geni
     return 0;
 }
 
-/* Resolve a model-manager id to local paths, downloading if missing. On
- * success populates o->mm.model_path / mm_mmproj / mm_tokenizer (heap-
- * owned) and rewrites o->model_path / mmproj_path / tokenizer_path to
- * point at them. Returns 0 on success. */
-int resolve_via_mm(options_t* o, const char* id_in) {
+int resolve_model_id(options_t* o, const char* id_in) {
     geniex_ModelPaths paths;
     if (mm_resolve(o, id_in, "", &paths) != 0) return 1;
 
@@ -195,8 +184,7 @@ int resolve_via_mm(options_t* o, const char* id_in) {
     o->mm.model_path = paths.model_path;
     o->mm.mmproj     = paths.mmproj_path;
     o->mm.tokenizer  = paths.tokenizer_path;
-    /* Capture the manager's LLM/VLM classification (geniex_ModelType) — the
-     * CLI's _is_vlm() signal (3). */
+    /* The CLI's _is_vlm() signal (3). */
     o->mm.is_vlm     = (paths.model_type == GENIEX_MODEL_TYPE_VLM);
     paths.model_path = paths.mmproj_path = paths.tokenizer_path = NULL;
     /* model_dir / model_name / plugin_id aren't consumed here; free via the
@@ -204,22 +192,15 @@ int resolve_via_mm(options_t* o, const char* id_in) {
     geniex_model_paths_free(&paths);
 
     o->model_path = o->mm.model_path;
-    /* QAIRT VLM bundles have no mmproj and the dispatcher has no LLM factory
-     * for VLM model_ids, so a VLM bundle in run_llm hard-fails. Force
-     * the VLM run loop when the manager classified it as VLM. */
+    /* QAIRT VLM bundles carry no mmproj and the dispatcher has no LLM factory
+     * for a VLM model_id, so such a bundle would hard-fail inside run_llm. */
     if (o->mm.is_vlm && o->plugin && strcmp(o->plugin, "qairt") == 0 && !o->force_vlm) {
         fprintf(stderr, "[mm  ] %s is a VLM bundle; forcing VLM run loop\n", id_in);
         o->force_vlm = true;
     }
-    /* Only adopt the manager's mmproj when the user explicitly opted into VLM
-     * (--vlm or the matrix `vlm` column). A passively-present mmproj sibling
-     * in the manager bundle (e.g. unsloth/gemma-4-E2B-it-GGUF ships an mmproj
-     * next to the LLM gguf) must NOT flip the bench into the VLM run loop —
-     * that replaces random-ids prefill with a real chat-templated sampling
-     * run, breaking the llama-bench contract that `-p N` runs N decode steps
-     * regardless of model semantics (#1090). An explicit --mmproj-path or
-     * matrix col 6 still wins, so VLM cells that name their projector keep
-     * working. */
+    /* Adopt the manager's mmproj only under an explicit VLM request — see the
+     * shadowing rule on options_t.model_path. An explicit --mmproj-path or
+     * matrix col 6 was already assigned and still wins. */
     if (o->force_vlm && o->mmproj_path == NULL && o->mm.mmproj) {
         o->mmproj_path = o->mm.mmproj;
     }
@@ -230,7 +211,7 @@ int resolve_via_mm(options_t* o, const char* id_in) {
 
 /* Without this the plugin gets a raw id like "org/repo:Q4_0", fails to
  * open it as a file, and silently falls back to non-speculative decode. */
-int resolve_draft_via_mm(options_t* o) {
+int resolve_draft_id(options_t* o) {
     if (!o->draft_model || looks_like_path(o->draft_model)) return 0;
 
     /* Capture the id before o->draft_model is repointed at the resolved path,

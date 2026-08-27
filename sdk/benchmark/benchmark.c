@@ -20,12 +20,10 @@
  *   - per-cell aggregation: median / min / max / mean / stdev for ttft_ms,
  *     prefill_tps, decode_tps; median-only for token counts
  *
- * The binary accepts either a raw filesystem path or a model-manager id
- * (e.g. `org/repo[:quant]` or `qualcomm/<aihub_repo>`) for the model
- * argument. When it isn't a filesystem path, the model-manager API is
- * used to download (resume-capable, multi-connection) and resolve the
- * model + mmproj + tokenizer paths, replacing the curl/IWR shell loops
- * the QDC bench run used to run on each device.
+ * The model argument takes either a filesystem path or a model-manager id
+ * (`org/repo[:quant]`, `qualcomm/<aihub_repo>`); the id form downloads and
+ * resolves through geniex_model_*, replacing the curl/IWR shell loops the
+ * QDC bench run used to carry per device.
  *
  * This file holds the drivers only; see bench.h for the module layout.
  */
@@ -46,17 +44,17 @@ static int run_one_cell(options_t* o) {
      * the matrix file are ignored in this branch — the manager owns the
      * full path tuple. */
     if (!looks_like_path(o->model_path)) {
-        if (resolve_via_mm(o, o->model_path) != 0) {
+        if (resolve_model_id(o, o->model_path) != 0) {
             return 1;
         }
     } else if (o->plugin && strcmp(o->plugin, "qairt") == 0 && !o->force_vlm && local_bundle_is_vlm(o->model_path)) {
-        /* Local QAIRT VLM bundle (resolve_via_mm skipped for path inputs):
+        /* Local QAIRT VLM bundle (resolve_model_id skipped for path inputs):
          * force VLM so it doesn't hit the dispatcher's "no LLM factory". */
         fprintf(stderr, "[info] %s is a VLM bundle (metadata.json); forcing VLM run loop\n", o->model_path);
         o->force_vlm = true;
     }
 
-    if (resolve_draft_via_mm(o) != 0) {
+    if (resolve_draft_id(o) != 0) {
         return 1;
     }
 
@@ -102,7 +100,7 @@ static int run_one_cell(options_t* o) {
     bool is_vlm = (o->mmproj_path != NULL) || o->force_vlm;
 
     /* --logits is a prefill-only forward pass, not a timing run: it skips the
-     * warmup/repeat/aggregate machinery and writes its own report. LLM only. */
+     * warmup/repeat/aggregate_runs machinery and writes its own report. LLM only. */
     if (o->logits_mode) {
         if (is_vlm) {
             fprintf(stderr, "ERROR: --logits is not supported for VLM models\n");
@@ -135,13 +133,13 @@ static int run_one_cell(options_t* o) {
     }
 
     agg_t a;
-    aggregate(runs, o->repeat, &a);
+    aggregate_runs(runs, o->repeat, &a);
     print_summary(o, &dev, &a);
 
-    int64_t model_size_bytes = compute_model_size(o->model_path);
+    int64_t model_size_bytes = model_disk_bytes(o->model_path);
 
     int result = 0;
-    if (o->output_json && write_json(o, &dev, model_size_bytes, runs, &a) != 0) result = 1;
+    if (o->output_json && write_cell_json(o, &dev, model_size_bytes, runs, &a) != 0) result = 1;
     if (o->output_md && write_md_row(o, &dev, model_size_bytes, &a) != 0) result = 1;
 
     free(runs);

@@ -16,11 +16,9 @@
  * has no such padding and is left untouched. See qcom-ai-hub/geniex#1194. */
 #define QAIRT_PREFILL_CHUNK 128
 
-/* Default VLM prompt used when no --prompt-file is supplied. Throughput
- * benchmarking only needs a representative fixed text; the chat template
- * (which needs real text to place image tokens) is applied by build_vlm_prompt.
- * When --prompt-file IS supplied the file content is used verbatim as the
- * prompt_utf8, bypassing this default and build_vlm_prompt entirely. */
+/* Throughput benchmarking only needs a representative fixed text. Used when
+ * --prompt-file is absent; build_vlm_prompt() runs it through the chat
+ * template so the image tokens land in the right place. */
 static const char* const VLM_DEFAULT_PROMPT = "Describe the image.";
 
 /* ------------------------- token callback ------------------------- */
@@ -45,10 +43,9 @@ static void busy_wait_us(int32_t us) {
 #endif
 }
 
-/* Streaming callback. By default a no-op (the C consumer's expected pattern).
- * --token-callback-delay-us N inflates each call to N microseconds via
- * monotonic-clock busy-wait, simulating the ~per-token overhead a Python
- * binding pays for ctypes wrapper + GIL acquire/release. */
+/* A no-op unless --token-callback-delay-us inflates each call, which
+ * simulates the per-token cost a Python binding pays for its ctypes wrapper
+ * plus GIL acquire/release. */
 static bool on_token(const char* token, void* user_data) {
     (void)token;
     busy_wait_us(((const options_t*)user_data)->token_callback_delay_us);
@@ -274,15 +271,9 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
     geniex_LLM* llm = NULL;
     check(geniex_llm_create(&cin, &llm), "geniex_llm_create");
 
-    /* Two prefill modes, picked by whether --prompt-file was passed:
-     *   - prompt_buf != NULL: feed prompt_utf8 verbatim (the plugin tokenizes).
-     *     `pp` is the tokenizer's count, NOT n_prompt. Required for plugins
-     *     that don't accept input_ids (today: qairt). The buffer is split into
-     *     one prompt per "---"-delimited segment by build_prompt_list().
-     *   - prompt_buf == NULL: random-ids mode (mirrors llama-bench
-     *     test_prompt) — query vocab + BOS via geniex_llm_get_model_info,
-     *     fill n_prompt positions with rand() % vocab_size, overwrite pos 0
-     *     with BOS when add_bos. `pp` is exactly n_prompt. */
+    /* --prompt-file feeds prompt_utf8 verbatim, so `pp` is the tokenizer's
+     * count rather than n_prompt — the only mode plugins that reject
+     * input_ids (today: qairt) can run. Without it, random ids. */
     int32_t* tokens = NULL;
     if (!o->prompt_buf) {
         tokens = make_random_tokens(llm,
@@ -521,7 +512,7 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
 
 /* --logits mode: prefill-only raw logits, no timing. Runs one forward pass over
  * `o->n_prompt` random token ids and writes the top-N (token_id, logit) pairs
- * per row to `o->output_json`. Bypasses run_llm's warmup/repeat/aggregate path.
+ * per row to `o->output_json`. Bypasses run_llm's warmup/repeat/aggregate_runs path.
  * The forward-logits API takes input_ids only, so this is random-ids input
  * (bench has no tokenizer). */
 int run_logits(const options_t* o, const device_t* dev) {
