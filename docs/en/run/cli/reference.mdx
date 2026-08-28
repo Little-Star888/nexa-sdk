@@ -114,6 +114,35 @@ This is a scenic, panoramic photograph that features a traditional Japanese temp
 
 In an interactive session with an audio-capable model, `/mic` records a clip instead of loading one from disk — `Ctrl-C` stops the recording and transcribes it. This needs **SoX** on your `PATH` (`sudo apt install sox`, or `winget install --id=ChrisBagwell.SoX -e` on Windows); without it GenieX warns `SoX is not installed` at startup. See the [audio input tutorial](/en/tutorials/audio-input) for the full walkthrough.
 
+## **`geniex model`**
+
+Inspect and reconfigure cached models.
+
+### **`geniex model set-type`**
+
+Override the model type recorded in a cached model's manifest. Omit the type to pick it interactively.
+
+```bash
+geniex model set-type <model-name> [llm|vlm]
+```
+
+The type decides which path `geniex infer` takes: `vlm` loads the mmproj projector alongside the weights and accepts image / audio input, while `llm` loads the language weights only. Forcing a multimodal GGUF to `llm` is how you run its text path on a board where weights + projector don't fit in memory.
+
+```bash
+geniex model set-type google/gemma-4-E2B-it-qat-q4_0-gguf llm
+```
+
+<Note>`geniex pull --model-type llm <model>` writes the same field at download time, so a fresh pull needs no `set-type` afterwards.</Note>
+
+### **`geniex model list`**
+
+List Qualcomm AI Hub Models that have a `qairt` (NPU) build. Only models compatible with the detected chipset are listed unless you pass `--all`.
+
+```bash
+geniex model list
+geniex model list --all
+```
+
 ## **`geniex serve`**
 
 Start the OpenAI-compatible local server. See [Local server](/en/run/cli/local-server) for the API.
