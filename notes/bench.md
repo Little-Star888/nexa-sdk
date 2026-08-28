@@ -43,7 +43,8 @@ On-device, all platforms perform the same work:
 
 1. Build 3 TSV matrix files (context sizes 512, 1024, 4096) from the model rows.
 2. Invoke `geniex-bench --matrix-file <tsv> --output-json-dir <out> --chipset <chip>`.
-3. The benchmark binary (`sdk/benchmark/benchmark.c`) runs each cell:
+3. The benchmark binary ([`sdk/benchmark/`](../sdk/benchmark/), module layout in
+   [`bench.h`](../sdk/benchmark/bench.h)) runs each cell:
    1 warmup + 3 measured repetitions, writing a per-cell JSON with aggregated
    stats (median / stdev / min / max for TTFT, prefill tok/s, decode tok/s;
    median-only for `media_ms`, non-zero on VLM cells).

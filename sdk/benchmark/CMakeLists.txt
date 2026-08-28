@@ -1,7 +1,16 @@
-add_executable(geniex-bench benchmark.c)
+add_executable(geniex-bench
+    benchmark.c
+    options.c
+    report.c
+    resolve.c
+    run.c
+    stats.c
+    util.c
+)
 
 target_include_directories(geniex-bench
     PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${COMMON_INCLUDE}
 )
 
@@ -9,7 +18,7 @@ target_link_libraries(geniex-bench
     PRIVATE geniex
 )
 
-# sqrt() in summarize_full() needs libm on glibc cross-compile targets
+# sqrt() in stats.c needs libm on glibc cross-compile targets
 # (Linux aarch64). bionic / msvcrt fold sqrt into libc, but glibc keeps it
 # in libm and the linker enforces --as-needed.
 if(NOT WIN32 AND NOT ANDROID)
