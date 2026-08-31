@@ -122,6 +122,38 @@ func TestPrintListCSV(t *testing.T) {
 	}
 }
 
+func TestResolveHubModelScope(t *testing.T) {
+	modelHub = "modelscope"
+	defer func() { modelHub = "" }()
+	h, err := resolveHub()
+	if err != nil {
+		t.Fatalf("resolveHub: %v", err)
+	}
+	if h != geniex_sdk.HubModelScope {
+		t.Errorf("resolveHub = %v, want %v", h, geniex_sdk.HubModelScope)
+	}
+}
+
+func TestResolveHubModelScopeAlias(t *testing.T) {
+	modelHub = "ms"
+	defer func() { modelHub = "" }()
+	h, err := resolveHub()
+	if err != nil {
+		t.Fatalf("resolveHub: %v", err)
+	}
+	if h != geniex_sdk.HubModelScope {
+		t.Errorf("resolveHub = %v, want %v", h, geniex_sdk.HubModelScope)
+	}
+}
+
+func TestResolveHubUnknownRejected(t *testing.T) {
+	modelHub = "modelscope-not-a-hub"
+	defer func() { modelHub = "" }()
+	if _, err := resolveHub(); err == nil {
+		t.Error("resolveHub accepted an unknown hub, want error")
+	}
+}
+
 func TestSkipDownloaded(t *testing.T) {
 	candidates := []geniex_sdk.PrecisionCandidate{
 		{Precision: "Q4_0", Size: 100},

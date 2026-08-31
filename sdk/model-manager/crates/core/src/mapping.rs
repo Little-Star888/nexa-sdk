@@ -31,12 +31,13 @@ const AI_HUB_ORGS: &[&str] = &["qualcomm", "ai-hub-models"];
 /// This is the single entry point callers should use before handing a
 /// name to `pull` / `get_paths` so the Store layout stays consistent.
 pub fn canonicalize_model_name(name: &str) -> String {
-    // A pasted HuggingFace URL ("https://huggingface.co/org/repo") carries a
-    // scheme + host the rest of the pipeline can't parse; strip it down to
-    // "org/repo" first.
+    // A pasted model-page URL carries a scheme + host the rest of the
+    // pipeline can't parse; strip it down to "org/repo" first.
     let name = name
         .strip_prefix("https://huggingface.co/")
         .or_else(|| name.strip_prefix("http://huggingface.co/"))
+        .or_else(|| name.strip_prefix("https://modelscope.cn/models/"))
+        .or_else(|| name.strip_prefix("http://modelscope.cn/models/"))
         .unwrap_or(name);
     match name.split_once('/') {
         None => format!("qualcomm/{name}"),
@@ -209,6 +210,18 @@ mod tests {
         assert_eq!(
             canonicalize_model_name("http://huggingface.co/bartowski/Foo"),
             "bartowski/Foo"
+        );
+    }
+
+    #[test]
+    fn canonicalize_strips_modelscope_url_prefix() {
+        assert_eq!(
+            canonicalize_model_name("https://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF"),
+            "Qwen/Qwen3-0.6B-GGUF"
+        );
+        assert_eq!(
+            canonicalize_model_name("http://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF"),
+            "Qwen/Qwen3-0.6B-GGUF"
         );
     }
 

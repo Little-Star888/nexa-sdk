@@ -52,8 +52,9 @@ pub struct GenieXModelPullInput {
     pub quant: *const c_char,
     pub hub: GenieXHubSource,
     pub local_path: *const c_char,
-    /// HuggingFace bearer token (NULL = fall back to GENIEX_HFTOKEN env,
-    /// then anonymous). Only meaningful when `hub == GENIEX_HUB_HUGGINGFACE`.
+    /// Hub bearer token (NULL = fall back to `GENIEX_HFTOKEN` env, then
+    /// anonymous). Only meaningful when `hub == GENIEX_HUB_HUGGINGFACE`
+    /// or `hub == GENIEX_HUB_MODELSCOPE`.
     pub hf_token: *const c_char,
     /// Target chipset for AI Hub pulls. Required when
     /// `hub == GENIEX_HUB_AIHUB`; ignored otherwise. Matched against the
@@ -116,6 +117,10 @@ pub(crate) fn build_pull_intent(
             repo: model_name.to_string(),
             token: hf_token,
         },
+        GenieXHubSource::ModelScope => PullIntent::ModelScope {
+            repo: model_name.to_string(),
+            token: hf_token,
+        },
         GenieXHubSource::LocalFs => {
             let path = local_path.ok_or(GENIEX_ERROR_COMMON_INVALID_INPUT)?;
             PullIntent::LocalFs { source_dir: path }
@@ -132,7 +137,8 @@ pub(crate) fn build_pull_intent(
                 chipset,
             }
         }
-        // ModelScope / Volces remain placeholders — fall back to HuggingFace.
+        // Volces remains a placeholder — fall back to HuggingFace. Docker
+        // never reaches this point (it is routed in extract_name_and_intent).
         _ => PullIntent::HuggingFace {
             repo: model_name.to_string(),
             token: hf_token,

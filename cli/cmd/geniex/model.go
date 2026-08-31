@@ -45,6 +45,8 @@ func resolveHub() (geniex_sdk.HubSource, error) {
 		return geniex_sdk.HubAIHub, nil
 	case "hf", "huggingface":
 		return geniex_sdk.HubHuggingFace, nil
+	case "modelscope", "ms":
+		return geniex_sdk.HubModelScope, nil
 	case "docker", "dockerhub":
 		return geniex_sdk.HubDocker, nil
 	case "local", "localfs":
@@ -63,7 +65,7 @@ func pull() *cobra.Command {
 		GroupID: "model",
 		Use:     "pull <model-name>[:<precision>]",
 
-		Short: "Pull model from HuggingFace, Qualcomm AI Hub Models, or Docker Hub",
+		Short: "Pull model from HuggingFace, Qualcomm AI Hub Models, ModelScope, or Docker Hub",
 		Long: "Download and cache a model by name. Append ':<precision>' to pull a specific precision; otherwise you'll be prompted to choose one.\n\n" +
 			"Docker Hub models (e.g. docker.io/ai/gemma3, or ai/gemma3 with --model-hub docker) " +
 			"use ':<tag>' instead of a precision — omit it to pull the 'latest' tag.",
@@ -72,7 +74,7 @@ func pull() *cobra.Command {
 	pullCmd.Args = cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)
 
 	pullCmd.Flags().SortFlags = false
-	pullCmd.Flags().StringVarP(&modelHub, "model-hub", "", "", "specify model hub to use: aihub|hf|docker|localfs")
+	pullCmd.Flags().StringVarP(&modelHub, "model-hub", "", "", "specify model hub to use: aihub|hf|modelscope|docker|localfs")
 	pullCmd.Flags().StringVarP(&localPath, "local-path", "", "", "[localfs] path to local directory or aihub zip file")
 	pullCmd.Flags().StringVarP(&modelType, "model-type", "", "", "specify model type to use: [llm|vlm]")
 
