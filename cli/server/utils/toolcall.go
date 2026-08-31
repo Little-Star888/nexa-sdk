@@ -113,6 +113,7 @@ func NewToolCallScanner() *ToolCallScanner {
 		newQwen3ToolCall(),
 		newQwen35ToolCall(),
 		newGptOssToolCall(),
+		newLFM2ToolCall(),
 		&jsonToolCall{},
 	}}
 }
