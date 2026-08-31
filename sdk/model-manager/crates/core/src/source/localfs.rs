@@ -21,8 +21,9 @@ use async_trait::async_trait;
 use url::Url;
 
 use crate::error::{Error, Result};
+use crate::gguf;
 use crate::manifest::{ModelFileInfo, ModelManifest, ModelType};
-use crate::manifest_builder::{infer_manifest_from_names, ManifestHint};
+use crate::manifest_builder::{infer_manifest_from_names, untagged_gguf_names, ManifestHint};
 use crate::transport::HttpTransport;
 
 use super::ai_hub::remote_zip::{fetch_central_directory, LocalFileTransport, Method};
@@ -180,6 +181,11 @@ impl LocalFsSource {
             if file_names.iter().any(|n| n == CONFIG_FILE) {
                 infer_hint.config_json_bytes =
                     std::fs::read(self.source_dir.join(CONFIG_FILE)).ok();
+            }
+            for name in untagged_gguf_names(&file_names) {
+                if let Some(q) = gguf::quant_from_file(&self.source_dir.join(name)) {
+                    infer_hint.header_quants.insert(name.clone(), q);
+                }
             }
             infer_manifest_from_names(&self.model_name, &file_names, &sizes, infer_hint)?
         };
