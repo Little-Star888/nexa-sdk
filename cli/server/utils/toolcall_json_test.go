@@ -171,7 +171,7 @@ func TestJSONToolCallFeed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			at, end := (&JSONToolCall{}).feed(tt.s, 0)
+			at, end := (&jsonToolCall{}).feed(tt.s, 0)
 			if at != tt.wantAt || end != tt.wantEnd {
 				t.Errorf("feed(%q) = (%d, %d), want (%d, %d)", tt.s, at, end, tt.wantAt, tt.wantEnd)
 			}

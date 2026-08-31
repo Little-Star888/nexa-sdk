@@ -57,6 +57,13 @@ func runStreamToolCall(t *testing.T, class tokenClass, tokens ...string) []strea
 	return sseDeltas(t, w.Body.String())
 }
 
+// One tool_calls delta, flattened for comparison.
+type toolCallDelta struct {
+	index     int
+	name      string
+	arguments string
+}
+
 // Thinking must not reach the scanner, and must not leak into content: with tools
 // present it used to stream inline, and a call then dropped it along with the prose.
 func TestStreamToolCallSeparatesReasoning(t *testing.T) {
@@ -65,12 +72,12 @@ func TestStreamToolCallSeparatesReasoning(t *testing.T) {
 		`{"name":"f","arg`, `uments":{"city":"Beijing"}}`, " done")
 
 	var content, reasoning strings.Builder
-	var calls []openai_call
+	var calls []toolCallDelta
 	for _, ch := range got {
 		content.WriteString(ch.Delta.Content)
 		reasoning.WriteString(ch.Delta.ReasoningContent)
 		for _, tc := range ch.Delta.ToolCalls {
-			calls = append(calls, openai_call{int(tc.Index), tc.Function.Name, tc.Function.Arguments})
+			calls = append(calls, toolCallDelta{int(tc.Index), tc.Function.Name, tc.Function.Arguments})
 		}
 	}
 	if reasoning.String() != "the city is Beijing" {
@@ -79,18 +86,12 @@ func TestStreamToolCallSeparatesReasoning(t *testing.T) {
 	if content.String() != "sure  done" {
 		t.Errorf("content = %q", content.String())
 	}
-	if len(calls) != 1 || calls[0] != (openai_call{0, "f", `{"city":"Beijing"}`}) {
+	if len(calls) != 1 || calls[0] != (toolCallDelta{0, "f", `{"city":"Beijing"}`}) {
 		t.Errorf("calls = %+v", calls)
 	}
 	if reason := got[len(got)-1].FinishReason; reason == nil || *reason != "tool_calls" {
 		t.Errorf("finish_reason = %v, want tool_calls", reason)
 	}
-}
-
-type openai_call struct {
-	index     int
-	name      string
-	arguments string
 }
 
 // Parallel calls need a rising index, and plain text needs no tool_calls finish.

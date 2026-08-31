@@ -60,7 +60,7 @@ func (m *markerScan) feed(all string) {
 }
 
 // markerFormat covers a syntax wrapped in two literals. Without a closing one, a
-// format implements feed itself, as JSONToolCall does.
+// format implements feed itself, as jsonToolCall does.
 //
 // BUG: the scan is not string-aware, so an end literal quoted inside the call's
 // own arguments cuts the region short and the call goes out as text instead. What
@@ -111,7 +111,7 @@ func NewToolCallScanner() *ToolCallScanner {
 	return &ToolCallScanner{formats: []toolCallFormat{
 		newGemma4ToolCall(),
 		newQwen3ToolCall(),
-		&JSONToolCall{},
+		&jsonToolCall{},
 	}}
 }
 

@@ -10,18 +10,18 @@ import (
 	"github.com/bytedance/sonic/ast"
 )
 
-// JSONToolCall is a bare JSON object, with nothing marking where it ends: the
+// jsonToolCall is a bare JSON object, with nothing marking where it ends: the
 // object it opens is the whole candidate, and parse decides whether it is a call.
-type JSONToolCall struct {
+type jsonToolCall struct {
 	pos  int // bytes of all consumed
 	obj  int // where the candidate object began; == pos when none is open
 	end  int // where that object closed; 0 until it does
 	walk braceWalk
 }
 
-func (t *JSONToolCall) parse(s string) []toolCallFn { return parseJSONToolCalls(s) }
+func (t *jsonToolCall) parse(s string) []toolCallFn { return parseJSONToolCalls(s) }
 
-func (t *JSONToolCall) feed(all string, from int) (int, int) {
+func (t *jsonToolCall) feed(all string, from int) (int, int) {
 	if from > t.obj { // the region was consumed or bypassed: start over
 		t.pos, t.obj, t.end = from, from, 0
 	}

@@ -20,15 +20,15 @@ const (
 	gemma4String = `<|"|>`
 )
 
-type Gemma4ToolCall struct {
+type gemma4ToolCall struct {
 	markerFormat
 }
 
-func newGemma4ToolCall() *Gemma4ToolCall {
-	return &Gemma4ToolCall{newMarkerFormat(gemma4Open, gemma4Close)}
+func newGemma4ToolCall() *gemma4ToolCall {
+	return &gemma4ToolCall{newMarkerFormat(gemma4Open, gemma4Close)}
 }
 
-func (t *Gemma4ToolCall) parse(s string) []toolCallFn { return parseGemma4ToolCalls(s) }
+func (t *gemma4ToolCall) parse(s string) []toolCallFn { return parseGemma4ToolCalls(s) }
 
 // parseGemma4ToolCalls returns every call in s. The end marker is not required: a
 // call whose dict closed is complete, so Tail can still recover a truncated one.

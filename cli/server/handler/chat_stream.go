@@ -40,15 +40,6 @@ type streamChunk struct {
 
 const streamChunkObject = "chat.completion.chunk"
 
-func contentChunk(content string) streamChunk {
-	return streamChunk{
-		Object: streamChunkObject,
-		Choices: []streamChoice{{
-			Delta: streamDelta{Role: string(openai.MessageRoleAssistant), Content: content},
-		}},
-	}
-}
-
 func tokenChunk(text string, reasoning bool) streamChunk {
 	delta := streamDelta{Role: string(openai.MessageRoleAssistant)}
 	if reasoning {
@@ -134,7 +125,7 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 			}
 			text, calls := scanner.Push(token)
 			if text != "" {
-				c.SSEvent("", contentChunk(text))
+				c.SSEvent("", tokenChunk(text, false))
 			}
 			for _, call := range calls {
 				c.SSEvent("", toolCallChunk(sent, call))
@@ -154,7 +145,7 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 		tail, calls := scanner.Tail()
 		if tail != "" {
 			slog.Warn("Tool call not matched, streaming the held text instead")
-			c.SSEvent("", contentChunk(tail))
+			c.SSEvent("", tokenChunk(tail, false))
 		}
 		for _, call := range calls {
 			c.SSEvent("", toolCallChunk(sent, call))
