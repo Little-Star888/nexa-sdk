@@ -112,6 +112,7 @@ func NewToolCallScanner() *ToolCallScanner {
 		newGemma4ToolCall(),
 		newQwen3ToolCall(),
 		newQwen35ToolCall(),
+		newGptOssToolCall(),
 		&jsonToolCall{},
 	}}
 }
