@@ -289,13 +289,13 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 
 		wait := func() error { wg.Wait(); return genErr }
 		includeUsage := param.StreamOptions.IncludeUsage.Value
+		class := tokenClass(plainClass)
+		if reasoningSeparated(param.ReasoningFormat) {
+			class = reasoningClass()
+		}
 		if parseTool {
-			streamToolCall(c, dataCh, wait, includeUsage, &profile)
+			streamToolCall(c, dataCh, wait, includeUsage, &profile, class)
 		} else {
-			class := tokenClass(plainClass)
-			if reasoningSeparated(param.ReasoningFormat) {
-				class = reasoningClass()
-			}
 			streamPlainText(c, dataCh, wait, includeUsage, &profile, render(class))
 		}
 
@@ -306,7 +306,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 		// blocking
 		var content, reasoning strings.Builder
 		class := tokenClass(plainClass)
-		if !parseTool && reasoningSeparated(param.ReasoningFormat) {
+		if reasoningSeparated(param.ReasoningFormat) {
 			class = reasoningClass()
 		}
 		profile, _, err := gen(prompt, sink(class, &content, &reasoning))
