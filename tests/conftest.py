@@ -14,18 +14,7 @@ import geniex
 import pytest
 from geniex import model_manager as _mm
 
-from _models import (
-    LLAMA_CPP_LLM_MODEL,
-    LLAMA_CPP_LLM_PRECISION,
-    LLAMA_CPP_MTP_DRAFT_MODEL,
-    LLAMA_CPP_MTP_DRAFT_PRECISION,
-    LLAMA_CPP_MTP_TARGET_MODEL,
-    LLAMA_CPP_MTP_TARGET_PRECISION,
-    LLAMA_CPP_VLM_MODEL,
-    LLAMA_CPP_VLM_PRECISION,
-    QAIRT_LLM_MODEL,
-    QAIRT_VLM_MODEL,
-)
+from _models import TestModel, primary
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_IMAGE_PATH = _REPO_ROOT / 'cli' / 'server' / 'docs' / 'ui' / 'favicon-32x32.png'
@@ -35,9 +24,11 @@ _DEVICE_MARKER = {
     'cpu': 'device_cpu',
     'gpu': 'device_gpu',
     'npu': 'device_npu',
+    'hybrid': 'device_hybrid',
 }
-# GPU uses the Snapdragon OpenCL backend, so it needs real hardware just like NPU.
-_SNAPDRAGON_DEVICES = {'gpu', 'npu'}
+# GPU uses the Snapdragon OpenCL backend and hybrid schedules onto HTP, so both
+# need real hardware just like NPU.
+_SNAPDRAGON_DEVICES = {'gpu', 'npu', 'hybrid'}
 
 
 def _is_snapdragon_host() -> bool:
@@ -105,32 +96,46 @@ def geniex_session():
 
 # Model-manager pull failures raise, not skip — a broken hub is a real regression.
 @pytest.fixture(scope='session')
-def llama_cpp_llm_paths(geniex_session):
-    return _mm.ensure_cached(LLAMA_CPP_LLM_MODEL, precision=LLAMA_CPP_LLM_PRECISION, hub='hf')
+def cached(geniex_session):
+    resolved: dict[tuple[str, str | None], object] = {}
+
+    def _get(model: TestModel):
+        key = (model.id, model.precision)
+        if key not in resolved:
+            resolved[key] = _mm.ensure_cached(model.id, precision=model.precision, hub=model.hub)
+        return resolved[key]
+
+    return _get
 
 
 @pytest.fixture(scope='session')
-def llama_cpp_mtp_paths(geniex_session):
+def llama_cpp_llm_paths(cached):
+    return cached(primary('llama_cpp_llm'))
+
+
+@pytest.fixture(scope='session')
+def llama_cpp_mtp_paths(cached):
     if hasattr(sys, 'getandroidapilevel'):
         pytest.skip('MTP target+draft (2×27B) exceeds mobile RAM')
-    target = _mm.ensure_cached(LLAMA_CPP_MTP_TARGET_MODEL, precision=LLAMA_CPP_MTP_TARGET_PRECISION, hub='hf')
-    draft = _mm.ensure_cached(LLAMA_CPP_MTP_DRAFT_MODEL, precision=LLAMA_CPP_MTP_DRAFT_PRECISION, hub='hf')
-    return {'target': target, 'draft': draft}
+    return {
+        'target': cached(primary('llama_cpp_mtp_target')),
+        'draft': cached(primary('llama_cpp_mtp_draft')),
+    }
 
 
 @pytest.fixture(scope='session')
-def llama_cpp_vlm_paths(geniex_session):
-    return _mm.ensure_cached(LLAMA_CPP_VLM_MODEL, precision=LLAMA_CPP_VLM_PRECISION, hub='hf')
+def llama_cpp_vlm_paths(cached):
+    return cached(primary('llama_cpp_vlm'))
 
 
 @pytest.fixture(scope='session')
-def qairt_llm_paths(geniex_session):
-    return _mm.ensure_cached(QAIRT_LLM_MODEL)
+def qairt_llm_paths(cached):
+    return cached(primary('qairt_llm'))
 
 
 @pytest.fixture(scope='session')
-def qairt_vlm_paths(geniex_session):
-    return _mm.ensure_cached(QAIRT_VLM_MODEL)
+def qairt_vlm_paths(cached):
+    return cached(primary('qairt_vlm'))
 
 
 @pytest.fixture(scope='session')

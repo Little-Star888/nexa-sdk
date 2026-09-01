@@ -119,10 +119,7 @@ func remove() *cobra.Command {
 		var errs []error
 		for _, arg := range args {
 			name, quant := geniex_sdk.SplitNamePrecision(arg)
-			key := name
-			if quant != "" {
-				key = name + ":" + quant
-			}
+			key := geniex_sdk.JoinNamePrecision(name, quant)
 			if err := geniex_sdk.ModelRemove(key); err != nil {
 				errs = append(errs, fmt.Errorf("remove %s: %w", key, err))
 				continue
@@ -224,8 +221,8 @@ type listedModel struct {
 	Precisions []string `json:"precisions"`
 }
 
-// downloadedPrecisions returns the model's precisions, optionally hiding the
-// PrecisionNA placeholder used by non-quantized models (table view only).
+// downloadedPrecisions returns the model's precisions in the SDK's order — its
+// head is a bare name's pick — optionally hiding PrecisionNA (table view only).
 func downloadedPrecisions(m geniex_sdk.ModelDetail, hidePrecisionNA bool) []string {
 	quants := make([]string, 0, len(m.Precisions))
 	for _, q := range m.Precisions {
@@ -234,7 +231,6 @@ func downloadedPrecisions(m geniex_sdk.ModelDetail, hidePrecisionNA bool) []stri
 		}
 		quants = append(quants, q)
 	}
-	slices.Sort(quants)
 	return quants
 }
 
@@ -435,10 +431,8 @@ func pullModel(ctx context.Context, name, quant string) error {
 	if err != nil {
 		return err
 	}
-	// resolveHub() only sees the --model-hub flag; a prefixed name like
-	// docker.io/... still reads as HubAuto here. Ask the SDK for the hub the
-	// pull will actually use so the skip-precision guard below is correct for
-	// prefix auto-routing too, not just an explicit --model-hub docker.
+	// resolveHub() only sees --model-hub, so a docker.io/... prefix still reads as
+	// HubAuto; the guard below needs the hub the pull will actually use.
 	effectiveHub, err := geniex_sdk.ResolveHub(name, hub)
 	if err != nil {
 		return err
@@ -467,11 +461,9 @@ func pullModel(ctx context.Context, name, quant string) error {
 		in.ModelType = &mt
 	}
 
-	// No precision requested: query the remote candidates and let the user
-	// pick (skipped for localfs, which has no remote listing, and for
-	// Docker Hub, where an empty quant already means "pull the 'latest'
-	// tag" — querying would resolve one tag's manifest and then
-	// mis-feed its GGUF quant label back in as if it were the tag).
+	// No precision requested: query the remote candidates and let the user pick.
+	// Skipped for localfs (no remote listing) and Docker, where an empty quant
+	// already means the `latest` tag and a query would feed back a quant label.
 	if quant == "" && effectiveHub != geniex_sdk.HubLocalFS && effectiveHub != geniex_sdk.HubDocker {
 		spin := render.NewSpinner("fetching available precisions from: " + name)
 		spin.Start()
@@ -480,12 +472,15 @@ func pullModel(ctx context.Context, name, quant string) error {
 		if err != nil {
 			return err
 		}
-		// Only the picker hides cached precisions: without a terminal the head
-		// wins, and filtering would make a repeated `geniex pull <model>` walk
-		// the list instead of resolving to the recommended one every time.
+		// Only the picker hides cached precisions: filtering would make a repeated
+		// `geniex pull <model>` walk the list instead of re-resolving to the head.
 		candidates := q.Candidates
 		if hasTerminal() {
-			cached := cachedPrecisions(name, candidates)
+			// N/A stays in: qairt stores a cached bundle under it.
+			var cached []string
+			if m, err := geniex_sdk.ModelGetDetailed(name); err == nil {
+				cached = downloadedPrecisions(*m, false)
+			}
 			if pending := skipDownloaded(candidates, cached); len(pending) > 0 {
 				candidates = pending
 			} else if len(cached) > 0 {
@@ -518,6 +513,7 @@ func pullModel(ctx context.Context, name, quant string) error {
 		}
 		if bar == nil {
 			bar = render.NewProgressBar(total, downloaded, "downloading")
+			fmt.Println(render.GetTheme().Info.Sprint("   Press Ctrl+C to cancel — progress is saved, not discarded."))
 		}
 		bar.Set(downloaded)
 		return ctx.Err() == nil
@@ -528,7 +524,9 @@ func pullModel(ctx context.Context, name, quant string) error {
 			bar.Clear()
 		}
 		if ctx.Err() != nil {
+			key := geniex_sdk.JoinNamePrecision(name, quant)
 			fmt.Println(render.GetTheme().Warning.Sprint("✗  Download cancelled"))
+			fmt.Println(render.GetTheme().Info.Sprintf("   Run 'geniex pull %s' to resume, or 'geniex remove %s' to free the disk space instead.", key, key))
 			return nil
 		}
 		return err
@@ -547,10 +545,7 @@ func pullModel(ctx context.Context, name, quant string) error {
 
 	fmt.Println(render.GetTheme().Success.Sprint("✔  Download success"))
 
-	key := name
-	if quant != "" {
-		key = name + ":" + quant
-	}
+	key := geniex_sdk.JoinNamePrecision(name, quant)
 	if m, err := geniex_sdk.ModelGetDetailed(name); err == nil && m.TotalSize > 0 {
 		fmt.Println(render.GetTheme().Info.Sprintf("   Size:      %s", humanize.IBytes(uint64(m.TotalSize))))
 	}
@@ -561,21 +556,6 @@ func pullModel(ctx context.Context, name, quant string) error {
 		fmt.Println(render.GetTheme().Info.Sprintf("   Precision: %s", quant))
 	}
 	return nil
-}
-
-// cachedPrecisions returns the candidates already on disk. The SDK canonicalizes
-// the name, so a bare AI Hub id or an ai-hub-models/ prefix hits its own entry.
-func cachedPrecisions(name string, candidates []geniex_sdk.PrecisionCandidate) []string {
-	if _, err := geniex_sdk.ModelGetPaths(name); err != nil {
-		return nil
-	}
-	var cached []string
-	for _, c := range candidates {
-		if _, err := geniex_sdk.ModelGetPaths(name + ":" + c.Precision); err == nil {
-			cached = append(cached, c.Precision)
-		}
-	}
-	return cached
 }
 
 func skipDownloaded(candidates []geniex_sdk.PrecisionCandidate, cached []string) []geniex_sdk.PrecisionCandidate {
@@ -594,9 +574,8 @@ func hasTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
 }
 
-// choosePrecision picks a precision from candidates, whose head must be the
-// recommended pick: it is taken as-is when it is the only option or there is no
-// terminal to draw on, otherwise the picker pre-selects it.
+// choosePrecision picks from candidates, whose head must be the recommended one:
+// it wins outright when alone or without a terminal, else the picker preselects it.
 func choosePrecision(title string, candidates []geniex_sdk.PrecisionCandidate) (string, error) {
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no precision available for this model")

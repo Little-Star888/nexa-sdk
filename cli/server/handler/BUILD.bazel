@@ -18,7 +18,6 @@ go_library(
     deps = [
         "//bindings/go:geniex_sdk_go",
         "//cli/internal/config",
-        "//cli/internal/store",
         "//cli/internal/thinkfsm",
         "//cli/server/service",
         "//cli/server/types",
@@ -34,6 +33,9 @@ go_library(
 go_cgo_test(
     name = "handler_test",
     srcs = [
+        "chat_messages_test.go",
+        "chat_response_test.go",
+        "chat_stream_test.go",
         "chat_test.go",
         "completion_test.go",
     ],

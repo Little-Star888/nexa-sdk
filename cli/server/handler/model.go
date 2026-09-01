@@ -14,6 +14,12 @@ import (
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 )
 
+// ModelResponse is the OpenAI model object plus GenieX's model_type extension.
+type ModelResponse struct {
+	openai.Model
+	ModelType string `json:"model_type"`
+}
+
 func ListModels(c *gin.Context) {
 	models, err := geniex_sdk.ModelListDetailed()
 	if err != nil {
@@ -24,12 +30,8 @@ func ListModels(c *gin.Context) {
 	res := make([]openai.Model, 0, len(models))
 	for _, m := range models {
 		for _, q := range m.Precisions {
-			id := m.Name
-			if q != geniex_sdk.PrecisionNA {
-				id += ":" + q
-			}
 			res = append(res, openai.Model{
-				ID:      id,
+				ID:      geniex_sdk.JoinNamePrecision(m.Name, q),
 				OwnedBy: strings.Split(m.Name, "/")[0],
 			})
 		}
@@ -57,12 +59,12 @@ func RetrieveModel(c *gin.Context) {
 	}
 
 	if quant == "" {
-		precisions := slices.Sorted(slices.Values(m.Precisions))
-		if len(precisions) == 0 {
+		// The head is a bare name's own pick; sorting would advertise another.
+		if len(m.Precisions) == 0 {
 			c.JSON(http.StatusNotFound, nil)
 			return
 		}
-		quant = precisions[0]
+		quant = m.Precisions[0]
 	} else if i := slices.IndexFunc(m.Precisions, func(p string) bool {
 		return strings.EqualFold(p, quant)
 	}); i < 0 {
@@ -73,12 +75,11 @@ func RetrieveModel(c *gin.Context) {
 		quant = m.Precisions[i]
 	}
 
-	id := m.Name
-	if quant != geniex_sdk.PrecisionNA {
-		id += ":" + quant
-	}
-	c.JSON(http.StatusOK, openai.Model{
-		ID:      id,
-		OwnedBy: strings.Split(m.Name, "/")[0],
+	c.JSON(http.StatusOK, ModelResponse{
+		Model: openai.Model{
+			ID:      geniex_sdk.JoinNamePrecision(m.Name, quant),
+			OwnedBy: strings.Split(m.Name, "/")[0],
+		},
+		ModelType: m.ModelType.String(),
 	})
 }

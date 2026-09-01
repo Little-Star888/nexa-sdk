@@ -11,27 +11,33 @@ from pathlib import Path
 import geniex
 import pytest
 
-from _models import QAIRT_LLM_MODEL, QAIRT_VLM_MODEL
+from _models import matrix, primary, pull_cells
 from _quality_data import (
+    DETERMINISM_MAX_NEW_TOKENS,
+    DETERMINISM_PROMPT,
+    GREEDY_TEMPERATURE,
     LLM_QUALITY_MAX_NEW_TOKENS,
     LLM_QUALITY_PROMPTS,
     LLM_QUALITY_SEED,
-    LLM_QUALITY_TEMPERATURE,
     PARITY_INPUT_IDS,
     PARITY_QAIRT_KL_MAX,
     VLM_QUALITY_KEYWORDS,
     VLM_QUALITY_MAX_NEW_TOKENS,
     VLM_QUALITY_PROMPT,
     VLM_QUALITY_SEED,
-    VLM_QUALITY_TEMPERATURE,
     parity_kl_divergence,
     parity_top1_agreement,
 )
 
+_LLM = primary('qairt_llm')
+_LLM_MATRIX = matrix('qairt_llm')
+_VLM_MATRIX = matrix('qairt_vlm')
 
-def test_model_manager_pull(qairt_llm_paths, qairt_vlm_paths):
-    for name, paths in [('llm', qairt_llm_paths), ('vlm', qairt_vlm_paths)]:
-        assert Path(paths.model_path).is_file(), f'{name}: model_path missing: {paths.model_path}'
+
+@pytest.mark.parametrize('model', pull_cells('qairt_llm', 'qairt_vlm'))
+def test_model_manager_pull(cached, model):
+    paths = cached(model)
+    assert Path(paths.model_path).is_file(), f'{model.id}: model_path missing: {paths.model_path}'
 
 
 def _run_multi_turn(llm) -> list[str]:
@@ -48,7 +54,7 @@ def _run_multi_turn(llm) -> list[str]:
             add_generation_prompt=True,
             enable_thinking=False,
         )
-        out = llm.generate(prompt, max_new_tokens=64, temperature=0.0, seed=42)
+        out = llm.generate(prompt, max_new_tokens=64, temperature=GREEDY_TEMPERATURE, seed=42)
         assert out.text, f'empty completion at turn {len(replies) + 1}'
         assert out.profile.generated_tokens > 0
         replies.append(out.text)
@@ -57,16 +63,49 @@ def _run_multi_turn(llm) -> list[str]:
 
 
 @pytest.mark.llm
-@pytest.mark.parametrize('device_map', ['npu'])
-def test_llm_multi_turn(qairt_llm_paths, device_map):
+@pytest.mark.parametrize(('model', 'device_map'), _LLM_MATRIX)
+def test_llm_multi_turn(cached, model, device_map):
+    cached(model)
     with geniex.AutoModelForCausalLM.from_pretrained(
-        QAIRT_LLM_MODEL,
+        model.id,
         device_map=device_map,
     ) as llm:
         replies = _run_multi_turn(llm)
     assert (
         'alice' in replies[-1].lower()
-    ), f'device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+    ), f'model={model.id!r} device_map={device_map!r} expected reply to recall "Alice", got={replies[-1]!r}'
+
+
+@pytest.mark.llm
+@pytest.mark.parametrize(('model', 'device_map'), _LLM_MATRIX)
+def test_llm_greedy_is_deterministic(cached, model, device_map):
+    cached(model)
+
+    def _greedy_once(seed: int) -> str:
+        with geniex.AutoModelForCausalLM.from_pretrained(
+            model.id,
+            device_map=device_map,
+        ) as llm:
+            formatted = llm.tokenizer.apply_chat_template(
+                [{'role': 'user', 'content': DETERMINISM_PROMPT}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            return llm.generate(
+                formatted,
+                max_new_tokens=DETERMINISM_MAX_NEW_TOKENS,
+                temperature=GREEDY_TEMPERATURE,
+                seed=seed,
+            ).text
+
+    first = _greedy_once(LLM_QUALITY_SEED)
+    second = _greedy_once(LLM_QUALITY_SEED + 1)
+    assert first, f'empty completion for model={model.id!r} device_map={device_map!r}'
+    assert first == second, (
+        f'greedy decode diverged across seeds '
+        f'model={model.id!r} device_map={device_map!r} first={first!r} second={second!r}'
+    )
 
 
 def _vlm_prompt(vlm, image_path: str, text: str) -> str:
@@ -86,12 +125,14 @@ def _vlm_prompt(vlm, image_path: str, text: str) -> str:
 
 
 @pytest.mark.vlm
-def test_vlm_multi_turn(qairt_vlm_paths, test_image):
+@pytest.mark.parametrize(('model', 'device_map'), _VLM_MATRIX)
+def test_vlm_multi_turn(cached, model, test_image, device_map):
     # QAIRT re-encodes on every generate, so the follow-up turn must re-pass
     # the image; llama_cpp drops it on turn 2 instead.
+    cached(model)
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        QAIRT_VLM_MODEL,
-        device_map='npu',
+        model.id,
+        device_map=device_map,
     ) as vlm:
         history = [
             {
@@ -103,7 +144,7 @@ def test_vlm_multi_turn(qairt_vlm_paths, test_image):
             }
         ]
         prompt1 = vlm.tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=True)
-        out1 = vlm.generate(prompt1, max_new_tokens=16, temperature=0.0, seed=42, images=[test_image])
+        out1 = vlm.generate(prompt1, max_new_tokens=16, temperature=GREEDY_TEMPERATURE, seed=42, images=[test_image])
         assert out1.profile.prompt_tokens > 0
 
         history.append({'role': 'assistant', 'content': out1.text or '...'})
@@ -117,17 +158,19 @@ def test_vlm_multi_turn(qairt_vlm_paths, test_image):
             }
         )
         prompt2 = vlm.tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=True)
-        out2 = vlm.generate(prompt2, max_new_tokens=16, temperature=0.0, seed=42, images=[test_image])
+        out2 = vlm.generate(prompt2, max_new_tokens=16, temperature=GREEDY_TEMPERATURE, seed=42, images=[test_image])
         assert isinstance(out2, geniex.GenerateOutput)
         assert out2.profile.prompt_tokens > 0
 
 
 @pytest.mark.llm
-@pytest.mark.parametrize('device_map', ['npu'])
+@pytest.mark.parametrize(('model', 'device_map'), _LLM_MATRIX)
 @pytest.mark.parametrize(('prompt', 'expected'), LLM_QUALITY_PROMPTS)
-def test_llm_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
+def test_llm_quality_keywords(cached, model, device_map, prompt, expected):
+    cached(model)
+    budget = model.quality_max_new_tokens or LLM_QUALITY_MAX_NEW_TOKENS
     with geniex.AutoModelForCausalLM.from_pretrained(
-        QAIRT_LLM_MODEL,
+        model.id,
         device_map=device_map,
     ) as llm:
         formatted = llm.tokenizer.apply_chat_template(
@@ -138,19 +181,18 @@ def test_llm_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
         )
         out = llm.generate(
             formatted,
-            max_new_tokens=LLM_QUALITY_MAX_NEW_TOKENS,
-            temperature=LLM_QUALITY_TEMPERATURE,
+            max_new_tokens=budget,
+            temperature=GREEDY_TEMPERATURE,
             seed=LLM_QUALITY_SEED,
         )
         assert out.text, f'empty completion for prompt={prompt!r}'
-        # A think trace that eats the whole budget leaves a truncated answer
-        # stub, which reads as a missing keyword — report it as truncation.
-        assert (
-            out.profile.stop_reason != 'length'
-        ), f'completion truncated at {LLM_QUALITY_MAX_NEW_TOKENS} tokens: prompt={prompt!r} got={out.text!r}'
+        # Greedy decode can loop until the budget runs out, so `length` is only a
+        # problem when it truncated before the keyword appeared.
         matched = expected.lower() in out.text.lower()
         assert matched, (
-            f'prompt={prompt!r} expected_substring={expected!r} ' f'device_map={device_map!r} got={out.text!r}'
+            f'prompt={prompt!r} expected_substring={expected!r} '
+            f'model={model.id!r} device_map={device_map!r} '
+            f'stop_reason={out.profile.stop_reason!r} budget={budget} got={out.text!r}'
         )
 
 
@@ -159,7 +201,7 @@ def test_llm_quality_keywords(qairt_llm_paths, device_map, prompt, expected):
 def test_llm_logits_self_consistency(qairt_llm_paths, device_map):
     def _forward() -> tuple[list[list[tuple[int, float]]], list[float]]:
         with geniex.AutoModelForCausalLM.from_pretrained(
-            QAIRT_LLM_MODEL,
+            _LLM.id,
             device_map=device_map,
         ) as llm:
             top1_rows = llm.forward_logits(PARITY_INPUT_IDS, all_positions=True, top_n=1)
@@ -175,21 +217,22 @@ def test_llm_logits_self_consistency(qairt_llm_paths, device_map):
 
 
 @pytest.mark.vlm
-@pytest.mark.parametrize('device_map', ['npu'])
-def test_vlm_quality_keywords(qairt_vlm_paths, quality_image, device_map):
+@pytest.mark.parametrize(('model', 'device_map'), _VLM_MATRIX)
+def test_vlm_quality_keywords(cached, model, quality_image, device_map):
+    cached(model)
     with geniex.AutoModelForVision2Seq.from_pretrained(
-        QAIRT_VLM_MODEL,
+        model.id,
         device_map=device_map,
     ) as vlm:
         prompt = _vlm_prompt(vlm, quality_image, VLM_QUALITY_PROMPT)
         out = vlm.generate(
             prompt,
-            max_new_tokens=VLM_QUALITY_MAX_NEW_TOKENS,
-            temperature=VLM_QUALITY_TEMPERATURE,
+            max_new_tokens=model.quality_max_new_tokens or VLM_QUALITY_MAX_NEW_TOKENS,
+            temperature=GREEDY_TEMPERATURE,
             seed=VLM_QUALITY_SEED,
             images=[quality_image],
         )
-        assert out.text, f'empty caption for device_map={device_map!r}'
+        assert out.text, f'empty caption for model={model.id!r} device_map={device_map!r}'
         matched = any(kw in out.text.lower() for kw in VLM_QUALITY_KEYWORDS)
         assert matched, (
             f'caption did not match any expected keyword '
@@ -202,7 +245,7 @@ def test_vlm_quality_keywords(qairt_vlm_paths, quality_image, device_map):
 @pytest.mark.parametrize('device_map', ['npu'])
 def test_chat_template_roles_and_sentinels(qairt_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
-        QAIRT_LLM_MODEL,
+        _LLM.id,
         device_map=device_map,
     ) as llm:
         prompt = llm.tokenizer.apply_chat_template(
@@ -223,7 +266,7 @@ def test_chat_template_roles_and_sentinels(qairt_llm_paths, device_map):
 @pytest.mark.parametrize('device_map', ['npu'])
 def test_chat_template_enable_thinking(qairt_llm_paths, device_map):
     with geniex.AutoModelForCausalLM.from_pretrained(
-        QAIRT_LLM_MODEL,
+        _LLM.id,
         device_map=device_map,
     ) as llm:
         msgs = [{'role': 'user', 'content': 'hi'}]
@@ -253,7 +296,7 @@ def test_chat_template_tools_list_and_json_string_equivalent(qairt_llm_paths, de
     }
     msgs = [{'role': 'user', 'content': "what's the weather in Paris?"}]
     with geniex.AutoModelForCausalLM.from_pretrained(
-        QAIRT_LLM_MODEL,
+        _LLM.id,
         device_map=device_map,
     ) as llm:
         from_list = llm.tokenizer.apply_chat_template(msgs, tokenize=False, tools=[tool])

@@ -94,6 +94,35 @@ geniex infer ai-hub-models/Qwen2.5-VL-7B-Instruct-GGUF
 Describe this picture </full/path/to/image.png>
 ```
 
+## **`geniex model`**
+
+查看与重新配置已缓存的模型。
+
+### **`geniex model set-type`**
+
+覆盖缓存模型清单中记录的模型类型。省略类型参数时会进入交互式选择。
+
+```bash
+geniex model set-type <model-name> [llm|vlm]
+```
+
+类型决定 `geniex infer` 走哪条路径：`vlm` 会连同权重一起加载 mmproj 投影器并接受图像 / 音频输入，`llm` 只加载语言权重。把多模态 GGUF 强制设为 `llm`，就是在权重 + 投影器装不进内存的板子上只跑其文本路径的方法。
+
+```bash
+geniex model set-type google/gemma-4-E2B-it-qat-q4_0-gguf llm
+```
+
+<Note>`geniex pull --model-type llm <model>` 在下载时就写入同一字段，因此新拉取的模型无需再执行 `set-type`。</Note>
+
+### **`geniex model list`**
+
+列出带 `qairt`（NPU）构建的 Qualcomm AI Hub 模型。默认只列出与检测到的芯片兼容的模型，加 `--all` 可列出全部。
+
+```bash
+geniex model list
+geniex model list --all
+```
+
 ## **`geniex serve`**
 
 启动兼容 OpenAI 协议的本地服务器。API 详见[本地服务器](/cn/run/cli/local-server)。

@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//bindings/go:geniex_sdk_go",
         "//cli/internal/config",
+        "//cli/internal/render",
         "@com_github_bytedance_sonic//:sonic",
     ],
 )

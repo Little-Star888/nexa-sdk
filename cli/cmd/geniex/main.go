@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -27,9 +26,7 @@ var (
 	testMode   bool
 )
 
-// RootCmd creates the main GenieX CLI command with all subcommands.
-// It sets up the command tree structure for model management,
-// inference, and server operations.
+// RootCmd builds the CLI command tree.
 func RootCmd() *cobra.Command {
 	cobra.EnableCommandSorting = false
 
@@ -37,41 +34,60 @@ func RootCmd() *cobra.Command {
 		Use:           "geniex",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Re-apply now that --log is parsed; the main() call only saw GENIEX_LOG.
 			common.ApplyLogLevel()
 
-			subCmd := cmd.CalledAs()
+			// Cobra passes the leaf command being executed, so CalledAs() would
+			// yield `get` for `geniex config get`. "" is the bare `geniex`.
+			subCmd := ""
+			for c := cmd; c.HasParent(); c = c.Parent() {
+				if !c.Parent().HasParent() {
+					subCmd = c.Name()
+					break
+				}
+			}
 
 			// Skip ModelInit for commands that don't touch the model manager
 			if !slices.Contains([]string{
-				"geniex",
+				"",
+				"run", // pure HTTP client, no local store
 				"version", "update",
-				"help", "completion",
+				"help", "completion", cobra.ShellCompRequestCmd,
 			}, subCmd) {
 				s := store.Get()
 				if err := geniex_sdk.ModelInit(s.DataPath()); err != nil {
-					slog.Error("failed to initialize model manager", "err", err)
+					// Carrying on fails every later call as NOT_INITIALIZED.
+					return fmt.Errorf("initialize model manager at %s: %w", s.DataPath(), err)
 				}
 			}
 
 			if !skipUpdate {
-				// `update` fetches and prints the latest version itself; the
-				// cached notify banner would be redundant and possibly stale.
-				if subCmd != "update" {
+				// `update` prints the latest version itself; completion's
+				// stdout is parsed by the shell.
+				if !slices.Contains([]string{
+					"update",
+					"completion", cobra.ShellCompRequestCmd,
+				}, subCmd) {
 					notifyUpdate()
 				}
 				// skip network probe for quick commands
 				if !slices.Contains([]string{
-					"geniex",
-					"remove", "rm", "clean", "list", "ls", "model",
+					"",
+					"remove", "clean", "list", "model",
 					"config",
 					"version", "update",
-					"help", "completion",
+					"help", "completion", cobra.ShellCompRequestCmd,
 				}, subCmd) {
 					go checkUpdate()
 				}
 			}
+			return nil
+		},
+		// Mirrors the ModelInit above. Unchecked: the SDK's deinit is a no-op that
+		// never fails, the same reason Cobra skipping it on error is free.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			geniex_sdk.ModelDeinit()
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVer, _ := cmd.Flags().GetBool("version"); showVer {

@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +30,7 @@ var (
 	// disableStream *bool // reuse in run.go
 	ngl           int32
 	nctx          int32
+	ubatch        int32
 	maxTokens     int32
 	stop          []string
 	stopFile      string
@@ -157,12 +157,8 @@ func infer() *cobra.Command {
 			return err
 		}
 
-		// Host-aware default (e.g. RB3 Gen 2 → cpu) before resolution, so the
-		// --verbose line and any server request see the same alias.
-		var overridden bool
-		if computeUnit, overridden = config.ComputeDefault(computeUnit, store.Get().ResolveChipset(true)); overridden {
-			fmt.Println(render.GetTheme().Info.Sprintf("Defaulting to --compute %s for this device; pass --compute to override.", computeUnit))
-		}
+		// Runs before device resolution so --verbose and the SDK see the same alias.
+		computeUnit, ubatch = config.ChipsetDefaults(computeUnit, ubatch, store.Get().ResolveChipset(true))
 
 		effectiveType := paths.ModelType
 		if effectiveType == geniex_sdk.ModelTypeVLM && specType != "" {
@@ -190,17 +186,10 @@ func infer() *cobra.Command {
 	return inferCmd
 }
 
-// ensureModelAvailable resolves a model's on-disk paths, pulling it first if
-// it isn't cached. The optional quant selects a specific precision; when empty
-// the SDK picks the default downloaded one.
+// ensureModelAvailable resolves a model's on-disk paths, pulling it first if it
+// isn't cached. An empty quant lets the SDK pick among the downloaded ones.
 func ensureModelAvailable(ctx context.Context, name, quant string) (*geniex_sdk.ModelPaths, error) {
-	key := name
-	if quant != "" {
-		key = name + ":" + quant
-		if err := checkPrecisionDownloaded(name, quant); err != nil {
-			return nil, err
-		}
-	}
+	key := geniex_sdk.JoinNamePrecision(name, quant)
 	paths, err := geniex_sdk.ModelGetPaths(key)
 	if geniex_sdk.IsModelNotFound(err) {
 		fmt.Println(render.GetTheme().Info.Sprintf("Model is not currently cached, downloading..."))
@@ -209,30 +198,18 @@ func ensureModelAvailable(ctx context.Context, name, quant string) (*geniex_sdk.
 		}
 		paths, err = geniex_sdk.ModelGetPaths(key)
 	}
+	// A cached model missing that precision fails as a generic invalid input;
+	// name the cached ones so ErrPrecisionNotFound's hint reaches the user.
+	if err != nil && quant != "" {
+		if m, detailErr := geniex_sdk.ModelGetDetailed(name); detailErr == nil {
+			// Nothing to name (qairt reports only N/A): the SDK's error stands.
+			if precisions := downloadedPrecisions(*m, true); len(precisions) > 0 {
+				return nil, fmt.Errorf("%w: %s has %s, not %q",
+					common.ErrPrecisionNotFound, name, strings.Join(precisions, ", "), quant)
+			}
+		}
+	}
 	return paths, err
-}
-
-// checkPrecisionDownloaded reports ErrPrecisionNotFound when a cached model has
-// no such precision, so the sentinel's hint (list / pull / drop the suffix)
-// reaches the user instead of the SDK's generic invalid-input error. A model
-// that isn't cached at all passes: the caller pulls it.
-func checkPrecisionDownloaded(name, quant string) error {
-	m, err := geniex_sdk.ModelGetDetailed(name)
-	if err != nil {
-		return nil
-	}
-	precisions := downloadedPrecisions(*m, true)
-	// Nothing to match against (a runtime like qairt reports only N/A), so let
-	// the SDK judge the key.
-	if len(precisions) == 0 {
-		return nil
-	}
-	// GGUF quant labels are matched case-insensitively by the SDK.
-	if slices.ContainsFunc(precisions, func(p string) bool { return strings.EqualFold(p, quant) }) {
-		return nil
-	}
-	return fmt.Errorf("%w: %s has %s, not %q",
-		common.ErrPrecisionNotFound, name, strings.Join(precisions, ", "), quant)
 }
 
 // pickCachedPrecision asks which of a cached model's downloaded precisions to
@@ -247,35 +224,17 @@ func pickCachedPrecision(name string) (string, error) {
 		return "", nil
 	}
 
-	// ModelGetPaths on the bare name resolves the SDK's own pick; choosePrecision
-	// pre-selects the head, so that pick has to land there.
-	def, err := geniex_sdk.ModelGetPaths(name)
-	if err != nil {
-		return "", err
-	}
-	// Size is left unset: ModelDetail.TotalSize aggregates every downloaded
-	// precision, and the SDK does not expose the per-precision figure its
-	// manifest already holds.
+	// The head is a bare name's own pick, which choosePrecision pre-selects.
+	// Size stays unset: the SDK exposes no per-precision figure.
 	candidates := make([]geniex_sdk.PrecisionCandidate, len(precisions))
-	head := 0
 	for i, p := range precisions {
 		candidates[i].Precision = p
-		mp, err := geniex_sdk.ModelGetPaths(name + ":" + p)
-		if err != nil {
-			continue
-		}
-		if mp.ModelPath == def.ModelPath {
-			head = i
-		}
 	}
-	candidates[0], candidates[head] = candidates[head], candidates[0]
-
 	return choosePrecision("Select a precision from local folder", candidates)
 }
 
-// resolveDraftModel maps a --draft-model value to a GGUF path the SDK can load.
-// An existing local file is used as-is; anything else is treated as a catalogue
-// name and resolved (pulling if needed) like the main model.
+// resolveDraftModel maps a --draft-model value to a GGUF path: an existing local
+// file as-is, anything else a catalogue name resolved like the main model.
 func resolveDraftModel(ctx context.Context, draft string) (string, error) {
 	if _, err := os.Stat(draft); err == nil {
 		return draft, nil
@@ -334,9 +293,8 @@ func loadStopSequences() ([]string, error) {
 	return stopSequences, nil
 }
 
-// modelLoadedLine summarizes the loaded session for --verbose. compute echoes
-// the user alias, not the SDK's device_id (cpu/hybrid resolve to an empty one).
-// Mirrors geniex_resolve_device: empty/"auto" and qairt → npu.
+// modelLoadedLine summarizes the loaded session for --verbose. compute echoes the
+// user alias (cpu/hybrid have no device_id); like the SDK, qairt/auto/"" → npu.
 func modelLoadedLine(runtimeID, computeUnit string, ngl, nctx int32) string {
 	computeUnit = strings.ToLower(strings.TrimSpace(computeUnit))
 	if runtimeID == geniex_sdk.RuntimeQairt || computeUnit == "" || computeUnit == "auto" {
@@ -355,11 +313,9 @@ func modelLoadedLine(runtimeID, computeUnit string, ngl, nctx int32) string {
 	return "Model loaded: " + strings.Join(parts, " ")
 }
 
-// resolveModelParams resolves --compute / --ngl / --nctx into the
-// (device_id, ngl, nctx) triple the SDK expects. --ngl (-1 = all) and
-// --nctx are llama_cpp-only; qairt rejects any non-zero value, so both
-// are zeroed for it (the SDK also forces ngl to 0). Compute-unit alias
-// mapping is delegated to geniex_resolve_device (sdk/src/device.cpp).
+// resolveModelParams resolves --compute / --ngl / --nctx into the SDK's
+// (device_id, ngl, nctx) triple. Both are llama_cpp-only: nctx is zeroed for
+// qairt here, ngl by geniex_resolve_device, which also maps the compute alias.
 func resolveModelParams(runtimeID, modelName string) (deviceID string, resolvedNgl, resolvedNctx int32, err error) {
 	resolvedNgl, resolvedNctx = ngl, nctx
 	if runtimeID != geniex_sdk.RuntimeLlamaCpp {
@@ -434,6 +390,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 		DeviceID:  deviceID,
 		Config: geniex_sdk.ModelConfig{
 			NCtx:           nctxResolved,
+			NUbatch:        ubatch,
 			NGpuLayers:     nglResolved,
 			SpecType:       resolvedSpecType,
 			SpecDraftModel: specDraftModel,
@@ -596,6 +553,7 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 		DeviceID:   deviceID,
 		Config: geniex_sdk.ModelConfig{
 			NCtx:       nctxResolved,
+			NUbatch:    ubatch,
 			NGpuLayers: nglResolved,
 		},
 	})

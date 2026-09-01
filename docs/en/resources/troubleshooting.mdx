@@ -129,6 +129,24 @@ import Feedback from "/snippets/page-feedback.mdx";
 
     If the CPU-only build still fails, report it in [GitHub Issues](https://github.com/qualcomm/GenieX/issues) or Slack with the output above.
   </Accordion>
+
+  <Accordion title="Gemma 4 E2B is OOM-killed on RB3 Gen 2 (QCS6490)">
+    As a VLM the model needs ~4.94 GB — 3.04 GB of `Q4_0` weights plus a 1.9 GB F32 mmproj projector — against the ~4.7 GB this board has available, so the kernel kills the process while the projector loads:
+
+    ```text
+    Out of memory: Killed process 19714 (geniex) total-vm:7849464kB, anon-rss:0kB, file-rss:771016kB
+    ```
+
+    Record the model as an `llm` to run its **text path** only — that skips the projector and fits. Image and audio input are unavailable in this mode.
+
+    ```bash bash
+    geniex pull google/gemma-4-E2B-it-qat-q4_0-gguf
+    geniex model set-type google/gemma-4-E2B-it-qat-q4_0-gguf llm
+    geniex infer google/gemma-4-E2B-it-qat-q4_0-gguf
+    ```
+
+    See [`geniex model set-type`](/en/run/cli/reference#geniex-model-set-type).
+  </Accordion>
 </AccordionGroup>
 
 ## **Android**

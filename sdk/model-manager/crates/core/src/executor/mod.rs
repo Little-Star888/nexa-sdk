@@ -78,6 +78,25 @@ fn env_usize(key: &str) -> Option<usize> {
         .filter(|v| *v > 0)
 }
 
+#[derive(Clone)]
+struct StopSignals {
+    user: CancellationToken,
+    failed: CancellationToken,
+}
+
+impl StopSignals {
+    fn new() -> Self {
+        Self {
+            user: CancellationToken::new(),
+            failed: CancellationToken::new(),
+        }
+    }
+
+    fn halt_new_work(&self) -> bool {
+        self.user.is_cancelled() || self.failed.is_cancelled()
+    }
+}
+
 struct FileState {
     name: String,
     total_bytes: AtomicU64,
@@ -140,7 +159,7 @@ impl Executor {
             })
             .collect();
 
-        let cancel = CancellationToken::new();
+        let stop = StopSignals::new();
         let file_sem = Arc::new(Semaphore::new(self.cfg.file_concurrency));
         let chunk_sem = Arc::new(Semaphore::new(self.cfg.chunk_concurrency));
 
@@ -153,13 +172,13 @@ impl Executor {
             let chunk_sem = chunk_sem.clone();
             let transport = transport.clone();
             let dest_dir = dest_owned.clone();
-            let cancel = cancel.clone();
+            let stop = stop.clone();
             file_tasks.spawn(async move {
                 let _permit = file_sem
                     .acquire_owned()
                     .await
                     .map_err(|e| Error::Http(format!("file semaphore closed: {e}")))?;
-                run_one(spec, state, &dest_dir, transport, chunk_sem, cancel).await
+                run_one(spec, state, &dest_dir, transport, chunk_sem, stop).await
             });
         }
 
@@ -176,11 +195,11 @@ impl Executor {
                         None => break,
                         Some(Ok(Ok(()))) => {}
                         Some(Ok(Err(e))) => {
-                            cancel.cancel();
+                            stop.failed.cancel();
                             first_err.get_or_insert(e);
                         }
                         Some(Err(join_err)) => {
-                            cancel.cancel();
+                            stop.failed.cancel();
                             first_err.get_or_insert(Error::Http(format!("join: {join_err}")));
                         }
                     }
@@ -190,7 +209,7 @@ impl Executor {
                         let snaps: Vec<FileProgress> =
                             states.iter().map(|s| s.snapshot()).collect();
                         if !(cb)(&snaps) {
-                            cancel.cancel();
+                            stop.user.cancel();
                         }
                     }
                 }
@@ -205,7 +224,7 @@ impl Executor {
         if let Some(e) = first_err {
             return Err(e);
         }
-        if cancel.is_cancelled() {
+        if stop.user.is_cancelled() {
             return Err(Error::Cancelled);
         }
         Ok(())
@@ -218,7 +237,7 @@ async fn run_one(
     dest_dir: &Path,
     transport: Arc<dyn HttpTransport>,
     chunk_sem: Arc<Semaphore>,
-    cancel: CancellationToken,
+    stop: StopSignals,
 ) -> Result<()> {
     match spec.bytes.clone() {
         BytesSource::Http { url, auth } => {
@@ -229,7 +248,7 @@ async fn run_one(
                     state,
                     transport,
                     chunk_sem,
-                    cancel,
+                    stop,
                     url,
                     auth,
                     base_offset: 0,
@@ -253,7 +272,7 @@ async fn run_one(
                     state,
                     transport,
                     chunk_sem,
-                    cancel,
+                    stop,
                     url,
                     auth,
                     base_offset: offset,
@@ -277,7 +296,7 @@ async fn run_one(
                     offset,
                     state,
                     transport,
-                    cancel,
+                    stop,
                     url,
                     auth,
                 },
@@ -447,7 +466,7 @@ struct RangeJob {
     state: Arc<FileState>,
     transport: Arc<dyn HttpTransport>,
     chunk_sem: Arc<Semaphore>,
-    cancel: CancellationToken,
+    stop: StopSignals,
     url: url::Url,
     auth: Option<String>,
     /// Added to every range request. `Http` uses 0; `HttpRange` uses the
@@ -466,7 +485,7 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
         state,
         transport,
         chunk_sem,
-        cancel,
+        stop,
         url,
         auth,
         base_offset,
@@ -497,7 +516,7 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
 
     let mut chunk_tasks: JoinSet<Result<()>> = JoinSet::new();
     for range in pending {
-        if cancel.is_cancelled() {
+        if stop.halt_new_work() {
             break;
         }
         let sem = chunk_sem.clone();
@@ -507,15 +526,18 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
         let output_path = output_path.clone();
         let marker_path = marker_path.clone();
         let state = state.clone();
-        let cancel = cancel.clone();
+        let stop = stop.clone();
         chunk_tasks.spawn(async move {
-            if cancel.is_cancelled() {
+            if stop.halt_new_work() {
                 return Err(Error::Cancelled);
             }
             let _permit = sem
                 .acquire_owned()
                 .await
                 .map_err(|e| Error::Http(format!("chunk semaphore closed: {e}")))?;
+            if stop.halt_new_work() {
+                return Err(Error::Cancelled);
+            }
 
             let mut file = OpenOptions::new()
                 .write(true)
@@ -534,7 +556,7 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
             );
             tokio::select! {
                 biased;
-                _ = cancel.cancelled() => return Err(Error::Cancelled),
+                _ = stop.user.cancelled() => return Err(Error::Cancelled),
                 res = fetch => res?,
             }
             drop(counted);
@@ -551,11 +573,11 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
         match res {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                cancel.cancel();
+                stop.failed.cancel();
                 first_err.get_or_insert(e);
             }
             Err(join_err) => {
-                cancel.cancel();
+                stop.failed.cancel();
                 first_err.get_or_insert(Error::Http(format!("chunk join: {join_err}")));
             }
         }
@@ -564,7 +586,7 @@ async fn download_range_based(job: RangeJob, dest_dir: &Path) -> Result<()> {
     if let Some(e) = first_err {
         return Err(e);
     }
-    if cancel.is_cancelled() {
+    if stop.user.is_cancelled() {
         return Err(Error::Cancelled);
     }
     Ok(())
@@ -578,7 +600,7 @@ struct DeflateJob {
     offset: u64,
     state: Arc<FileState>,
     transport: Arc<dyn HttpTransport>,
-    cancel: CancellationToken,
+    stop: StopSignals,
     url: url::Url,
     auth: Option<String>,
 }
@@ -595,7 +617,7 @@ async fn download_http_deflate(job: DeflateJob, dest_dir: &Path) -> Result<()> {
         offset,
         state,
         transport,
-        cancel,
+        stop,
         url,
         auth,
     } = job;
@@ -624,7 +646,7 @@ async fn download_http_deflate(job: DeflateJob, dest_dir: &Path) -> Result<()> {
         }
     }
 
-    if cancel.is_cancelled() {
+    if stop.halt_new_work() {
         return Err(Error::Cancelled);
     }
 
@@ -650,12 +672,12 @@ async fn download_http_deflate(job: DeflateJob, dest_dir: &Path) -> Result<()> {
             transport.get_range(&url, auth.as_deref(), offset, compressed_len, &mut counted);
         tokio::select! {
             biased;
-            _ = cancel.cancelled() => return Err(Error::Cancelled),
+            _ = stop.user.cancelled() => return Err(Error::Cancelled),
             res = fetch => res?,
         }
     }
 
-    if cancel.is_cancelled() {
+    if stop.user.is_cancelled() {
         return Err(Error::Cancelled);
     }
 

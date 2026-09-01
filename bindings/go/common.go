@@ -97,11 +97,11 @@ func freeSamplerConfig(cPtr *C.geniex_SamplerConfig) {
 // LCOV_EXCL_STOP
 
 type GenerationConfig struct {
-	MaxTokens      int32
-	Stop           []string
-	SamplerConfig  *SamplerConfig
-	ImagePaths     []string
-	AudioPaths     []string
+	MaxTokens     int32
+	Stop          []string
+	SamplerConfig *SamplerConfig
+	ImagePaths    []string
+	AudioPaths    []string
 
 	// Opt-in ring-buffer context eviction (qairt only).
 	SlidingWindow      bool

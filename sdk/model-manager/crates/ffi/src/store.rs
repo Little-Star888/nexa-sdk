@@ -4,6 +4,7 @@
 use std::os::raw::c_char;
 
 use model_manager_core::manifest::{ModelManifest, ModelType};
+use model_manager_core::manifest_builder::quant_sort_key;
 
 use crate::init::get_store;
 use crate::types::*;
@@ -96,13 +97,16 @@ pub unsafe extern "C" fn geniex_model_paths_free(paths: *mut GenieXModelPaths) {
 /// Build the C view of one manifest: every heap member is owned by the caller
 /// and reclaimed by [`free_detail`].
 fn detail_from_manifest(m: &ModelManifest) -> GenieXModelDetail {
-    let downloaded = m
+    // model_file is a HashMap: its iteration order is reshuffled on every parse.
+    let mut downloaded: Vec<&str> = m
         .model_file
         .iter()
         .filter(|(_, fi)| fi.downloaded)
-        .map(|(q, _)| str_to_cptr(q))
+        .map(|(q, _)| q.as_str())
         .collect();
-    let (precisions, precision_count) = into_c_array(downloaded);
+    downloaded.sort_by(|a, b| quant_sort_key(a).cmp(&quant_sort_key(b)));
+    let (precisions, precision_count) =
+        into_c_array(downloaded.into_iter().map(str_to_cptr).collect());
     GenieXModelDetail {
         name: str_to_cptr(&m.name),
         model_name: str_to_cptr(&m.model_name),
@@ -282,4 +286,59 @@ pub unsafe extern "C" fn geniex_model_list_detailed_free(
     }
     o.models = std::ptr::null_mut();
     o.count = 0;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use model_manager_core::manifest::ModelFileInfo;
+    use std::collections::HashMap;
+    use std::ffi::CStr;
+
+    fn downloaded(name: &str) -> ModelFileInfo {
+        ModelFileInfo {
+            name: name.to_string(),
+            downloaded: true,
+            size: 1,
+        }
+    }
+
+    /// Bindings hand this order to callers: stable, headed by the bare-name pick.
+    #[test]
+    fn detail_reports_precisions_in_store_priority_order() {
+        let mut model_file = HashMap::new();
+        model_file.insert("IQ4_XS".to_string(), downloaded("m-IQ4_XS.gguf"));
+        model_file.insert("Q8_0".to_string(), downloaded("m-Q8_0.gguf"));
+        model_file.insert("Q4_K_M".to_string(), downloaded("m-Q4_K_M.gguf"));
+        model_file.insert(
+            "Q4_0".to_string(),
+            ModelFileInfo {
+                name: "m-Q4_0.gguf".to_string(),
+                downloaded: false,
+                size: 1,
+            },
+        );
+        let m = ModelManifest {
+            name: "Org/Repo".to_string(),
+            model_name: "test-1b".to_string(),
+            model_type: ModelType::Llm,
+            plugin_id: "llama_cpp".to_string(),
+            precision: String::new(),
+            model_file,
+            mmproj_file: ModelFileInfo::default(),
+            tokenizer_file: ModelFileInfo::default(),
+            extra_files: vec![],
+        };
+
+        let mut d = detail_from_manifest(&m);
+        let got: Vec<String> = unsafe {
+            std::slice::from_raw_parts(d.precisions, d.precision_count as usize)
+                .iter()
+                .map(|p| CStr::from_ptr(*p).to_string_lossy().into_owned())
+                .collect()
+        };
+        // Q4_0 is filtered out (not downloaded), the unlisted IQ4_XS lands last.
+        assert_eq!(got, vec!["Q4_K_M", "Q8_0", "IQ4_XS"]);
+        unsafe { free_detail(&mut d) };
+    }
 }

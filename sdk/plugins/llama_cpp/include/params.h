@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include "chat.h"          // common_chat_msg
 #include "common.h"        // common_params_sampling
 #include "geniex.h"        // geniex_ModelConfig
 #include "ggml-backend.h"  // ggml_backend_dev_t
@@ -33,11 +34,12 @@ Device classify_device(const char* device_id, int n_gpu_layers);
 
 // Map a caller's config to llama params, filling each unset (0) field from the
 // plugin defaults. build_context_params resolves n_ctx (default differs between
-// LLM at 4096 and VLM at 16384) plus n_batch / n_ubatch / n_seq_max, and picks
-// thread counts via the per-(platform, device) rule (offloaded inference pins
-// the upstream-fixed count; pure CPU uses cores/2). build_model_params only
-// reads n_gpu_layers. Device selection and tensor-buffer overrides stay at the
-// call site.
+// LLM at 4096 and VLM at 16384) plus n_batch / n_ubatch / n_seq_max, and defaults
+// n_threads / n_threads_batch to common_cpu_get_num_math() regardless of device —
+// matching upstream llama-bench/llama-cli, which never vary thread count by
+// backend. Callers may still override via ModelConfig's n_threads/n_threads_batch.
+// build_model_params only reads n_gpu_layers. Device selection and tensor-buffer
+// overrides stay at the call site.
 //
 // spec is the parsed speculative config (nullptr when disabled, and always
 // nullptr for the draft context itself): a target context that drafts needs
@@ -57,5 +59,12 @@ std::optional<common_params_speculative> build_speculative_params(const geniex_M
 // accepts.
 ggml_threadpool_params build_threadpool_params(int n_threads, Device device);
 common_params_sampling build_sampling_params(const geniex_SamplerConfig* cfg);
+
+// Copy the FFI tool-calling fields of a chat message onto a common_chat_msg.
+// Templates need tool_calls structurally, not as assistant text: most render a
+// "tool" message only from the tool_calls of the assistant turn before it
+// (matched by id), so dropping them drops the tool result from the prompt.
+void apply_tool_fields(common_chat_msg& msg, const geniex_ToolCall* tool_calls, int32_t tool_call_count,
+    const char* tool_call_id, const char* tool_name);
 
 }  // namespace geniex

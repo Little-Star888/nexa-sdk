@@ -11,17 +11,13 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
-	"github.com/qualcomm/GenieX/cli/internal/store"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
 )
 
-// ForwardLogitsRequest is the body for POST /v1/logits.
-//
-// This is a prefill-only forward pass (raw logits), not the OpenAI generative
-// logprobs semantics: the model runs one non-autoregressive pass over the input
-// and returns the raw LM-head logits. Input is pre-tokenized (InputIDs); the
-// server has no public tokenizer to accept text here.
+// ForwardLogitsRequest is the body for POST /v1/logits: one prefill-only forward
+// pass returning raw LM-head logits, not OpenAI's generative logprobs. Input is
+// pre-tokenized — the server has no public tokenizer to accept text.
 type ForwardLogitsRequest struct {
 	Model    string  `json:"model"`
 	InputIDs []int32 `json:"input_ids"`
@@ -40,10 +36,9 @@ type ForwardLogitsRequest struct {
 
 const defaultLogitsTopN = 20
 
-// ForwardLogitsResponse carries the per-position rows. Each row is top-N
-// [token_id, logit] pairs sorted by descending logit (like geniex-bench). When
-// top_n is 0 each row is the full vocabulary, ordered by token id, and token id
-// is the column index — TokenIDs is then omitted.
+// ForwardLogitsResponse carries the per-position rows: top-N [token_id, logit]
+// pairs by descending logit (like geniex-bench). With top_n 0 a row is the full
+// vocabulary indexed by token id, and TokenIDs is omitted.
 type ForwardLogitsResponse struct {
 	Model     string       `json:"model"`
 	NRows     int          `json:"n_rows"`
@@ -72,25 +67,18 @@ func ForwardLogits(c *gin.Context) {
 		return
 	}
 
-	name, _ := geniex_sdk.SplitNamePrecision(req.Model)
-	modelType, err := geniex_sdk.ModelGetType(name)
-	if err != nil {
-		slog.Error("Failed to get model type", "model", req.Model, "error", err)
-		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
-	if modelType != geniex_sdk.ModelTypeLLM {
-		c.JSON(http.StatusBadRequest, map[string]any{"error": "logits is only supported for LLM models"})
-		return
-	}
-	paths, err := geniex_sdk.ModelGetPaths(name)
+	paths, err := geniex_sdk.ModelGetPaths(req.Model)
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
+	if paths.ModelType != geniex_sdk.ModelTypeLLM {
+		c.JSON(http.StatusBadRequest, map[string]any{"error": "logits is only supported for LLM models"})
+		return
+	}
 
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, store.Get().ResolveChipset(true), types.SpecParam{})
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, service.Chipset(), types.SpecParam{})
 	if err != nil {
 		slog.Error("Failed to resolve model params", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})

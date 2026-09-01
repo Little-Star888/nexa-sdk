@@ -1,37 +1,74 @@
 # Copyright 2024-2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Test-model identifiers, loaded from ``tests/models.json``."""
+"""Test-model matrix, loaded from ``tests/models.json`` (or ``GENIEX_TEST_MODELS``)."""
 
 from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
-_MANIFEST_PATH = Path(__file__).with_name('models.json')
+import pytest
 
 
-def _pick(entry: dict, field: str = 'id') -> str | None:
-    if field == 'id':
-        env = entry.get('env_override')
-        if env:
-            override = os.environ.get(env)
-            if override:
-                return override
-    return entry.get(field)
+@dataclass(frozen=True)
+class TestModel:
+    role: str
+    id: str
+    precision: str | None
+    hub: str
+    devices: tuple[str, ...]
+    quality_max_new_tokens: int | None
+
+    @property
+    def short_name(self) -> str:
+        return self.id.rsplit('/', 1)[-1]
 
 
-with _MANIFEST_PATH.open(encoding='utf-8') as _f:
-    _MODELS = json.load(_f)['models']
+def _manifest_path() -> Path:
+    override = os.environ.get('GENIEX_TEST_MODELS')
+    return Path(override) if override else Path(__file__).with_name('models.json')
 
-LLAMA_CPP_LLM_MODEL = _pick(_MODELS['llama_cpp_llm'])
-LLAMA_CPP_LLM_PRECISION = _pick(_MODELS['llama_cpp_llm'], 'precision')
-LLAMA_CPP_VLM_MODEL = _pick(_MODELS['llama_cpp_vlm'])
-LLAMA_CPP_VLM_PRECISION = _pick(_MODELS['llama_cpp_vlm'], 'precision')
-LLAMA_CPP_MTP_TARGET_MODEL = _pick(_MODELS['llama_cpp_mtp_target'])
-LLAMA_CPP_MTP_TARGET_PRECISION = _pick(_MODELS['llama_cpp_mtp_target'], 'precision')
-LLAMA_CPP_MTP_DRAFT_MODEL = _pick(_MODELS['llama_cpp_mtp_draft'])
-LLAMA_CPP_MTP_DRAFT_PRECISION = _pick(_MODELS['llama_cpp_mtp_draft'], 'precision')
-QAIRT_LLM_MODEL = _pick(_MODELS['qairt_llm'])
-QAIRT_VLM_MODEL = _pick(_MODELS['qairt_vlm'])
+
+def _load() -> dict[str, tuple[TestModel, ...]]:
+    with _manifest_path().open(encoding='utf-8') as f:
+        raw = json.load(f)['models']
+    roles: dict[str, tuple[TestModel, ...]] = {}
+    for role, entries in raw.items():
+        models = []
+        for entry in entries:
+            env = entry.get('env_override')
+            override = os.environ.get(env) if env else None
+            models.append(
+                TestModel(
+                    role=role,
+                    id=override or entry['id'],
+                    precision=entry.get('precision'),
+                    hub=entry.get('hub', 'auto'),
+                    devices=tuple(entry['devices']),
+                    quality_max_new_tokens=entry.get('quality_max_new_tokens'),
+                )
+            )
+        roles[role] = tuple(models)
+    return roles
+
+
+MODELS = _load()
+
+
+def primary(role: str) -> TestModel:
+    return MODELS[role][0]
+
+
+def matrix(role: str) -> list:
+    return [
+        pytest.param(model, device, id=f'{model.short_name}-{device}')
+        for model in MODELS[role]
+        for device in model.devices
+    ]
+
+
+def pull_cells(*roles: str) -> list:
+    return [pytest.param(model, id=model.short_name) for role in roles for model in MODELS[role]]

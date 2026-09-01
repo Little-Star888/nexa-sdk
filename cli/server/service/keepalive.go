@@ -29,11 +29,7 @@ func resolveDraftModelPath(draft string) (string, error) {
 		return draft, nil
 	}
 	name, precision := geniex_sdk.SplitNamePrecision(draft)
-	key := name
-	if precision != "" {
-		key = name + ":" + precision
-	}
-	paths, err := geniex_sdk.ModelGetPaths(key)
+	paths, err := geniex_sdk.ModelGetPaths(geniex_sdk.JoinNamePrecision(name, precision))
 	if err != nil {
 		return "", fmt.Errorf("resolve draft model %q: %w", draft, err)
 	}
@@ -51,13 +47,9 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 		nctx = 0
 	}
 
-	// Host-aware default (e.g. RB3 Gen 2 → cpu) before the SDK's npu fallback.
-	// chipset is resolved by the caller (offline) so this stays store-free.
-	if resolved, overridden := config.ComputeDefault(reqCompute, chipset); overridden {
-		slog.Info("applied host-aware compute default", "compute", resolved)
-		fmt.Println(render.GetTheme().Info.Sprintf("Defaulting to compute %s for this device.", resolved))
-		reqCompute = resolved
-	}
+	// Runs before the SDK's npu fallback; chipset comes from the caller so this
+	// stays store-free. Ubatch stays 0: ModelParam has no n_ubatch to key on.
+	reqCompute, _ = config.ChipsetDefaults(reqCompute, 0, chipset)
 
 	resolved, err := geniex_sdk.ResolveDevice(geniex_sdk.ResolveDeviceInput{
 		RuntimeID:   runtimeID,

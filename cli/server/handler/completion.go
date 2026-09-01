@@ -17,7 +17,6 @@ import (
 
 	geniex_sdk "github.com/qualcomm/GenieX/bindings/go"
 	"github.com/qualcomm/GenieX/cli/internal/config"
-	"github.com/qualcomm/GenieX/cli/internal/store"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
 )
@@ -97,9 +96,8 @@ func completionUnsupported(p CompletionNewParams) error {
 	}
 }
 
-// Completions serves POST /v1/completions. The prompt is passed to the model
-// verbatim — no chat template — so clients that build their own prompt (e.g.
-// editor FIM autocompletion) get a raw continuation back.
+// Completions serves POST /v1/completions: the prompt reaches the model verbatim
+// — no chat template — so FIM-style clients get a raw continuation back.
 func Completions(c *gin.Context) {
 	req := defaultCompletionRequest()
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -119,25 +117,18 @@ func Completions(c *gin.Context) {
 		return
 	}
 
-	name, _ := geniex_sdk.SplitNamePrecision(string(req.Model))
-	modelType, err := geniex_sdk.ModelGetType(name)
-	if err != nil {
-		slog.Error("Failed to get model type", "model", req.Model, "error", err)
-		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
-	if modelType != geniex_sdk.ModelTypeLLM {
-		c.JSON(http.StatusBadRequest, map[string]any{"error": "completions is only supported for LLM models"})
-		return
-	}
-	paths, err := geniex_sdk.ModelGetPaths(name)
+	paths, err := geniex_sdk.ModelGetPaths(string(req.Model))
 	if err != nil {
 		slog.Error("Failed to resolve model paths", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
+	if paths.ModelType != geniex_sdk.ModelTypeLLM {
+		c.JSON(http.StatusBadRequest, map[string]any{"error": "completions is only supported for LLM models"})
+		return
+	}
 
-	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, store.Get().ResolveChipset(true), types.SpecParam{})
+	modelParam, err := service.ResolveModelParam(paths.RuntimeID, paths.ModelName, req.NCtx, req.Ngl, req.Compute, service.Chipset(), types.SpecParam{})
 	if err != nil {
 		slog.Error("Failed to resolve model params", "model", req.Model, "error", err)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
@@ -224,9 +215,8 @@ func Completions(c *gin.Context) {
 			PromptUTF8: prompt,
 			Config:     genConfig,
 		})
-		// A prompt that never fit is a client error (400). A window exhausted
-		// mid-generation is a normal truncated completion (finish_reason=length),
-		// so it falls through to the regular response below.
+		// A prompt that never fit is a 400; a window exhausted mid-generation is a
+		// normal truncated completion (finish_reason=length), handled below.
 		if errors.Is(err, geniex_sdk.ErrLlmGenerationPromptTooLong) {
 			writeCompletionPromptTooLong(c, out.ProfileData)
 			return
@@ -287,9 +277,8 @@ func streamCompletion(c *gin.Context, dataCh <-chan string, wait func() error, i
 			c.SSEvent("", completionTextChunk(r))
 			return true
 		}
-		// A context window exhausted mid-stream is a normal truncated completion
-		// (finish_reason=length): fall through to the finish chunk. Other errors
-		// (including a too-long prompt) are surfaced as an error event.
+		// A context window exhausted mid-stream is a normal truncated completion:
+		// fall through to the finish chunk. Other errors become an error event.
 		if err := wait(); err != nil && !errors.Is(err, geniex_sdk.ErrLlmTokenizationContextLength) {
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false

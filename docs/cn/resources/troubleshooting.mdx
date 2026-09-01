@@ -115,6 +115,24 @@ import Feedback from "/snippets/page-feedback.mdx";
 
     若 CPU-only 版本仍然失败，请带上以上输出到 [GitHub Issues](https://github.com/qualcomm/GenieX/issues) 或 Slack 反馈。
   </Accordion>
+
+  <Accordion title="Gemma 4 E2B 在 RB3 Gen 2（QCS6490）上被 OOM 杀掉">
+    该模型按 VLM 加载需要约 4.94 GB——3.04 GB 的 `Q4_0` 权重加上 1.9 GB 的 F32 mmproj 投影器——而这块板子可用内存约 4.7 GB，因此内核会在加载投影器时杀掉进程：
+
+    ```text
+    Out of memory: Killed process 19714 (geniex) total-vm:7849464kB, anon-rss:0kB, file-rss:771016kB
+    ```
+
+    把模型记录为 `llm`，只跑其**文本路径**——这会跳过投影器，内存即可容纳。此模式下无法使用图像与音频输入。
+
+    ```bash bash
+    geniex pull google/gemma-4-E2B-it-qat-q4_0-gguf
+    geniex model set-type google/gemma-4-E2B-it-qat-q4_0-gguf llm
+    geniex infer google/gemma-4-E2B-it-qat-q4_0-gguf
+    ```
+
+    参见 [`geniex model set-type`](/cn/run/cli/reference#geniex-model-set-type)。
+  </Accordion>
 </AccordionGroup>
 
 ## **Android**
