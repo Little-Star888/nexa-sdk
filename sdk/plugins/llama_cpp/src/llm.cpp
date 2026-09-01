@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <sstream>
 #include <vector>
 
@@ -216,7 +215,7 @@ int32_t LlamaLlm::apply_chat_template(
     inputs.add_generation_prompt = input->add_generation_prompt;
 
     if (input->tools && strlen(input->tools) > 0) {
-        inputs.tools = common_chat_tools_parse_oaicompat(nlohmann::ordered_json::parse(std::string(input->tools)));
+        inputs.tools = common_chat_tools_parse_oaicompat(common_json::parse(std::string(input->tools)));
     }
 
     inputs.enable_thinking = input->enable_thinking;

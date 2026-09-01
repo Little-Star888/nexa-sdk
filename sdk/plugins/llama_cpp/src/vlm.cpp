@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <nlohmann/json.hpp>
 
 #include "chat.h"
 #include "common.h"
@@ -168,7 +167,7 @@ int32_t LlamaVlm::apply_chat_template(
     tmpl_inputs.add_generation_prompt = true;
     tmpl_inputs.use_jinja             = true;
     if (input->tools && strlen(input->tools) > 0) {
-        tmpl_inputs.tools = common_chat_tools_parse_oaicompat(nlohmann::ordered_json::parse(std::string(input->tools)));
+        tmpl_inputs.tools = common_chat_tools_parse_oaicompat(common_json::parse(std::string(input->tools)));
     }
 
     if (input->enable_thinking) {
@@ -228,9 +227,9 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
             GENIEX_LOG_DEBUG("processing {} image(s)", input->config->image_count);
             for (int i = 0; i < input->config->image_count; ++i) {
                 if (input->config->image_paths[i]) {
-                    mtmd_bitmap* bmp =
-                        mtmd_helper_bitmap_init_from_file(this->ctx_vision, input->config->image_paths[i], false)
-                            .bitmap;
+                    mtmd_bitmap* bmp = mtmd_helper_bitmap_init_from_file(
+                        this->ctx_vision, input->config->image_paths[i], false, mtmd_helper_init_opt_default())
+                                           .bitmap;
                     if (bmp) {
                         bitmaps.push_back(bmp);
                         n_media++;
@@ -251,9 +250,9 @@ int32_t LlamaVlm::generate(const geniex_VlmGenerateInput* input, geniex_VlmGener
             GENIEX_LOG_DEBUG("processing {} audio file(s)", input->config->audio_count);
             for (int i = 0; i < input->config->audio_count; ++i) {
                 if (input->config->audio_paths[i]) {
-                    mtmd_bitmap* bmp =
-                        mtmd_helper_bitmap_init_from_file(this->ctx_vision, input->config->audio_paths[i], false)
-                            .bitmap;
+                    mtmd_bitmap* bmp = mtmd_helper_bitmap_init_from_file(
+                        this->ctx_vision, input->config->audio_paths[i], false, mtmd_helper_init_opt_default())
+                                           .bitmap;
                     if (bmp) {
                         bitmaps.push_back(bmp);
                         n_media++;
