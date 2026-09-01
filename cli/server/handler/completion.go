@@ -19,6 +19,7 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
+	"github.com/qualcomm/GenieX/cli/server/utils"
 )
 
 type CompletionNewParams openai.CompletionNewParams
@@ -145,7 +146,7 @@ func Completions(c *gin.Context) {
 	p, err := service.KeepAliveGet[geniex_sdk.LLM](
 		string(req.Model),
 		modelParam,
-		c.GetHeader("GenieX-KeepCache") != "true",
+		utils.HashText(prompt),
 	)
 	if writeKeepAliveError(c, err) {
 		return

@@ -21,6 +21,7 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/config"
 	"github.com/qualcomm/GenieX/cli/server/service"
 	"github.com/qualcomm/GenieX/cli/server/types"
+	"github.com/qualcomm/GenieX/cli/server/utils"
 )
 
 type ChatCompletionNewParams openai.ChatCompletionNewParams
@@ -129,8 +130,11 @@ func ChatCompletions(c *gin.Context) {
 		if !ok {
 			return
 		}
-		runChat(c, param, modelParam, messages, prepareLLM)
+		runChat(c, param, modelParam, messages, utils.SessionKeyOf(messages), prepareLLM)
 	case geniex_sdk.ModelTypeVLM:
+		// Hash before buildVLMMessages replaces each image/audio part with a
+		// per-request temp file path; see SessionKeyOfVLMRequest.
+		session := utils.SessionKeyOfVLMRequest(param.Messages)
 		messages, tempFiles, ok := buildVLMMessages(c, param)
 		for _, f := range tempFiles {
 			defer os.Remove(f)
@@ -138,7 +142,7 @@ func ChatCompletions(c *gin.Context) {
 		if !ok {
 			return
 		}
-		runChat(c, param, modelParam, messages, prepareVLM)
+		runChat(c, param, modelParam, messages, session, prepareVLM)
 	default:
 		slog.Error("Model type not support", "model_type", paths.ModelType)
 		c.JSON(http.StatusBadRequest, map[string]any{"error": "model type not support"})
@@ -218,8 +222,9 @@ func prepareVLM(p *geniex_sdk.VLM, messages []geniex_sdk.VlmChatMessage, param C
 	return formatted.FormattedText, gen, nil
 }
 
-// runChat is the shared flow wrapping the type-specific prepareFn.
-func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam types.ModelParam, messages M, prepare prepareFn[T, M]) {
+// runChat is the shared flow wrapping the type-specific prepareFn. session
+// identifies the conversation for the keepalive cache's reset decision.
+func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam types.ModelParam, messages M, session utils.SessionKey, prepare prepareFn[T, M]) {
 	// ---- prepare: parse tools, load the model, apply the chat template ----
 	parseTool, tools, err := parseTools(param)
 	if err != nil {
@@ -231,7 +236,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 	p, err := service.KeepAliveGet[T](
 		string(param.Model),
 		modelParam,
-		c.GetHeader("GenieX-KeepCache") != "true",
+		session,
 	)
 	if writeKeepAliveError(c, err) {
 		return
