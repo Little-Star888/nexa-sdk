@@ -123,7 +123,18 @@ QAIRT models need a `geniex.json` to work. See the [granite4_micro example](http
 > across versions and a mismatch could segfault (ai-hub-models-internal#3964). That hazard
 > is gone with the C API, so this is a supported override rather than a testing-only aid.
 > A mismatched runtime can still produce **wrong output at full speed**, so confirm the
-> `HTP runtime path:` line the plugin logs at INFO names the directory you intended.
+> override resolved to the directory you intended. Run with `--log info` (the CLI default
+> is `none`) and look for:
+>
+> ```
+> Overriding the bundled QAIRT runtime from GENIEX_QNN_LIB: <what you passed> (host libs: <resolved dir>)
+> ```
+>
+> `host libs:` is the part that matters — for an SDK root it is the `lib/<triple>`
+> subfolder, not the root you passed. With no override in play the plugin instead logs
+> `HTP runtime path: … (auto-resolved from bundled htp-files/)`; that line is absent
+> whenever an override is active, because the pinned paths short-circuit the plugin's own
+> resolver.
 
 By default the QAIRT plugin loads the QNN shared libraries bundled with the GenieX
 release. To run against a different QAIRT/QNN build without reinstalling, point the plugin
