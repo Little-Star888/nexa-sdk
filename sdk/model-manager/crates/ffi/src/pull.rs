@@ -288,3 +288,59 @@ pub extern "C" fn geniex_model_pull(input: *const GenieXModelPullInput) -> i32 {
         Ok(GENIEX_SUCCESS)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(hub: GenieXHubSource, name: &str) -> PullIntent {
+        build_pull_intent(&hub, name, None, String::new(), None, None).unwrap()
+    }
+
+    #[test]
+    fn routes_modelscope_to_modelscope_intent() {
+        let intent = route(GenieXHubSource::ModelScope, "Qwen/Qwen3-0.6B-GGUF");
+        match intent {
+            PullIntent::ModelScope { repo, token } => {
+                assert_eq!(repo, "Qwen/Qwen3-0.6B-GGUF");
+                assert!(token.is_none());
+            }
+            _ => panic!("expected ModelScope intent"),
+        }
+    }
+
+    #[test]
+    fn routes_huggingface_to_huggingface_intent() {
+        let intent = route(GenieXHubSource::HuggingFace, "ggml-org/Qwen3-1.7B-GGUF");
+        assert!(matches!(intent, PullIntent::HuggingFace { .. }));
+    }
+
+    #[test]
+    fn auto_routes_qualcomm_org_to_aihub() {
+        let intent = route(GenieXHubSource::Auto, "qualcomm/Qwen3-4B");
+        assert!(matches!(intent, PullIntent::AiHub { .. }));
+    }
+
+    #[test]
+    fn auto_keeps_other_orgs_on_huggingface() {
+        let intent = route(GenieXHubSource::Auto, "ggml-org/Qwen3-1.7B-GGUF");
+        assert!(matches!(intent, PullIntent::HuggingFace { .. }));
+    }
+
+    #[test]
+    fn modelscope_forward_keeps_token() {
+        let intent = build_pull_intent(
+            &GenieXHubSource::ModelScope,
+            "Qwen/Qwen3-0.6B-GGUF",
+            Some("tok".to_string()),
+            String::new(),
+            None,
+            None,
+        )
+        .unwrap();
+        match intent {
+            PullIntent::ModelScope { token, .. } => assert_eq!(token.as_deref(), Some("tok")),
+            _ => panic!("expected ModelScope intent"),
+        }
+    }
+}
