@@ -181,8 +181,11 @@ static void print_gen_text(const char* text) {
  * uses instead of feeding the file verbatim. Returns heap text the caller
  * frees with geniex_free, or NULL on failure. */
 static char* build_llm_accuracy_prompt(geniex_LLM* llm, const options_t* o, const char* user_prompt) {
+    /* Zero first: the plugins dereference the optional tool-calling fields
+     * whenever they're non-NULL, so stack garbage there is an access violation. */
     geniex_LlmChatMessage messages[2];
-    int32_t               nm = 0;
+    memset(messages, 0, sizeof(messages));
+    int32_t nm = 0;
     if (o->system_prompt) {
         messages[nm].role    = "system";
         messages[nm].content = o->system_prompt;
