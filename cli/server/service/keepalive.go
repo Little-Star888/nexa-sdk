@@ -15,6 +15,7 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/render"
 	"github.com/qualcomm/GenieX/cli/server/middleware"
 	"github.com/qualcomm/GenieX/cli/server/types"
+	"github.com/qualcomm/GenieX/cli/server/utils"
 )
 
 // resolveDraftModelPath maps a spec_draft_model value to an absolute GGUF path:
@@ -77,16 +78,23 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 	return mp, nil
 }
 
+// AcquiredModel is a cached model and whether it has reusable request state.
+type AcquiredModel[T any] struct {
+	Model *T
+	Fresh bool
+}
+
 // KeepAliveGet returns the cached model of type T, loading it if needed, to
-// avoid reloading from disk on every request.
-func KeepAliveGet[T any](name string, param types.ModelParam, reset bool) (*T, error) {
-	t, err := keepAliveGet[T](name, param, reset)
+// avoid reloading from disk on every request. session identifies the
+// conversation this request belongs to. Fresh is true after a load or reset.
+func KeepAliveGet[T any](name string, param types.ModelParam, session utils.SessionKey) (AcquiredModel[T], error) {
+	t, fresh, err := keepAliveGet[T](name, param, session)
 	if err != nil {
-		return nil, err
+		return AcquiredModel[T]{}, err
 	}
 	// Stamp the idle timer at request end (only model requests reach here).
 	middleware.RunOnRelease(func() { keepAlive.lastActivity = time.Now() })
-	return t.(*T), nil
+	return AcquiredModel[T]{Model: t.(*T), Fresh: fresh}, nil
 }
 
 var keepAlive keepAliveService
@@ -97,16 +105,18 @@ type keepAliveService struct {
 	name         string           // cache key of the loaded model, "" when none
 	model        keepable         // nil when none
 	param        types.ModelParam // params the cache keys on
+	lastSession  utils.SessionKey // session served by the last request
 	lastActivity time.Time        // when the last model request finished
 	stopCh       chan struct{}
 }
 
-// keepable is a model the cache can free; keepResetable can also be reset.
+// keepable is a model the cache can free; resettable can also clear its
+// KV cache / turn state without a full reload.
 type keepable interface {
 	Destroy() error
 }
 
-type keepResetable interface {
+type resettable interface {
 	keepable
 	Reset() error
 }
@@ -154,25 +164,32 @@ func (keepAlive *keepAliveService) destroy() {
 }
 
 // keepAliveGet reuses the cached model when name and params match, otherwise
-// loads a fresh one. Runs under the request GIL, so no locking here.
-func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, error) {
+// loads a fresh one. It resets a reused model when session isn't a continuation
+// of the one last served, so a new conversation never inherits another's KV
+// cache / turn state. The returned bool reports whether the model is fresh
+// after either a reset or load. Runs under the request GIL, so no locking here.
+func keepAliveGet[T any](name string, param types.ModelParam, session utils.SessionKey) (any, bool, error) {
 	// The SDK resolves bare names / aliases and picks the default precision
 	// when none is given; pass the request string through verbatim.
 	paths, err := geniex_sdk.ModelGetPaths(name)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	slog.Debug("KeepAliveGet", "name", name, "param", param, "model_path", paths.ModelPath)
 
 	modelfile := paths.ModelPath
 
 	if keepAlive.name == name && reflect.DeepEqual(keepAlive.param, param) {
-		if reset {
-			if r, ok := keepAlive.model.(keepResetable); ok {
-				r.Reset()
+		fresh := !utils.IsContinuation(keepAlive.lastSession, session)
+		if fresh {
+			if r, ok := keepAlive.model.(resettable); ok {
+				if err := r.Reset(); err != nil {
+					return nil, false, err
+				}
 			}
 		}
-		return keepAlive.model, nil
+		keepAlive.lastSession = session
+		return keepAlive.model, fresh, nil
 	}
 
 	// Drop the current model so only one stays in memory.
@@ -189,7 +206,7 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 		if param.Spec.Type != "" && param.Spec.DraftModel != "" {
 			p, perr := resolveDraftModelPath(param.Spec.DraftModel)
 			if perr != nil {
-				return nil, perr
+				return nil, false, perr
 			}
 			draftPath = p
 		}
@@ -219,16 +236,17 @@ func keepAliveGet[T any](name string, param types.ModelParam, reset bool) (any, 
 			RuntimeID: paths.RuntimeID,
 		})
 	default:
-		return nil, fmt.Errorf("unsupported model type: %s", reflect.TypeFor[T]())
+		return nil, false, fmt.Errorf("unsupported model type: %s", reflect.TypeFor[T]())
 	}
 	if e != nil {
-		return nil, e
+		return nil, false, e
 	}
 	keepAlive.name = name
 	keepAlive.model = t
 	keepAlive.param = param
+	keepAlive.lastSession = session
 
-	return t, nil
+	return t, true, nil
 }
 
 // stop ends the sweep goroutine and frees the cached model — here rather than in
