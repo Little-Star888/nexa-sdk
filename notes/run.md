@@ -158,10 +158,6 @@ which is why this is a supported override rather than a testing-only aid.
 `htp_backend_ext_config.json` itself through the public C API — so a runtime folder does not
 need to carry it.
 
-With no override in play the plugin logs `HTP runtime path: … (auto-resolved from bundled
-htp-files/)` instead; that line is absent whenever an override is active, because the pinned
-paths short-circuit the plugin's own resolver.
-
 `--qnn-lib` just sets `GENIEX_QNN_LIB` for the process, so the flag wins when both are given.
 An unusable path fails model load immediately, e.g. `GENIEX_QNN_LIB does not contain
 QnnHtp.dll (looked in the folder itself and lib/aarch64-windows-msvc): <path>`.
