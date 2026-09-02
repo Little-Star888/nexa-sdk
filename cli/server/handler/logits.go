@@ -86,7 +86,7 @@ func ForwardLogits(c *gin.Context) {
 		return
 	}
 
-	p, err := service.KeepAliveGet[geniex_sdk.LLM](
+	acquired, err := service.KeepAliveGet[geniex_sdk.LLM](
 		req.Model,
 		modelParam,
 		utils.HashTokens(req.InputIDs),
@@ -94,6 +94,7 @@ func ForwardLogits(c *gin.Context) {
 	if writeKeepAliveError(c, err) {
 		return
 	}
+	p := acquired.Model
 
 	topN := defaultLogitsTopN
 	if req.TopN != nil {

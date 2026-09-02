@@ -143,7 +143,7 @@ func Completions(c *gin.Context) {
 		modelParam.NCtx = int32(req.MaxTokens.Value)
 	}
 
-	p, err := service.KeepAliveGet[geniex_sdk.LLM](
+	acquired, err := service.KeepAliveGet[geniex_sdk.LLM](
 		string(req.Model),
 		modelParam,
 		utils.HashText(prompt),
@@ -151,6 +151,7 @@ func Completions(c *gin.Context) {
 	if writeKeepAliveError(c, err) {
 		return
 	}
+	p := acquired.Model
 
 	genConfig := &geniex_sdk.GenerationConfig{
 		MaxTokens: int32(req.MaxTokens.Value),

@@ -153,15 +153,23 @@ func ChatCompletions(c *gin.Context) {
 // generateFn adapts LLM/VLM Generate to one shape; fullText is set even on error.
 type generateFn func(prompt string, onToken func(string) bool) (geniex_sdk.ProfileData, string, error)
 
+type prepareInput[M any] struct {
+	Messages M
+	Param    ChatCompletionRequest
+	Tools    string
+	Sampler  *geniex_sdk.SamplerConfig
+	Fresh    bool
+}
+
 // prepareFn holds the only LLM/VLM-specific work: apply the chat template, then
 // return the formatted prompt and a generateFn.
-type prepareFn[T, M any] func(p *T, messages M, param ChatCompletionRequest, tools string, sampler *geniex_sdk.SamplerConfig) (prompt string, gen generateFn, err error)
+type prepareFn[T, M any] func(p *T, input prepareInput[M]) (prompt string, gen generateFn, err error)
 
-func prepareLLM(p *geniex_sdk.LLM, messages []geniex_sdk.LlmChatMessage, param ChatCompletionRequest, tools string, sampler *geniex_sdk.SamplerConfig) (string, generateFn, error) {
+func prepareLLM(p *geniex_sdk.LLM, input prepareInput[[]geniex_sdk.LlmChatMessage]) (string, generateFn, error) {
 	formatted, err := p.ApplyChatTemplate(geniex_sdk.LlmApplyChatTemplateInput{
-		Messages:            messages,
-		Tools:               tools,
-		EnableThink:         param.EnableThink,
+		Messages:            input.Messages,
+		Tools:               input.Tools,
+		EnableThink:         input.Param.EnableThink,
 		AddGenerationPrompt: true,
 	})
 	if err != nil {
@@ -172,8 +180,8 @@ func prepareLLM(p *geniex_sdk.LLM, messages []geniex_sdk.LlmChatMessage, param C
 			PromptUTF8: prompt,
 			OnToken:    onToken,
 			Config: &geniex_sdk.GenerationConfig{
-				MaxTokens:     int32(param.MaxCompletionTokens.Value),
-				SamplerConfig: sampler,
+				MaxTokens:     int32(input.Param.MaxCompletionTokens.Value),
+				SamplerConfig: input.Sampler,
 			},
 		})
 		if out == nil {
@@ -184,23 +192,28 @@ func prepareLLM(p *geniex_sdk.LLM, messages []geniex_sdk.LlmChatMessage, param C
 	return formatted.FormattedText, gen, nil
 }
 
-func prepareVLM(p *geniex_sdk.VLM, messages []geniex_sdk.VlmChatMessage, param ChatCompletionRequest, tools string, sampler *geniex_sdk.SamplerConfig) (string, generateFn, error) {
+func prepareVLM(p *geniex_sdk.VLM, input prepareInput[[]geniex_sdk.VlmChatMessage]) (string, generateFn, error) {
 	formatted, err := p.ApplyChatTemplate(geniex_sdk.VlmApplyChatTemplateInput{
-		Messages:    messages,
-		Tools:       tools,
-		EnableThink: param.EnableThink,
+		Messages:    input.Messages,
+		Tools:       input.Tools,
+		EnableThink: input.Param.EnableThink,
 	})
 	if err != nil {
 		return "", nil, err
 	}
-	images := make([]string, 0)
-	audios := make([]string, 0)
-	for _, content := range messages[len(messages)-1].Contents {
-		switch content.Type {
-		case geniex_sdk.VlmContentTypeImage:
-			images = append(images, content.Text)
-		case geniex_sdk.VlmContentTypeAudio:
-			audios = append(audios, content.Text)
+	start := len(input.Messages) - 1
+	if input.Fresh {
+		start = 0
+	}
+	var images, audios []string
+	for _, message := range input.Messages[start:] {
+		for _, content := range message.Contents {
+			switch content.Type {
+			case geniex_sdk.VlmContentTypeImage:
+				images = append(images, content.Text)
+			case geniex_sdk.VlmContentTypeAudio:
+				audios = append(audios, content.Text)
+			}
 		}
 	}
 	gen := func(prompt string, onToken func(string) bool) (geniex_sdk.ProfileData, string, error) {
@@ -208,8 +221,8 @@ func prepareVLM(p *geniex_sdk.VLM, messages []geniex_sdk.VlmChatMessage, param C
 			PromptUTF8: prompt,
 			OnToken:    onToken,
 			Config: &geniex_sdk.GenerationConfig{
-				MaxTokens:     int32(param.MaxCompletionTokens.Value),
-				SamplerConfig: sampler,
+				MaxTokens:     int32(input.Param.MaxCompletionTokens.Value),
+				SamplerConfig: input.Sampler,
 				ImagePaths:    images,
 				AudioPaths:    audios,
 			},
@@ -233,7 +246,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 		return
 	}
 
-	p, err := service.KeepAliveGet[T](
+	acquired, err := service.KeepAliveGet[T](
 		string(param.Model),
 		modelParam,
 		session,
@@ -261,7 +274,13 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 		FrequencyPenalty:  float32(param.FrequencyPenalty.Value),
 		Seed:              int32(param.Seed.Value),
 	}
-	prompt, gen, err := prepare(p, messages, param, tools, sampler)
+	prompt, gen, err := prepare(acquired.Model, prepareInput[M]{
+		Messages: messages,
+		Param:    param,
+		Tools:    tools,
+		Sampler:  sampler,
+		Fresh:    acquired.Fresh,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 		return

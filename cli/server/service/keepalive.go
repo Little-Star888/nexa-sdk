@@ -78,17 +78,23 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 	return mp, nil
 }
 
+// AcquiredModel is a cached model and whether it has reusable request state.
+type AcquiredModel[T any] struct {
+	Model *T
+	Fresh bool
+}
+
 // KeepAliveGet returns the cached model of type T, loading it if needed, to
 // avoid reloading from disk on every request. session identifies the
-// conversation this request belongs to.
-func KeepAliveGet[T any](name string, param types.ModelParam, session utils.SessionKey) (*T, error) {
-	t, err := keepAliveGet[T](name, param, session)
+// conversation this request belongs to. Fresh is true after a load or reset.
+func KeepAliveGet[T any](name string, param types.ModelParam, session utils.SessionKey) (AcquiredModel[T], error) {
+	t, fresh, err := keepAliveGet[T](name, param, session)
 	if err != nil {
-		return nil, err
+		return AcquiredModel[T]{}, err
 	}
 	// Stamp the idle timer at request end (only model requests reach here).
 	middleware.RunOnRelease(func() { keepAlive.lastActivity = time.Now() })
-	return t.(*T), nil
+	return AcquiredModel[T]{Model: t.(*T), Fresh: fresh}, nil
 }
 
 var keepAlive keepAliveService
@@ -158,31 +164,32 @@ func (keepAlive *keepAliveService) destroy() {
 }
 
 // keepAliveGet reuses the cached model when name and params match, otherwise
-// loads a fresh one. Either way, it resets the model when session isn't a
-// continuation of the one last served, so a new conversation never inherits
-// another's KV cache / turn state. Runs under the request GIL, so no locking
-// here.
-func keepAliveGet[T any](name string, param types.ModelParam, session utils.SessionKey) (any, error) {
+// loads a fresh one. It resets a reused model when session isn't a continuation
+// of the one last served, so a new conversation never inherits another's KV
+// cache / turn state. The returned bool reports whether the model is fresh
+// after either a reset or load. Runs under the request GIL, so no locking here.
+func keepAliveGet[T any](name string, param types.ModelParam, session utils.SessionKey) (any, bool, error) {
 	// The SDK resolves bare names / aliases and picks the default precision
 	// when none is given; pass the request string through verbatim.
 	paths, err := geniex_sdk.ModelGetPaths(name)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	slog.Debug("KeepAliveGet", "name", name, "param", param, "model_path", paths.ModelPath)
 
 	modelfile := paths.ModelPath
 
 	if keepAlive.name == name && reflect.DeepEqual(keepAlive.param, param) {
-		if !utils.IsContinuation(keepAlive.lastSession, session) {
+		fresh := !utils.IsContinuation(keepAlive.lastSession, session)
+		if fresh {
 			if r, ok := keepAlive.model.(resettable); ok {
 				if err := r.Reset(); err != nil {
-					return nil, err
+					return nil, false, err
 				}
 			}
 		}
 		keepAlive.lastSession = session
-		return keepAlive.model, nil
+		return keepAlive.model, fresh, nil
 	}
 
 	// Drop the current model so only one stays in memory.
@@ -199,7 +206,7 @@ func keepAliveGet[T any](name string, param types.ModelParam, session utils.Sess
 		if param.Spec.Type != "" && param.Spec.DraftModel != "" {
 			p, perr := resolveDraftModelPath(param.Spec.DraftModel)
 			if perr != nil {
-				return nil, perr
+				return nil, false, perr
 			}
 			draftPath = p
 		}
@@ -229,17 +236,17 @@ func keepAliveGet[T any](name string, param types.ModelParam, session utils.Sess
 			RuntimeID: paths.RuntimeID,
 		})
 	default:
-		return nil, fmt.Errorf("unsupported model type: %s", reflect.TypeFor[T]())
+		return nil, false, fmt.Errorf("unsupported model type: %s", reflect.TypeFor[T]())
 	}
 	if e != nil {
-		return nil, e
+		return nil, false, e
 	}
 	keepAlive.name = name
 	keepAlive.model = t
 	keepAlive.param = param
 	keepAlive.lastSession = session
 
-	return t, nil
+	return t, true, nil
 }
 
 // stop ends the sweep goroutine and frees the cached model — here rather than in
