@@ -18,9 +18,8 @@
 
 namespace geniex::qairt::runtime {
 
-// Reads an environment variable as a filesystem path, returning an empty path when
-// it is unset or empty. On Windows the wide-char API is used so Unicode paths round-trip
-// correctly (the narrow name is ignored there and vice versa on POSIX).
+// Reads an environment variable as a path; empty when unset. Takes both spellings of the
+// name because Windows needs the wide-char API for Unicode paths to round-trip.
 inline std::filesystem::path read_env_path(const char* name_utf8, const wchar_t* name_wide) {
 #if defined(_WIN32)
     static_cast<void>(name_utf8);
@@ -55,8 +54,7 @@ inline std::optional<std::string> find_optional_file(const std::filesystem::path
     return std::nullopt;
 }
 
-// Platform-specific base names of the three QNN shared libraries the QAIRT plugin loads,
-// the host-lib subfolder they live in inside a QAIRT SDK install, and the OS PATH separator.
+// QNN library names, the SDK's host-lib subfolder, and the OS PATH separator, by platform.
 #if defined(_WIN32)
 constexpr const char* kQnnBackendLib    = "QnnHtp.dll";
 constexpr const char* kQnnSystemLib     = "QnnSystem.dll";
@@ -77,10 +75,8 @@ constexpr const char* kHostLibTriple    = "aarch64-oe-linux-gcc11.2";
 constexpr char        kPathSep          = ':';
 #endif
 
-// Given a user-supplied QNN lib location, returns the directory that actually holds the
-// host QNN libraries (kQnnBackendLib). Handles both a flat folder (libs sit directly in
-// `root`, our bundled htp-files layout) and a full QAIRT SDK install, where the host libs
-// live under `root/lib/<triple>`. Returns an empty path when none is found.
+// Finds the directory holding the host QNN libraries under `root`, which may be either a
+// flat folder or a QAIRT SDK install. Empty when neither layout matches.
 inline std::filesystem::path locate_qnn_host_lib_dir(const std::filesystem::path& root) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -92,9 +88,7 @@ inline std::filesystem::path locate_qnn_host_lib_dir(const std::filesystem::path
     const fs::path triple_dir = root / "lib" / kHostLibTriple;
     if (fs::exists(triple_dir / kQnnBackendLib, ec)) return triple_dir;
 
-    // Fallback: scan lib/* for any subfolder carrying the backend lib. Covers QAIRT
-    // triples that vary across SDK versions (e.g. differing Linux gcc suffixes). Hexagon
-    // skel folders never contain the host backend lib, so they are naturally skipped.
+    // Fallback for triples that vary across SDK versions (e.g. differing Linux gcc suffixes).
     const fs::path lib_dir = root / "lib";
     if (fs::is_directory(lib_dir, ec)) {
         for (const auto& entry : fs::directory_iterator(lib_dir, ec)) {
@@ -106,11 +100,8 @@ inline std::filesystem::path locate_qnn_host_lib_dir(const std::filesystem::path
     return {};
 }
 
-// Collects the Hexagon DSP skel folders that ADSP_LIBRARY_PATH must point at inside a QAIRT
-// SDK: every `root/lib/hexagon-v*/unsigned` (or the arch folder itself when there is no
-// `unsigned` subdir), joined with the platform PATH separator. All arch variants are listed
-// so QNN's loader selects the one matching the on-device HTP arch. Empty when none exist
-// (flat-folder override, where the skels sit alongside the host libs).
+// Builds an ADSP_LIBRARY_PATH covering every Hexagon skel folder in a QAIRT SDK, so QNN's
+// loader can pick the one matching the on-device HTP arch. Empty when `root` ships no skels.
 inline std::string collect_adsp_library_path(const std::filesystem::path& root) {
     namespace fs = std::filesystem;
     std::error_code          ec;
@@ -137,28 +128,10 @@ inline std::string collect_adsp_library_path(const std::filesystem::path& root) 
 
 // Returns a QnnRuntimeConfig for the given model directory.
 //
-// GENIEX_QNN_LIB (or the CLI `--qnn-lib` flag) is an OPTIONAL override. The plugin
-// bundles a QAIRT runtime and installs it as htp-files/ beside geniex_core, so the
-// default path needs nothing from us:
-//
-//   unset — every path field stays nullopt and the plugin resolves the runtime
-//           itself (resolveHtpPaths), using the htp-files/ folder next to
-//           geniex_core, which is exactly where this plugin's CMakeLists installs
-//           it. It also covers our flattened Android package, where the runtime
-//           libs sit directly beside geniex_core with no htp-files/ subfolder, and
-//           it sets ADSP_LIBRARY_PATH itself.
-//
-//   set   — we resolve here and pin all three path fields, which the plugin honors
-//           as-is. GENIEX_QNN_LIB may name either a full QAIRT SDK root (host libs
-//           under `lib/<triple>`, Hexagon DSP skels under `lib/hexagon-v*/unsigned`)
-//           or a flat folder holding the libs directly. The two are resolved
-//           separately because a real QAIRT SDK does not colocate them; the plugin
-//           only understands the flat shape, so translating an SDK root is our job.
-//           Set but unusable fails fast with a clear std::runtime_error.
-//
-// One plugin build spans QAIRT versions: it reaches QNN only through the versioned
-// C interface, which negotiates at load time. So there is no ABI variant to match
-// against the supplied libraries and no version warning to issue.
+// GENIEX_QNN_LIB (or the CLI `--qnn-lib` flag) is an optional override; unset, the config
+// stays empty and the plugin resolves its own bundled runtime. Set, we pin all three path
+// fields, which the plugin then honors as-is -- translating an SDK root is our job because
+// the plugin only understands the flat layout. Throws when set but unusable.
 inline QnnRuntimeConfig make_qnn_runtime_config(const std::filesystem::path& model_dir) {
     namespace fs = std::filesystem;
 
@@ -184,8 +157,7 @@ inline QnnRuntimeConfig make_qnn_runtime_config(const std::filesystem::path& mod
                                  "\nUnset it to use the QAIRT runtime bundled with the plugin.");
     }
 
-    // ADSP_LIBRARY_PATH points at the Hexagon DSP skel folders. In a QAIRT SDK these live
-    // apart from the host libs; if none are found (flat folder) fall back to the host dir.
+    // A QAIRT SDK keeps skels apart from the host libs; a flat folder has them together.
     std::string adsp_path = collect_adsp_library_path(qnn_lib_root);
     if (adsp_path.empty()) adsp_path = host_dir.string();
 

@@ -111,34 +111,8 @@ QAIRT models need a `geniex.json` to work. See the [granite4_micro example](http
 
 ### Using a custom QNN library
 
-> [!NOTE]
-> **Forward-compatible, within the negotiated range.** The QAIRT plugin reaches QNN only
-> through the versioned C interface, which negotiates at load time against
-> `QNN_API_VERSION_MINOR <= runtime minor`. One plugin build therefore drives the bundled
-> QAIRT version and newer — measured on Snapdragon X Elite across 2.45 / 2.48 / 2.49 at
-> identical throughput. Pointing at a runtime **older** than the bundled one is the
-> unsupported direction: the negotiation rejects it.
->
-> This replaces an earlier C++ `IBackend` path where struct layouts and vtables did differ
-> across versions and a mismatch could segfault (ai-hub-models-internal#3964). That hazard
-> is gone with the C API, so this is a supported override rather than a testing-only aid.
-> A mismatched runtime can still produce **wrong output at full speed**, so confirm the
-> override resolved to the directory you intended. Run with `--log info` (the CLI default
-> is `none`) and look for:
->
-> ```
-> Overriding the bundled QAIRT runtime from GENIEX_QNN_LIB: <what you passed> (host libs: <resolved dir>)
-> ```
->
-> `host libs:` is the part that matters — for an SDK root it is the `lib/<triple>`
-> subfolder, not the root you passed. With no override in play the plugin instead logs
-> `HTP runtime path: … (auto-resolved from bundled htp-files/)`; that line is absent
-> whenever an override is active, because the pinned paths short-circuit the plugin's own
-> resolver.
-
-By default the QAIRT plugin loads the QNN shared libraries bundled with the GenieX
-release. To run against a different QAIRT/QNN build without reinstalling, point the plugin
-at the library location:
+A QAIRT runtime ships with GenieX and is used by default. To run against a different one
+without reinstalling, point the plugin at it:
 
 ```bash
 # via the CLI flag (qairt models only)
@@ -150,20 +124,49 @@ GENIEX_QNN_LIB=/path/to/qairt/2.XX.0 geniex infer local/granite4_micro
 
 The path accepts either layout:
 
-- **A QAIRT SDK root** (as installed from the Qualcomm Software Center). The plugin resolves
-  the host libraries from `lib/<triple>` (`aarch64-windows-msvc`, `aarch64-android`, or
-  `aarch64-oe-linux-gcc11.2`) and points `ADSP_LIBRARY_PATH` at every Hexagon DSP skel folder
-  (`lib/hexagon-v*/unsigned`), so the on-device HTP arch is matched automatically. This mirrors
-  the manual env-var setup in the [llm_on_genie tutorial](https://github.com/qualcomm/ai-hub-apps/tree/main/tutorials/llm_on_genie#windows-powershell).
-- **A flat folder** that directly holds `QnnHtp.dll` / `QnnSystem.dll` /
-  `QnnHtpNetRunExtensions.dll` (or the `libQnn*.so` equivalents) — the same shape as the
-  bundled `htp-files` layout.
+- **A QAIRT SDK root** (as installed from the Qualcomm Software Center). The host libraries
+  are taken from `lib/<triple>` (`aarch64-windows-msvc`, `aarch64-android`, or
+  `aarch64-oe-linux-gcc11.2`) and `ADSP_LIBRARY_PATH` is pointed at every Hexagon DSP skel
+  folder (`lib/hexagon-v*/unsigned`), so the on-device HTP arch is matched automatically.
+- **A flat folder** holding `QnnHtp.dll` and `QnnSystem.dll` (or the `libQnn*.so`
+  equivalents) directly — the same shape as the bundled `htp-files` layout.
 
-`--qnn-lib` is a convenience wrapper that sets `GENIEX_QNN_LIB` for the process; the flag
-wins when both are given. If no backend library is found under either layout, model load
-fails fast with a clear error (e.g. `GENIEX_QNN_LIB does not contain QnnHtp.dll (looked in
-the folder itself and lib/aarch64-windows-msvc): <path>`). When neither the flag nor the env
-var is set, behavior is unchanged and the bundled QNN-lib is used.
+> [!IMPORTANT]
+> A runtime the plugin accepts can still produce **wrong output at full speed**, so confirm
+> the override resolved where you meant. Run with `--log info` (the CLI default is `none`):
+>
+> ```
+> Overriding the bundled QAIRT runtime from GENIEX_QNN_LIB: <what you passed> (host libs: <resolved dir>)
+> ```
+>
+> `host libs:` is the part that matters — for an SDK root it is the `lib/<triple>` subfolder,
+> not the root you passed.
+
+<details><summary>Which runtimes are accepted, and why this is a supported override</summary>
+
+The plugin reaches QNN only through the versioned C interface, which negotiates at load time
+against `compiled QNN_API_VERSION_MINOR <= runtime minor`. The floor is the API version the
+plugin *compiled* against (QAIRT 2.36 headers, C API 2.27), not the version it bundles — so
+runtimes both older and newer than the bundled one are accepted, down to that floor. One
+build was measured on Snapdragon X Elite across 2.45 / 2.48 / 2.49 at identical throughput.
+
+This replaces an earlier C++ `IBackend` path whose vtable layout changed every release, where
+a mismatch could segfault (ai-hub-models-internal#3964). That hazard is gone with the C API,
+which is why this is a supported override rather than a testing-only aid.
+
+`QnnHtpNetRunExtensions` is no longer loaded at all — the plugin applies
+`htp_backend_ext_config.json` itself through the public C API — so a runtime folder does not
+need to carry it.
+
+With no override in play the plugin logs `HTP runtime path: … (auto-resolved from bundled
+htp-files/)` instead; that line is absent whenever an override is active, because the pinned
+paths short-circuit the plugin's own resolver.
+
+`--qnn-lib` just sets `GENIEX_QNN_LIB` for the process, so the flag wins when both are given.
+An unusable path fails model load immediately, e.g. `GENIEX_QNN_LIB does not contain
+QnnHtp.dll (looked in the folder itself and lib/aarch64-windows-msvc): <path>`.
+
+</details>
 
 ### Build and run locally
 

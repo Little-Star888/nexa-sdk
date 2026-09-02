@@ -143,10 +143,8 @@ func infer() *cobra.Command {
 			return err
 		}
 
-		// --qnn-lib is a convenience wrapper over the GENIEX_QNN_LIB env var the qairt
-		// plugin reads at model-load time. Exporting it here means both the LLM and VLM
-		// paths (and any binding that shares this process) pick it up uniformly.
-		// Leaving it unset keeps the QAIRT runtime bundled with the plugin.
+		// Exported rather than passed down so every path in this process -- LLM, VLM, any
+		// binding -- picks the override up the same way.
 		if qnnLib != "" {
 			if err := os.Setenv("GENIEX_QNN_LIB", qnnLib); err != nil {
 				return fmt.Errorf("failed to set GENIEX_QNN_LIB: %w", err)

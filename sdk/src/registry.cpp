@@ -175,12 +175,8 @@ void Registry::scan_plugins() {
     GENIEX_LOG_TRACE("Scanning plugins in: {}", plugin_path.u8string());
 
     // Search child plugin directories for the brand-specific plugin shared library.
-    // The qairt plugin ships as a single build (lib/qairt): it reaches QNN only
-    // through the versioned C interface, which negotiates at load time, so one
-    // binary spans QAIRT versions and there is no ABI variant to choose between.
     for (const auto& dir_entry : std::filesystem::directory_iterator(plugin_path)) {
         if (!dir_entry.is_directory()) continue;
-
         GENIEX_LOG_TRACE("Scanning directory: {}", dir_entry.path().u8string());
 
         for (const auto& file_entry : std::filesystem::directory_iterator(dir_entry.path())) {
