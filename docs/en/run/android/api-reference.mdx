@@ -348,18 +348,6 @@ ModelManagerWrapper.pullFlow(
 | LLM | `ai-hub-models/Qwen3-4B-Instruct-2507` |
 | VLM | `ai-hub-models/Qwen2.5-VL-7B-Instruct` |
 
-### Using a different QAIRT runtime
-
-A QAIRT runtime ships inside the AAR and is used by default. To run against a different one, push it somewhere the app can read and name it before creating the model:
-
-```kotlin
-GenieXSdk.getInstance().setQairtRuntimePath("/data/local/tmp/qairt/2.XX.0")
-```
-
-The path is either a QAIRT SDK root or a flat folder of QNN libraries; `""` restores the bundled runtime. It applies process-wide, since the QNN libraries load once per process. See [Running against a different QAIRT runtime](/en/run/cli/reference#running-against-a-different-qairt-runtime) for the accepted layouts and failure mode.
-
-<Note>On Android this API is the only route — `GENIEX_QNN_LIB` works for the CLI and Python, but the JVM cannot set environment variables for its own process.</Note>
-
 ### LLM
 
 ```kotlin

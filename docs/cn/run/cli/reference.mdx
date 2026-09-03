@@ -186,7 +186,6 @@ geniex --log debug list
 | `--think` / `--think=false` | bool | `true` | 启用或禁用推理模型的思考模式。 |
 | `-s`, `--system-prompt` | string | — | 设置模型行为的系统提示。 |
 | `--sliding-window` | — | `false` | （仅 `qairt`）当上下文长度超限时，驱逐锚定前缀之外最旧的上下文，而不是报错，从而让对话继续。 |
-| `--qnn-lib` | string | — | （仅 `qairt`）改用其他 QAIRT 运行时。参见[改用其他 QAIRT 运行时](#改用其他-qairt-运行时)。 |
 
 ### 增大上下文长度
 
@@ -201,41 +200,6 @@ geniex --log debug list
 - **Qualcomm AI Engine Direct (NPU)：** 上下文长度**固化在编译好的模型包中**，运行时无法抬升——`--nctx` 不生效。可改用：
   - 加 `--sliding-window` 以在超限后继续对话：驱逐锚定前缀之外最旧的上下文，而不是报错。
   - 如需真正更大的窗口，请从 [Qualcomm AI Hub](https://aihub.qualcomm.com/models/) 获取按更长上下文编译的模型包。参见 [Qualcomm AI Engine Direct 运行环境限制](/cn/get-started/platforms#运行环境限制)。
-
-### 改用其他 QAIRT 运行时
-
-GenieX 自带一套 QAIRT 运行时并默认使用——无需下载 SDK，也无需任何配置。`--qnn-lib` 可让 `qairt` 模型改用其他运行时，以兼容更新的 QAIRT 版本，或对比不同版本的性能：
-
-```bash
-# 仅本次运行
-geniex infer ai-hub-models/Qwen3-4B --qnn-lib /path/to/qairt/2.XX.0
-
-# 设为本机每次运行的默认值
-geniex config set qnn-lib /path/to/qairt/2.XX.0
-geniex config get qnn-lib
-```
-
-同样适用于 `geniex serve`。优先级由高到低：`--qnn-lib`、`GENIEX_QNN_LIB` 环境变量、`geniex config set qnn-lib`、自带运行时。因此保存的默认值绝不会覆盖命令行上传入的值。
-
-**两种目录结构都可以**，GenieX 会自动判别：
-
-| 结构 | 特征 |
-|---|---|
-| **QAIRT SDK 根目录**，即从 Qualcomm Software Center 解压得到的目录 | 主机库位于 `lib/<target-triple>/`（`aarch64-windows-msvc`、`aarch64-android`、`aarch64-oe-linux-gcc11.2`），Hexagon skel 位于 `lib/hexagon-v*/` |
-| **扁平目录** | `QnnHtp.dll` 与 `QnnSystem.dll`（或 `libQnnHtp.so` / `libQnnSystem.so`）直接位于该目录，与各架构 stub 并列 |
-
-**2.36** 及以上的任意 QAIRT 版本均可加载：GenieX 在加载时协商 QNN C API 版本，因此比自带版本更新或更旧的运行时都能接受，直到该下限。更旧的版本会因版本检查而被拒绝。
-
-若路径不符合上述任一结构，会在创建模型时失败，并列出它查找过的位置：
-
-```
-geniex: QnnHtp.dll not found in HTP runtime folder: D:/wrong/path
-  (from QnnRuntimeConfig::htp_dir)
-Expected either a flat directory holding QnnHtp.dll and its arch stubs (shaped like the
-bundled htp-files/), or a QAIRT SDK root with lib/aarch64-windows-msvc/.
-```
-
-<Warning>在采信运行结果之前，请先确认实际加载的是哪个运行时。若 QAIRT 版本不匹配但通过了 API 版本检查，仍可能**以正常速度输出错误内容**而不报错，因此“运行成功”本身并不能证明覆盖生效。请加 `--log info` 并查看 `HTP runtime path:`——对于 SDK 根目录，该行给出的是 `lib/<target-triple>/` 子目录，而不是你传入的根目录。</Warning>
 
 ## **实用命令**
 

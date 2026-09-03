@@ -18,20 +18,6 @@ class GenieXSdk private constructor() {
 
     external fun getPluginVersion(pluginId: String): String
 
-    /**
-     * Load the QAIRT runtime from [path] instead of the one bundled in the APK, for
-     * running against another QAIRT version. [path] is either a QAIRT SDK root or a
-     * flat folder of QNN libraries, pushed somewhere the app can read; "" restores the
-     * bundled runtime. Ignored by other plugins.
-     *
-     * Process-global, because the QNN libraries load once per process. Call before
-     * creating the model that should use it; an unusable path is reported when that
-     * model is created, not here.
-     */
-    external fun setQairtRuntimePath(path: String): Int
-
-    external fun getQairtRuntimePath(): String
-
     // Idempotent across Activity recreation. Plugin registration is
     // safe to re-attempt (it logs and moves on); model-manager init is
     // not — the FFI rejects re-init — so we guard it here.

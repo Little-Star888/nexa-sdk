@@ -115,35 +115,12 @@ A QAIRT runtime ships with GenieX and is used by default. To run against a diffe
 without reinstalling, point the plugin at it:
 
 ```bash
-# via the CLI flag (qairt models only; also on `geniex serve`)
+# via the CLI flag (qairt models only)
 geniex infer local/granite4_micro --qnn-lib /path/to/qairt/2.XX.0
 
-# or via the environment variable, for any process that can set one
+# or via the environment variable (picked up by any front-end: CLI, pybind, Android)
 GENIEX_QNN_LIB=/path/to/qairt/2.XX.0 geniex infer local/granite4_micro
-
-# or as this machine's default, for a host kept on one QAIRT version
-geniex config set qnn-lib /path/to/qairt/2.XX.0
 ```
-
-Embedders set it explicitly instead, which is the only route open to Android — the JVM has
-no `setenv`, so the environment variable above is unreachable from an app:
-
-```python
-geniex.set_qairt_runtime_path('/path/to/qairt/2.XX.0')   # before creating the model
-```
-
-```go
-geniex_sdk.SetQairtRuntimePath("/path/to/qairt/2.XX.0")
-```
-
-```kotlin
-GenieXSdk.getInstance().setQairtRuntimePath("/path/to/qairt/2.XX.0")
-```
-
-Precedence, highest first: `--qnn-lib` or an explicit API call, then `GENIEX_QNN_LIB`, then
-`geniex config set qnn-lib`, then the bundled runtime — a stored default never outranks what
-was passed for this run. It is process-global in every binding, because the QNN libraries
-load once per process: two models cannot run against different QAIRT versions.
 
 The path accepts either layout:
 
@@ -159,15 +136,11 @@ The path accepts either layout:
 > the override resolved where you meant. Run with `--log info` (the CLI default is `none`):
 >
 > ```
-> Loading the QAIRT runtime from <what you passed> rather than the bundled one
-> HTP runtime path: <resolved dir> (overridden via QnnRuntimeConfig::htp_dir)
-> Host libraries taken from <resolved dir> (a QAIRT SDK root was given)
+> Overriding the bundled QAIRT runtime from GENIEX_QNN_LIB: <what you passed> (host libs: <resolved dir>)
 > ```
 >
-> `HTP runtime path:` is the part that matters — for an SDK root it is the `lib/<triple>`
-> subfolder, not the root you passed, and the third line only appears in that case. Setting
-> `GENIEX_QNN_LIB` rather than an explicit path says `(overridden via GENIEX_QNN_LIB)`
-> instead, and omits the first line.
+> `host libs:` is the part that matters — for an SDK root it is the `lib/<triple>` subfolder,
+> not the root you passed.
 
 <details><summary>Which runtimes are accepted, and why this is a supported override</summary>
 
@@ -185,17 +158,9 @@ which is why this is a supported override rather than a testing-only aid.
 `htp_backend_ext_config.json` itself through the public C API — so a runtime folder does not
 need to carry it.
 
-`--qnn-lib` passes the path down through the SDK rather than exporting it, so the flag wins
-when both it and `GENIEX_QNN_LIB` are given. Resolution belongs entirely to the plugin: this
-repo neither validates the path nor derives library names from it. An unusable path fails
-model creation immediately, naming both accepted layouts:
-
-```
-geniex: QnnHtp.dll not found in HTP runtime folder: <path>
-  (from QnnRuntimeConfig::htp_dir)
-Expected either a flat directory holding QnnHtp.dll and its arch stubs (shaped like the
-bundled htp-files/), or a QAIRT SDK root with lib/aarch64-windows-msvc/.
-```
+`--qnn-lib` just sets `GENIEX_QNN_LIB` for the process, so the flag wins when both are given.
+An unusable path fails model load immediately, e.g. `GENIEX_QNN_LIB does not contain
+QnnHtp.dll (looked in the folder itself and lib/aarch64-windows-msvc): <path>`.
 
 </details>
 

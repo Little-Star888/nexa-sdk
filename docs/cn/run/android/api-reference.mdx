@@ -348,18 +348,6 @@ ModelManagerWrapper.pullFlow(
 | LLM | `ai-hub-models/Qwen3-4B-Instruct-2507` |
 | VLM | `ai-hub-models/Qwen2.5-VL-7B-Instruct` |
 
-### 改用其他 QAIRT 运行时
-
-AAR 内自带一套 QAIRT 运行时并默认使用。如需改用其他运行时，请先将其推送到应用可读取的位置，并在创建模型前指定：
-
-```kotlin
-GenieXSdk.getInstance().setQairtRuntimePath("/data/local/tmp/qairt/2.XX.0")
-```
-
-该路径可以是 QAIRT SDK 根目录，也可以是存放 QNN 库的扁平目录；传 `""` 恢复自带运行时。由于 QNN 库每个进程只加载一次，该设置作用于整个进程。可接受的目录结构与失败表现参见[改用其他 QAIRT 运行时](/cn/run/cli/reference#改用其他-qairt-运行时)。
-
-<Note>在 Android 上只能通过该 API 设置——`GENIEX_QNN_LIB` 适用于 CLI 与 Python，但 JVM 无法为自身进程设置环境变量。</Note>
-
 ### LLM
 
 ```kotlin

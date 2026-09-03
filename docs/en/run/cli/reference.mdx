@@ -206,7 +206,6 @@ Control model loading, context, and generation limits.
 | `--think` / `--think=false` | bool | `true` | Enable or disable thinking mode for reasoning models. |
 | `-s`, `--system-prompt` | string | — | System prompt to set model behavior. |
 | `--sliding-window` | — | `false` | (`qairt` only) Evict the oldest context above a small anchored prefix instead of erroring when the context length is exceeded, letting the conversation continue. |
-| `--qnn-lib` | string | — | (`qairt` only) Run against a different QAIRT runtime. See [Running against a different QAIRT runtime](#running-against-a-different-qairt-runtime). |
 
 ### Increasing the context length
 
@@ -221,41 +220,6 @@ The context window (`--nctx`) is how much the model can hold at once. When a con
 - **Qualcomm AI Engine Direct (NPU):** the context length is **baked into the compiled bundle** and cannot be raised at runtime — `--nctx` has no effect. Instead:
   - Add `--sliding-window` to keep chatting past the limit: the oldest context above a small anchored prefix is evicted instead of erroring.
   - For a genuinely larger window, pull a bundle compiled for a longer context from [Qualcomm AI Hub](https://aihub.qualcomm.com/models/). See [Qualcomm AI Engine Direct runtime constraints](/en/get-started/platforms#runtime-constraints).
-
-### Running against a different QAIRT runtime
-
-A QAIRT runtime ships with GenieX and is used by default — no SDK download, nothing to configure. `--qnn-lib` points `qairt` models at a different one, for compatibility with a newer QAIRT release or to compare performance across versions:
-
-```bash
-# one run
-geniex infer ai-hub-models/Qwen3-4B --qnn-lib /path/to/qairt/2.XX.0
-
-# the default for every run on this machine
-geniex config set qnn-lib /path/to/qairt/2.XX.0
-geniex config get qnn-lib
-```
-
-Applies to `geniex serve` as well. Highest precedence first: `--qnn-lib`, then the `GENIEX_QNN_LIB` environment variable, then `geniex config set qnn-lib`, then the bundled runtime. So a stored default never overrides what you pass on the command line.
-
-**The path is either layout**, and GenieX works out which:
-
-| Layout | What it looks like |
-|---|---|
-| A **QAIRT SDK root**, as unpacked from the Qualcomm Software Center | Host libraries under `lib/<target-triple>/` (`aarch64-windows-msvc`, `aarch64-android`, `aarch64-oe-linux-gcc11.2`), Hexagon skels under `lib/hexagon-v*/` |
-| A **flat folder** | `QnnHtp.dll` and `QnnSystem.dll` (or `libQnnHtp.so` / `libQnnSystem.so`) sitting directly in it, alongside the arch stubs |
-
-Any QAIRT release from **2.36** upward loads: GenieX negotiates the QNN C API version at load time, so runtimes both newer and older than the bundled one are accepted down to that floor. Older ones are rejected with a version error.
-
-A path that is neither layout fails when the model is created, naming what it looked for:
-
-```
-geniex: QnnHtp.dll not found in HTP runtime folder: D:/wrong/path
-  (from QnnRuntimeConfig::htp_dir)
-Expected either a flat directory holding QnnHtp.dll and its arch stubs (shaped like the
-bundled htp-files/), or a QAIRT SDK root with lib/aarch64-windows-msvc/.
-```
-
-<Warning>Check which runtime actually loaded before trusting the output of a run. A QAIRT version mismatch that the API-version check accepts can still produce **wrong text at full speed** rather than failing, so a successful run is not by itself evidence that the override resolved where you meant. Run with `--log info` and look for `HTP runtime path:` — for an SDK root that names the `lib/<target-triple>/` subfolder, not the root you passed.</Warning>
 
 ## **`geniex-bench`**
 

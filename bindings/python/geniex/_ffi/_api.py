@@ -160,12 +160,6 @@ def _bind_all() -> None:
     lib.geniex_version.argtypes = []
     lib.geniex_version.restype = c_char_p
 
-    lib.geniex_set_qairt_runtime_path.argtypes = [c_char_p]
-    lib.geniex_set_qairt_runtime_path.restype = c_int32
-
-    lib.geniex_get_qairt_runtime_path.argtypes = []
-    lib.geniex_get_qairt_runtime_path.restype = c_char_p
-
     lib.geniex_get_plugin_version.argtypes = [c_char_p]
     lib.geniex_get_plugin_version.restype = c_char_p
 
@@ -458,28 +452,6 @@ def version() -> str:
     _ensure_bound()
     lib = load_library()
     return lib.geniex_version().decode()
-
-
-def set_qairt_runtime_path(path: str) -> None:
-    """Load the QAIRT runtime from ``path`` instead of the one bundled with the plugin.
-
-    ``path`` is either a QAIRT SDK root or a flat folder of QNN libraries; ``""``
-    restores the bundled runtime. Ignored by other plugins.
-
-    Process-global rather than per-model, because the QNN libraries load once per
-    process. Call before creating the model that should use it; an unusable path is
-    reported when that model is created, not here.
-    """
-    _ensure_bound()
-    lib = load_library()
-    lib.geniex_set_qairt_runtime_path(path.encode() if path else None)
-
-
-def get_qairt_runtime_path() -> str:
-    """Return the path set by :func:`set_qairt_runtime_path`, or ``""`` when unset."""
-    _ensure_bound()
-    lib = load_library()
-    return (lib.geniex_get_qairt_runtime_path() or b'').decode()
 
 
 def get_plugin_version(plugin_id: str) -> str:

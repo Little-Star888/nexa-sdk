@@ -187,43 +187,6 @@ GENIEX_API int32_t geniex_deinit(void);
 GENIEX_API int32_t geniex_set_log(geniex_log_callback callback);
 
 /**
- * @brief Load the QAIRT runtime from `path` instead of the one bundled with the plugin
- *
- * Optional: a QAIRT runtime ships with the qairt plugin and is used by default, so
- * this is for running against another QAIRT version without rebuilding. Ignored by
- * other plugins.
- *
- * `path` may be either a QAIRT SDK root (host libraries under lib/<target-triple>,
- * Hexagon skels under lib/hexagon-v<arch>) or a flat folder holding QnnHtp and
- * QnnSystem directly; the plugin tells them apart. Pass NULL or "" to go back to the
- * bundled runtime. Any QAIRT release from 2.36 up loads: the QNN C API version is
- * negotiated at load time, so newer and older runtimes are accepted down to that floor.
- *
- * Process-global rather than per-model, because the QNN libraries load once per
- * process: two models cannot run against different QAIRT versions. Set it before
- * creating the model that should use it. Takes precedence over GENIEX_QNN_LIB.
- *
- * @param path[in]: Runtime directory, or NULL to unset. Copied; the caller keeps
- *                  ownership. Not validated here — an unusable path fails model
- *                  creation with a message naming the layouts it looked for.
- *
- * @return geniex_ErrorCode: GENIEX_SUCCESS on success, negative on failure.
- *
- * @thread_safety: Not thread-safe against concurrent model creation.
- */
-GENIEX_API int32_t geniex_set_qairt_runtime_path(const char* path);
-
-/**
- * @brief Read back what geniex_set_qairt_runtime_path() stored
- *
- * @return Null-terminated UTF-8 string, "" when unset. Owned by the library; valid
- *         until the next geniex_set_qairt_runtime_path() call. Never NULL.
- *
- * @thread_safety: Not thread-safe against geniex_set_qairt_runtime_path().
- */
-GENIEX_API const char* geniex_get_qairt_runtime_path(void);
-
-/**
  * @brief Simple wrapper around free() to free memory allocated by ML library functions
  *
  * @param ptr[in]: The pointer to free.
