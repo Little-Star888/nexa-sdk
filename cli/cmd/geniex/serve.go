@@ -36,7 +36,7 @@ func serve() *cobra.Command {
 	serveCmd.Flags().Int32("nctx", 4096, "Default context window size, llama_cpp only (env: GENIEX_NCTX)")
 	serveCmd.Flags().Int32P("ngl", "n", -1, "Default layers to offload to gpu/npu, -1 = all, llama_cpp only (env: GENIEX_NGL)")
 	serveCmd.Flags().StringP("compute", "c", "", "Default compute unit: cpu, gpu, npu, or hybrid (env: GENIEX_COMPUTE)")
-	serveCmd.Flags().String("qnn-lib", "", "Run against a different QAIRT runtime: path to a QAIRT SDK root or a folder of QNN libraries, qairt only (env: GENIEX_QNN_LIB)")
+	serveCmd.Flags().String("qnn-lib", "", "Run against a different QAIRT runtime: path to a QAIRT SDK root or a folder of QNN libraries, qairt only (env: GENIEX_QAIRT_LIB)")
 	// HTTPS / TLS flags
 	serveCmd.Flags().Bool("https", false, "Enable HTTPS/TLS (env: GENIEX_HTTPS)")
 	serveCmd.Flags().String("certfile", "cert.pem", "TLS certificate file path (env: GENIEX_CERTFILE)")
@@ -51,7 +51,7 @@ func serve() *cobra.Command {
 	viper.BindPFlag("qnnlib", serveCmd.Flags().Lookup("qnn-lib"))
 	// Bound explicitly so the plugin's own spelling is the only one that works;
 	// AutomaticEnv would otherwise make GENIEX_QNNLIB a silent second alias.
-	viper.BindEnv("qnnlib", "GENIEX_QNN_LIB")
+	viper.BindEnv("qnnlib", "GENIEX_QAIRT_LIB")
 	viper.BindPFlag("enablehttps", serveCmd.Flags().Lookup("https"))
 	viper.BindPFlag("certfile", serveCmd.Flags().Lookup("certfile"))
 	viper.BindPFlag("keyfile", serveCmd.Flags().Lookup("keyfile"))
@@ -62,8 +62,8 @@ func serve() *cobra.Command {
 		// Exported rather than passed down, matching `infer`: every model the server
 		// loads, LLM or VLM, then picks the override up the same way.
 		if qnnLib := viper.GetString("qnnlib"); qnnLib != "" {
-			if err := os.Setenv("GENIEX_QNN_LIB", qnnLib); err != nil {
-				common.PrintError(fmt.Errorf("failed to set GENIEX_QNN_LIB: %w", err))
+			if err := os.Setenv("GENIEX_QAIRT_LIB", qnnLib); err != nil {
+				common.PrintError(fmt.Errorf("failed to set GENIEX_QAIRT_LIB: %w", err))
 				os.Exit(1)
 			}
 		}

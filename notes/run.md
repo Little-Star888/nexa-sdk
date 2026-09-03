@@ -119,7 +119,7 @@ without reinstalling, point the plugin at it:
 geniex infer local/granite4_micro --qnn-lib /path/to/qairt/2.XX.0
 
 # or via the environment variable (picked up by any front-end: CLI, pybind, Android)
-GENIEX_QNN_LIB=/path/to/qairt/2.XX.0 geniex infer local/granite4_micro
+GENIEX_QAIRT_LIB=/path/to/qairt/2.XX.0 geniex infer local/granite4_micro
 ```
 
 The path accepts either layout:
@@ -136,7 +136,7 @@ The path accepts either layout:
 > the override resolved where you meant. Run with `--log info` (the CLI default is `none`):
 >
 > ```
-> Overriding the bundled QAIRT runtime from GENIEX_QNN_LIB: <what you passed> (host libs: <resolved dir>)
+> Overriding the bundled QAIRT runtime from GENIEX_QAIRT_LIB: <what you passed> (host libs: <resolved dir>)
 > ```
 >
 > `host libs:` is the part that matters — for an SDK root it is the `lib/<triple>` subfolder,
@@ -158,8 +158,8 @@ which is why this is a supported override rather than a testing-only aid.
 `htp_backend_ext_config.json` itself through the public C API — so a runtime folder does not
 need to carry it.
 
-`--qnn-lib` just sets `GENIEX_QNN_LIB` for the process, so the flag wins when both are given.
-An unusable path fails model load immediately, e.g. `GENIEX_QNN_LIB does not contain
+`--qnn-lib` just sets `GENIEX_QAIRT_LIB` for the process, so the flag wins when both are given.
+An unusable path fails model load immediately, e.g. `GENIEX_QAIRT_LIB does not contain
 QnnHtp.dll (looked in the folder itself and lib/aarch64-windows-msvc): <path>`.
 
 </details>

@@ -128,7 +128,7 @@ inline std::string collect_adsp_library_path(const std::filesystem::path& root) 
 
 // Returns a QnnRuntimeConfig for the given model directory.
 //
-// GENIEX_QNN_LIB (or the CLI `--qnn-lib` flag) is an optional override; unset, the config
+// GENIEX_QAIRT_LIB (or the CLI `--qnn-lib` flag) is an optional override; unset, the config
 // stays empty and the plugin resolves its own bundled runtime. Set, we pin all three path
 // fields, which the plugin then honors as-is -- translating an SDK root is our job because
 // the plugin only understands the flat layout. Throws when set but unusable.
@@ -137,21 +137,21 @@ inline QnnRuntimeConfig make_qnn_runtime_config(const std::filesystem::path& mod
 
     QnnRuntimeConfig runtime_cfg{};
 
-    const fs::path qnn_lib_root = read_env_path("GENIEX_QNN_LIB", L"GENIEX_QNN_LIB");
+    const fs::path qnn_lib_root = read_env_path("GENIEX_QAIRT_LIB", L"GENIEX_QAIRT_LIB");
     if (qnn_lib_root.empty()) {
-        GENIEX_LOG_DEBUG("GENIEX_QNN_LIB unset; using the QAIRT runtime bundled with the plugin");
+        GENIEX_LOG_DEBUG("GENIEX_QAIRT_LIB unset; using the QAIRT runtime bundled with the plugin");
         static_cast<void>(model_dir);
         return runtime_cfg;
     }
 
     std::error_code ec;
     if (!fs::is_directory(qnn_lib_root, ec)) {
-        throw std::runtime_error("GENIEX_QNN_LIB path is not a directory: " + qnn_lib_root.string() +
+        throw std::runtime_error("GENIEX_QAIRT_LIB path is not a directory: " + qnn_lib_root.string() +
                                  "\nUnset it to use the QAIRT runtime bundled with the plugin.");
     }
     const fs::path host_dir = locate_qnn_host_lib_dir(qnn_lib_root);
     if (host_dir.empty()) {
-        throw std::runtime_error("GENIEX_QNN_LIB does not contain " + std::string(kQnnBackendLib) +
+        throw std::runtime_error("GENIEX_QAIRT_LIB does not contain " + std::string(kQnnBackendLib) +
                                  " (looked in the folder itself and lib/" + kHostLibTriple +
                                  "): " + qnn_lib_root.string() +
                                  "\nUnset it to use the QAIRT runtime bundled with the plugin.");
@@ -161,7 +161,7 @@ inline QnnRuntimeConfig make_qnn_runtime_config(const std::filesystem::path& mod
     std::string adsp_path = collect_adsp_library_path(qnn_lib_root);
     if (adsp_path.empty()) adsp_path = host_dir.string();
 
-    GENIEX_LOG_INFO("Overriding the bundled QAIRT runtime from GENIEX_QNN_LIB: {} (host libs: {})",
+    GENIEX_LOG_INFO("Overriding the bundled QAIRT runtime from GENIEX_QAIRT_LIB: {} (host libs: {})",
         qnn_lib_root.string(),
         host_dir.string());
     GENIEX_LOG_DEBUG("Setting ADSP_LIBRARY_PATH to {}", adsp_path);
