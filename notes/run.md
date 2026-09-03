@@ -120,6 +120,9 @@ geniex infer local/granite4_micro --qnn-lib /path/to/qairt/2.XX.0
 
 # or via the environment variable, for any process that can set one
 GENIEX_QNN_LIB=/path/to/qairt/2.XX.0 geniex infer local/granite4_micro
+
+# or as this machine's default, for a host kept on one QAIRT version
+geniex config set qnn-lib /path/to/qairt/2.XX.0
 ```
 
 Embedders set it explicitly instead, which is the only route open to Android — the JVM has
@@ -137,9 +140,10 @@ geniex_sdk.SetQairtRuntimePath("/path/to/qairt/2.XX.0")
 GenieXSdk.getInstance().setQairtRuntimePath("/path/to/qairt/2.XX.0")
 ```
 
-An explicit path wins over `GENIEX_QNN_LIB`. It is process-global in every binding, because
-the QNN libraries load once per process — two models cannot run against different QAIRT
-versions.
+Precedence, highest first: `--qnn-lib` or an explicit API call, then `GENIEX_QNN_LIB`, then
+`geniex config set qnn-lib`, then the bundled runtime — a stored default never outranks what
+was passed for this run. It is process-global in every binding, because the QNN libraries
+load once per process: two models cannot run against different QAIRT versions.
 
 The path accepts either layout:
 

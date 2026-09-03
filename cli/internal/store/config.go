@@ -18,11 +18,15 @@ import (
 // that invalid keys can be rejected at the CLI boundary.
 const (
 	ConfigKeyChipset = "chipset"
+	// Default QAIRT runtime directory for qairt models, so a machine kept on a
+	// specific QAIRT version does not have to pass --qnn-lib on every run.
+	ConfigKeyQnnLib = "qnn-lib"
 )
 
 // ConfigKeys is the list of all known configuration keys.
 var ConfigKeys = []string{
 	ConfigKeyChipset,
+	ConfigKeyQnnLib,
 }
 
 const configFileName = "config.json"

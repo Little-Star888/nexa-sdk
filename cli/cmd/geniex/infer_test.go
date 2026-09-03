@@ -51,3 +51,37 @@ func TestModelLoadedLine(t *testing.T) {
 		})
 	}
 }
+
+// Precedence for the QAIRT runtime directory. The `qnn-lib` config default exists so
+// a machine pinned to one QAIRT version need not repeat --qnn-lib on every run, which
+// is exactly why the per-run sources have to outrank it: otherwise a path stored months
+// ago would silently beat what the user just typed.
+func TestResolveQnnLib(t *testing.T) {
+	const flagPath, envPath, configPath = "D:/qairt/2.49", "D:/qairt/2.48", "D:/qairt/2.45"
+
+	tests := []struct {
+		name                             string
+		flagValue, envValue, configValue string
+		want                             string
+	}{
+		{"nothing set stays on the bundled runtime", "", "", "", ""},
+		{"flag alone", flagPath, "", "", flagPath},
+		{"env alone", "", envPath, "", envPath},
+		{"config default alone", "", "", configPath, configPath},
+		{"flag beats env", flagPath, envPath, "", flagPath},
+		{"flag beats the config default", flagPath, "", configPath, flagPath},
+		{"env beats the config default", "", envPath, configPath, envPath},
+		{"flag beats both", flagPath, envPath, configPath, flagPath},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveQnnLib(tt.flagValue, tt.envValue, tt.configValue)
+			if got != tt.want {
+				t.Errorf("resolveQnnLib(%q, %q, %q)
+ got: %q
+want: %q",
+					tt.flagValue, tt.envValue, tt.configValue, got, tt.want)
+			}
+		})
+	}
+}

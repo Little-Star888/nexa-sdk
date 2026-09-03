@@ -60,9 +60,7 @@ func serve() *cobra.Command {
 
 		// Applies to every model the server loads, LLM or VLM: the QNN libraries load
 		// once per process, so this cannot be a per-request setting.
-		if qnnLib := viper.GetString("qnnlib"); qnnLib != "" {
-			geniex_sdk.SetQairtRuntimePath(qnnLib)
-		}
+		applyQnnLib(viper.GetString("qnnlib"))
 
 		if err := common.InitSDK(); err != nil {
 			common.PrintError(err)

@@ -112,6 +112,37 @@ var (
 	}
 )
 
+// resolveQnnLib picks the QAIRT runtime directory to run against, highest
+// precedence first: the --qnn-lib flag, GENIEX_QNN_LIB, then the `qnn-lib` config
+// default. Empty means the plugin stays on the runtime it bundles.
+//
+// GENIEX_QNN_LIB is passed back through rather than left for the plugin to read on
+// its own: the resolved path is the same either way, and handling all three sources
+// here keeps the order in one testable place.
+func resolveQnnLib(flagValue, envValue, configValue string) string {
+	for _, candidate := range []string{flagValue, envValue, configValue} {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// applyQnnLib hands the resolved runtime directory to the SDK. Must run before the
+// model is created; the QNN libraries load once per process.
+func applyQnnLib(flagValue string) {
+	configValue, _, err := store.Get().ConfigGet(store.ConfigKeyQnnLib)
+	if err != nil {
+		// An unreadable config must not stop a run that passed --qnn-lib explicitly.
+		slog.Debug("could not read the qnn-lib config default", "err", err)
+		configValue = ""
+	}
+
+	if lib := resolveQnnLib(flagValue, os.Getenv("GENIEX_QNN_LIB"), configValue); lib != "" {
+		geniex_sdk.SetQairtRuntimePath(lib)
+	}
+}
+
 func infer() *cobra.Command {
 	inferCmd := &cobra.Command{
 		GroupID: "inference",
@@ -143,9 +174,7 @@ func infer() *cobra.Command {
 			return err
 		}
 
-		if qnnLib != "" {
-			geniex_sdk.SetQairtRuntimePath(qnnLib)
-		}
+		applyQnnLib(qnnLib)
 
 		if err := common.InitSDK(); err != nil {
 			return err

@@ -295,6 +295,8 @@ print(f"model removed: {MODEL}")
 | `geniex.version()` | 返回 SDK 版本字符串。 |
 | `geniex.get_runtime_list()` | 返回可用运行环境 ID 列表 `list[str]`。 |
 | `geniex.get_compute_unit_list(runtime)` | 返回指定运行环境下的 `(compute_unit, compute_unit_name)` 元组列表 `list[tuple[str, str]]`。 |
+| `geniex.set_qairt_runtime_path(path)` | 让 `qairt` 模型改用 `path` 下的 QAIRT 运行时（QAIRT SDK 根目录或存放 QNN 库的扁平目录），而非自带运行时；传 `""` 恢复自带运行时。请在加载模型前调用；QNN 库每个进程只加载一次，因此该设置作用于整个进程。优先级高于 `GENIEX_QNN_LIB`。可接受的目录结构与失败表现参见[改用其他 QAIRT 运行时](/cn/run/cli/reference#改用其他-qairt-运行时)。 |
+| `geniex.get_qairt_runtime_path()` | 返回上述设置的路径；未设置时返回 `""`。 |
 
 <br />
 

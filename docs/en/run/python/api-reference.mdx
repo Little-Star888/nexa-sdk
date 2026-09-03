@@ -295,6 +295,8 @@ print(f"model removed: {MODEL}")
 | `geniex.version()` | Returns the SDK version string. |
 | `geniex.get_runtime_list()` | Returns `list[str]` of available runtime IDs. |
 | `geniex.get_compute_unit_list(runtime)` | Returns `list[tuple[str, str]]` of `(compute_unit, compute_unit_name)` pairs for the given runtime. |
+| `geniex.set_qairt_runtime_path(path)` | Run `qairt` models against the QAIRT runtime in `path` — a QAIRT SDK root or a flat folder of QNN libraries — instead of the bundled one. `""` restores the bundled runtime. Call before loading the model; the QNN libraries load once per process, so it applies process-wide. Takes precedence over `GENIEX_QNN_LIB`. See [Running against a different QAIRT runtime](/en/run/cli/reference#running-against-a-different-qairt-runtime) for the accepted layouts and failure mode. |
+| `geniex.get_qairt_runtime_path()` | Returns the path set above, or `""` when unset. |
 
 <br />
 

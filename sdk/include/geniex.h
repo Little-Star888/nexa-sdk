@@ -193,8 +193,11 @@ GENIEX_API int32_t geniex_set_log(geniex_log_callback callback);
  * this is for running against another QAIRT version without rebuilding. Ignored by
  * other plugins.
  *
- * `path` may be either a QAIRT SDK root or a flat folder of QNN libraries; the
- * plugin tells them apart. Pass NULL or "" to go back to the bundled runtime.
+ * `path` may be either a QAIRT SDK root (host libraries under lib/<target-triple>,
+ * Hexagon skels under lib/hexagon-v<arch>) or a flat folder holding QnnHtp and
+ * QnnSystem directly; the plugin tells them apart. Pass NULL or "" to go back to the
+ * bundled runtime. Any QAIRT release from 2.36 up loads: the QNN C API version is
+ * negotiated at load time, so newer and older runtimes are accepted down to that floor.
  *
  * Process-global rather than per-model, because the QNN libraries load once per
  * process: two models cannot run against different QAIRT versions. Set it before
