@@ -60,7 +60,7 @@ int32_t QairtVlm::create(const geniex_VlmCreateInput* input) {
 
     bundle_sampler_ = parseGenieSamplerConfig(model_dir);
 
-    QnnRuntimeConfig runtime_cfg = qairt::runtime::make_qnn_runtime_config(model_dir);
+    QnnRuntimeConfig runtime_cfg = qairt::runtime::make_qnn_runtime_config();
 
     // Resolve vision encoder path first so we can exclude it from LLM shards.
     std::string resolved_vision_bin;
