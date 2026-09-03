@@ -374,6 +374,56 @@ static char* build_vlm_prompt(geniex_VLM* vlm, const options_t* o, const char* b
     return tout.formatted_text;
 }
 
+/* --accuracy --prompt-file (VLM): run user_prompt (optionally preceded by
+ * --system-prompt) through the bundle's own chat template before
+ * generation, mirroring build_llm_accuracy_prompt() for the LLM path.
+ */
+static char* build_vlm_accuracy_prompt(geniex_VLM* vlm, const options_t* o, const char* user_prompt) {
+    geniex_VlmContent user_contents[1];
+    user_contents[0].type = "text";
+    user_contents[0].text = user_prompt;
+
+    geniex_VlmChatMessage messages[2];
+    memset(messages, 0, sizeof(messages));
+    int32_t nm = 0;
+    if (o->system_prompt) {
+        geniex_VlmContent* system_contents = (geniex_VlmContent*)calloc(1, sizeof(geniex_VlmContent));
+        if (!system_contents) {
+            fprintf(stderr, "ERROR: oom\n");
+            return NULL;
+        }
+        system_contents[0].type    = "text";
+        system_contents[0].text    = o->system_prompt;
+        messages[nm].role          = "system";
+        messages[nm].contents      = system_contents;
+        messages[nm].content_count = 1;
+        nm++;
+    }
+    messages[nm].role          = "user";
+    messages[nm].contents      = user_contents;
+    messages[nm].content_count = 1;
+    nm++;
+
+    geniex_VlmApplyChatTemplateInput  tin;
+    geniex_VlmApplyChatTemplateOutput tout;
+    memset(&tin, 0, sizeof(tin));
+    memset(&tout, 0, sizeof(tout));
+    tin.messages        = messages;
+    tin.message_count   = nm;
+    tin.enable_thinking = o->enable_thinking;
+
+    int32_t rc = geniex_vlm_apply_chat_template(vlm, &tin, &tout);
+    if (nm > 1) free(messages[0].contents); /* the system_contents calloc above */
+    if (rc != GENIEX_SUCCESS) {
+        fprintf(stderr,
+            "ERROR: geniex_vlm_apply_chat_template: %s (%d)\n",
+            geniex_get_error_message((geniex_ErrorCode)rc),
+            rc);
+        return NULL;
+    }
+    return tout.formatted_text;
+}
+
 void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
     geniex_VlmCreateInput cin;
     memset(&cin, 0, sizeof(cin));
@@ -403,13 +453,25 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
             bool    is_warmup = (i < o->warmup);
             int32_t run_idx   = is_warmup ? i : (i - o->warmup);
 
-            /* Build the templated prompt once per run.  When --prompt-file
-             * supplies a pre-templated string, use it directly; otherwise run
-             * the fixed default text through the bundle's chat template so the
-             * image tokens are placed correctly. */
+            /* Build the templated prompt once per run. --accuracy --prompt-file
+             * runs the raw user turn through the bundle's chat template
+             * (matching build_llm_accuracy_prompt() on the LLM path) so
+             * --system-prompt / --no-think take effect and the model sees a
+             * real templated turn instead of raw, unframed text. Without
+             * --accuracy, --prompt-file supplies an already-templated string
+             * used directly (bench/perf callers pre-template themselves).
+             * With neither, run the fixed default text through the template
+             * so the image tokens are placed correctly. */
             char*       built_prompt = NULL;
             const char* final_prompt;
-            if (cur_prompt) {
+            if (cur_prompt && o->accuracy) {
+                built_prompt = build_vlm_accuracy_prompt(vlm, o, cur_prompt);
+                if (!built_prompt) {
+                    geniex_vlm_destroy(vlm);
+                    exit(1);
+                }
+                final_prompt = built_prompt;
+            } else if (cur_prompt) {
                 final_prompt = cur_prompt;
             } else {
                 built_prompt = build_vlm_prompt(vlm, o, VLM_DEFAULT_PROMPT);
