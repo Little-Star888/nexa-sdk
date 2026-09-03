@@ -13,6 +13,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 #include "build_config.h"
 #include "logging.h"
@@ -136,6 +137,19 @@ int32_t geniex_set_log(geniex_log_callback callback) {
     geniex_log = callback;
     return GENIEX_SUCCESS;
 }
+
+// QAIRT runtime override
+
+// Read by the qairt plugin while creating a model, so the documented contract is
+// set-before-create; nothing here guards against a concurrent create.
+static std::string qairt_runtime_path;
+
+int32_t geniex_set_qairt_runtime_path(const char* path) {
+    qairt_runtime_path = (path != nullptr) ? path : "";
+    return GENIEX_SUCCESS;
+}
+
+const char* geniex_get_qairt_runtime_path(void) { return qairt_runtime_path.c_str(); }
 
 void geniex_free(void* ptr) {
     if (ptr) free(ptr);
