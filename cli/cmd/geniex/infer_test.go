@@ -77,9 +77,7 @@ func TestResolveQnnLib(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := resolveQnnLib(tt.flagValue, tt.envValue, tt.configValue)
 			if got != tt.want {
-				t.Errorf("resolveQnnLib(%q, %q, %q)
- got: %q
-want: %q",
+				t.Errorf("resolveQnnLib(%q, %q, %q)\n got: %q\nwant: %q",
 					tt.flagValue, tt.envValue, tt.configValue, got, tt.want)
 			}
 		})
