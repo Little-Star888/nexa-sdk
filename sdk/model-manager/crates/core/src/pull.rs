@@ -43,6 +43,7 @@ use crate::source::ai_hub::{AiHubConfig, AiHubSource};
 use crate::source::dockerhub::DockerHubSource;
 use crate::source::hf::HfSource;
 use crate::source::localfs::LocalFsSource;
+use crate::source::modelscope::ModelScopeSource;
 use crate::source::ModelSource;
 use crate::store::{Store, INFLIGHT_DIR, MANIFEST_FILE};
 use crate::transport::{HttpTransport, ReqwestTransport};
@@ -73,6 +74,14 @@ pub enum PullIntent {
     },
     LocalFs {
         source_dir: PathBuf,
+    },
+    ModelScope {
+        /// "org/repo" on ModelScope — usually identical to
+        /// `PullRequest.model_name` but the caller may have canonicalised.
+        repo: String,
+        /// Bearer token; `None` means anonymous. Reuses the same
+        /// optional-token plumbing as HuggingFace.
+        token: Option<String>,
     },
     AiHub {
         display_name: String,
@@ -232,6 +241,10 @@ pub(crate) async fn build_source(
             req.model_name.clone(),
             req.hint.clone(),
         ))),
+        PullIntent::ModelScope { repo, token } => {
+            let src = ModelScopeSource::new(repo.clone(), token.clone(), req.hint.clone())?;
+            Ok(Box::new(src))
+        }
         PullIntent::AiHub {
             display_name,
             chipset,

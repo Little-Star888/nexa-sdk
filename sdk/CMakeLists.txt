@@ -157,11 +157,17 @@ enable_testing()
 #   GGML_OPENCL_ADRENO_XMEM_GEMM=0 override confirms the fix.
 if(GENIEX_PLUGIN_LLAMA_CPP)
     set(_LLAMA_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/../third-party/llama.cpp")
-    set(_LLAMA_PATCHES
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-hexagon-release-sessions.patch"
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-opencl-adreno-cpy-constreg.patch"
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-zero-free-mem-even-split.patch"
-        "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-opencl-adreno-xmem-gemm-off.patch")
+    set(_LLAMA_PATCHES)
+    if(GGML_HEXAGON)
+        list(APPEND _LLAMA_PATCHES
+            "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-hexagon-release-sessions.patch")
+    endif()
+    if(GGML_OPENCL)
+        list(APPEND _LLAMA_PATCHES
+            "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-opencl-adreno-cpy-constreg.patch"
+            "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-zero-free-mem-even-split.patch"
+            "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-opencl-adreno-xmem-gemm-off.patch")
+    endif()
     find_package(Git QUIET REQUIRED)
     foreach(_LLAMA_PATCH ${_LLAMA_PATCHES})
         if(EXISTS "${_LLAMA_PATCH}")

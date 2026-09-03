@@ -12,13 +12,15 @@
 //! Implementations live beside this file: [`hf`] (HuggingFace REST API
 //! with siblings), [`localfs`] (on-disk directory walk), [`ai_hub`]
 //! (Qualcomm AI Hub S3 protojson chain plus remote ZIP64 central-dir
-//! parse), and [`dockerhub`] (Docker Registry HTTP API V2, for models
-//! published under `hub.docker.com/u/ai` and similar).
+//! parse), [`modelscope`] (ModelScope REST API), and [`dockerhub`]
+//! (Docker Registry HTTP API V2, for models published under
+//! `hub.docker.com/u/ai` and similar).
 
 pub mod ai_hub;
 pub mod dockerhub;
 pub mod hf;
 pub mod localfs;
+pub mod modelscope;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -116,8 +118,8 @@ pub struct FileSpec {
 
 /// Byte source for a [`FileSpec`].
 ///
-/// Variants cover HF, LocalFS, and AI Hub (remote and local archives).
-/// A future ModelScope / Volces hub should be expressible with `Http` +
+/// Variants cover HF, LocalFS, ModelScope, and AI Hub (remote and local
+/// archives). A future Volces hub should be expressible with `Http` +
 /// manifest-side overrides; if not, extend this enum.
 #[derive(Debug, Clone)]
 pub enum BytesSource {
