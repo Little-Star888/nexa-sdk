@@ -62,7 +62,7 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
 
     bundle_sampler_ = parseGenieSamplerConfig(model_dir);
 
-    QnnRuntimeConfig runtime_cfg = qairt::runtime::make_qnn_runtime_config(model_dir);
+    QnnRuntimeConfig runtime_cfg = qairt::runtime::make_qnn_runtime_config();
 
     // Bundle layout comes from the QAIRT core: `modelConfigFromDirectory` reads
     // genie_config.json's `dialog.engine.model.binary.ctx-bins` and takes only
