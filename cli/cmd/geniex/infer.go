@@ -40,7 +40,7 @@ var (
 	input         string
 	systemPrompt  string
 	computeUnit   string
-	qnnLib        string
+	qairtLib      string
 	slidingWindow bool
 	specType      string
 	draftModel    string
@@ -82,7 +82,7 @@ var (
 		llmFlags := pflag.NewFlagSet("LLM/VLM Model", pflag.ExitOnError)
 		llmFlags.SortFlags = false
 		llmFlags.StringVarP(&computeUnit, "compute", "c", "", "compute unit to run on: cpu, gpu, npu, hybrid, or an explicit device list like HTP0,HTP1,HTP2,HTP3 (llama_cpp only) (default: npu)")
-		llmFlags.StringVarP(&qnnLib, "qnn-lib", "", "", "run against a different QAIRT runtime: path to a QAIRT SDK root or a folder of QNN libraries (qairt only; sets GENIEX_QAIRT_LIB; optional — a QAIRT runtime is bundled and used by default)")
+		llmFlags.StringVarP(&qairtLib, "qairt-lib", "", "", "run against a different QAIRT runtime: path to a QAIRT SDK root or a folder of QNN libraries (qairt only; sets GENIEX_QAIRT_LIB; optional — a QAIRT runtime is bundled and used by default)")
 		llmFlags.Int32VarP(&ngl, "ngl", "n", -1, "number of layers to offload to gpu/npu, -1 = all (llama_cpp only)")
 		llmFlags.Int32VarP(&nctx, "nctx", "", 4096, "context window size; raise to extend context (llama_cpp only)")
 		llmFlags.Int32VarP(&maxTokens, "max-tokens", "", 2048, "max tokens")
@@ -145,8 +145,8 @@ func infer() *cobra.Command {
 
 		// Exported rather than passed down so every path in this process -- LLM, VLM, any
 		// binding -- picks the override up the same way.
-		if qnnLib != "" {
-			if err := os.Setenv("GENIEX_QAIRT_LIB", qnnLib); err != nil {
+		if qairtLib != "" {
+			if err := os.Setenv("GENIEX_QAIRT_LIB", qairtLib); err != nil {
 				return fmt.Errorf("failed to set GENIEX_QAIRT_LIB: %w", err)
 			}
 		}
