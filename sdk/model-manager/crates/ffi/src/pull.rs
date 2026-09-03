@@ -8,7 +8,7 @@ use model_manager_core::config::StoreConfig;
 use model_manager_core::manifest_builder::ManifestHint;
 use model_manager_core::mapping::{
     aihub_display_name_from_repo, canonicalize_model_name, docker_hub_repo_from_name,
-    is_docker_hub_reference,
+    is_docker_hub_reference, is_modelscope_reference,
 };
 use model_manager_core::pull::{pull_blocking, PullIntent, PullRequest};
 
@@ -189,6 +189,15 @@ pub(crate) unsafe fn extract_name_and_intent(
         return Ok((repo.clone(), PullIntent::DockerHub { repo, reference }));
     }
 
+    // Same reason as Docker above: a pasted ModelScope model-page URL is the
+    // only auto-detectable ModelScope signal, and canonicalisation discards it.
+    let hub = if matches!(inp.hub, GenieXHubSource::Auto) && is_modelscope_reference(raw_model_name)
+    {
+        GenieXHubSource::ModelScope
+    } else {
+        inp.hub
+    };
+
     // Bare names (no '/') land under `qualcomm/<name>`.
     let model_name = canonicalize_model_name(raw_model_name);
 
@@ -204,7 +213,7 @@ pub(crate) unsafe fn extract_name_and_intent(
     let local_path = cstr_to_str(inp.local_path).ok().map(PathBuf::from);
 
     let intent = build_pull_intent(
-        &inp.hub,
+        &hub,
         &model_name,
         hf_token,
         chipset,

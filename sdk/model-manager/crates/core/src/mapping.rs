@@ -36,8 +36,7 @@ pub fn canonicalize_model_name(name: &str) -> String {
     let name = name
         .strip_prefix("https://huggingface.co/")
         .or_else(|| name.strip_prefix("http://huggingface.co/"))
-        .or_else(|| name.strip_prefix("https://modelscope.cn/models/"))
-        .or_else(|| name.strip_prefix("http://modelscope.cn/models/"))
+        .or_else(|| strip_modelscope_url_prefix(name))
         .unwrap_or(name);
     match name.split_once('/') {
         None => format!("qualcomm/{name}"),
@@ -84,6 +83,28 @@ const DOCKER_HUB_PREFIXES: &[&str] = &[
     "http://hub.docker.com/r/",
     "hub.docker.com/r/",
 ];
+
+/// Model-page URL prefixes that identify a ModelScope reference.
+const MODELSCOPE_URL_PREFIXES: &[&str] = &[
+    "https://modelscope.cn/models/",
+    "http://modelscope.cn/models/",
+];
+
+/// Strip a recognised ModelScope model-page prefix, yielding "org/repo".
+/// `None` when `name` carries no such prefix.
+fn strip_modelscope_url_prefix(name: &str) -> Option<&str> {
+    MODELSCOPE_URL_PREFIXES
+        .iter()
+        .find_map(|p| name.strip_prefix(p))
+}
+
+/// True when `name` is a pasted ModelScope model-page URL. Used to route
+/// `--model-hub auto` pulls to ModelScope without the caller passing
+/// `--model-hub modelscope`; a bare "org/repo" is never inferred, since
+/// ModelScope shares its namespace shape with HuggingFace.
+pub fn is_modelscope_reference(name: &str) -> bool {
+    strip_modelscope_url_prefix(name).is_some()
+}
 
 /// True when `name` carries one of [`DOCKER_HUB_PREFIXES`]. Used to
 /// route `--model-hub auto` pulls to Docker Hub without the caller
@@ -223,6 +244,20 @@ mod tests {
             canonicalize_model_name("http://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF"),
             "Qwen/Qwen3-0.6B-GGUF"
         );
+    }
+
+    #[test]
+    fn modelscope_reference_needs_a_url_prefix() {
+        assert!(is_modelscope_reference(
+            "https://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF"
+        ));
+        assert!(is_modelscope_reference(
+            "http://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF"
+        ));
+        assert!(!is_modelscope_reference("Qwen/Qwen3-0.6B-GGUF"));
+        assert!(!is_modelscope_reference(
+            "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF"
+        ));
     }
 
     #[test]
