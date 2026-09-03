@@ -4,7 +4,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -59,13 +58,10 @@ func serve() *cobra.Command {
 	serveCmd.Run = func(cmd *cobra.Command, args []string) {
 		checkAudioDependency()
 
-		// Exported rather than passed down, matching `infer`: every model the server
-		// loads, LLM or VLM, then picks the override up the same way.
+		// Applies to every model the server loads, LLM or VLM: the QNN libraries load
+		// once per process, so this cannot be a per-request setting.
 		if qnnLib := viper.GetString("qnnlib"); qnnLib != "" {
-			if err := os.Setenv("GENIEX_QNN_LIB", qnnLib); err != nil {
-				common.PrintError(fmt.Errorf("failed to set GENIEX_QNN_LIB: %w", err))
-				os.Exit(1)
-			}
+			geniex_sdk.SetQairtRuntimePath(qnnLib)
 		}
 
 		if err := common.InitSDK(); err != nil {
