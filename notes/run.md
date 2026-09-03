@@ -116,7 +116,7 @@ without reinstalling, point the plugin at it:
 
 ```bash
 # via the CLI flag (qairt models only)
-geniex infer local/granite4_micro --qnn-lib /path/to/qairt/2.XX.0
+geniex infer local/granite4_micro --qairt-lib /path/to/qairt/2.XX.0
 
 # or via the environment variable (picked up by any front-end: CLI, pybind, Android)
 GENIEX_QAIRT_LIB=/path/to/qairt/2.XX.0 geniex infer local/granite4_micro
@@ -158,7 +158,7 @@ which is why this is a supported override rather than a testing-only aid.
 `htp_backend_ext_config.json` itself through the public C API — so a runtime folder does not
 need to carry it.
 
-`--qnn-lib` just sets `GENIEX_QAIRT_LIB` for the process, so the flag wins when both are given.
+`--qairt-lib` just sets `GENIEX_QAIRT_LIB` for the process, so the flag wins when both are given.
 An unusable path fails model load immediately, e.g. `GENIEX_QAIRT_LIB does not contain
 QnnHtp.dll (looked in the folder itself and lib/aarch64-windows-msvc): <path>`.
 

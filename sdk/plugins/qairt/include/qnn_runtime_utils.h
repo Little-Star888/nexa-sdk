@@ -128,7 +128,7 @@ inline std::string collect_adsp_library_path(const std::filesystem::path& root) 
 
 // Returns a QnnRuntimeConfig for the given model directory.
 //
-// GENIEX_QAIRT_LIB (or the CLI `--qnn-lib` flag) is an optional override; unset, the config
+// GENIEX_QAIRT_LIB (or the CLI `--qairt-lib` flag) is an optional override; unset, the config
 // stays empty and the plugin resolves its own bundled runtime. Set, we pin all three path
 // fields, which the plugin then honors as-is -- translating an SDK root is our job because
 // the plugin only understands the flat layout. Throws when set but unusable.
