@@ -171,6 +171,19 @@ static void print_gen_text(const char* text) {
         if (!nl) break;
         line = nl + 1;
     }
+    /* stdout is block-buffered when redirected to a file, so an answer already
+     * generated would still be lost if the process is later killed (harness
+     * timeout, unrelated crash). Flush per answer to bound that loss. */
+    fflush(stdout);
+}
+
+/* Context exhaustion is a stop condition, not a failure: both plugins populate
+ * full_text and profile_data (stop_reason = "length") before returning it, the
+ * same way they do for a max-tokens stop. Treating it as fatal threw away a
+ * complete answer and exited before geniex_deinit(). Everything else is a real
+ * error with nothing usable in the output. */
+static bool generate_rc_is_fatal(int32_t rc) {
+    return rc != GENIEX_SUCCESS && rc != GENIEX_ERROR_LLM_TOKENIZATION_CONTEXT_LENGTH;
 }
 
 /* ----------------------------- LLM run loop ----------------------------- */
@@ -288,13 +301,20 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
             gin.user_data = (void*)o;
 
             int32_t rc = geniex_llm_generate(llm, &gin, &gout);
-            if (rc != GENIEX_SUCCESS) {
+            if (generate_rc_is_fatal(rc)) {
                 const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
                 fprintf(stderr, "ERROR: geniex_llm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
                 if (templated_prompt) geniex_free(templated_prompt);
                 free(tokens);
                 geniex_llm_destroy(llm);
                 exit(1);
+            }
+            if (rc != GENIEX_SUCCESS) {
+                fprintf(stderr,
+                    "[warn] geniex_llm_generate run %d: %s (%d); keeping partial output\n",
+                    run_idx,
+                    geniex_get_error_message((geniex_ErrorCode)rc),
+                    rc);
             }
 
             if (!is_warmup) {
@@ -499,12 +519,19 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
             gin.user_data   = (void*)o;
 
             int32_t rc = geniex_vlm_generate(vlm, &gin, &gout);
-            if (rc != GENIEX_SUCCESS) {
+            if (generate_rc_is_fatal(rc)) {
                 const char* msg = geniex_get_error_message((geniex_ErrorCode)rc);
                 fprintf(stderr, "ERROR: geniex_vlm_generate run %d failed: %s (%d)\n", run_idx, msg ? msg : "?", rc);
                 if (built_prompt) geniex_free(built_prompt);
                 geniex_vlm_destroy(vlm);
                 exit(1);
+            }
+            if (rc != GENIEX_SUCCESS) {
+                fprintf(stderr,
+                    "[warn] geniex_vlm_generate run %d: %s (%d); keeping partial output\n",
+                    run_idx,
+                    geniex_get_error_message((geniex_ErrorCode)rc),
+                    rc);
             }
 
             if (!is_warmup) {
