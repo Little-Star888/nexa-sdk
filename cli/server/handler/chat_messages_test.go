@@ -4,7 +4,10 @@
 package handler
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -105,6 +108,49 @@ func TestBuildVLMMessagesKeepsToolRoundTrip(t *testing.T) {
 	}
 	if len(tool.Contents) != 1 || tool.Contents[0].Text != "numerics-summary.txt" {
 		t.Errorf("tool contents = %+v", tool.Contents)
+	}
+}
+
+func TestBuildVLMMessagesDecodesBase64Audio(t *testing.T) {
+	audio := append([]byte("RIFF\x24\x00\x00\x00WAVEfmt "), make([]byte, 256)...)
+	body := fmt.Sprintf(`{
+	  "model": "m",
+	  "messages": [{
+	    "role": "user",
+	    "content": [{
+	      "type": "input_audio",
+	      "input_audio": {"data": %q, "format": "wav"}
+	    }]
+	  }]
+	}`, base64.StdEncoding.EncodeToString(audio))
+
+	c, param := bindRequest(t, body)
+	messages, tempFiles, ok := buildVLMMessages(c, param)
+	for _, file := range tempFiles {
+		defer os.Remove(file)
+	}
+	if !ok {
+		t.Fatalf("buildVLMMessages failed, status %d", c.Writer.Status())
+	}
+	if len(messages) != 1 || len(messages[0].Contents) != 1 {
+		t.Fatalf("messages = %+v, want one message with one audio part", messages)
+	}
+	if len(tempFiles) != 1 {
+		t.Fatalf("tempFiles = %v, want one file", tempFiles)
+	}
+
+	got, err := os.ReadFile(tempFiles[0])
+	if err != nil {
+		t.Fatalf("read temporary audio: %v", err)
+	}
+	if string(got) != string(audio) {
+		t.Errorf("temporary audio does not match decoded input")
+	}
+	if messages[0].Contents[0].Type != geniex_sdk.VlmContentTypeAudio {
+		t.Errorf("content type = %q, want audio", messages[0].Contents[0].Type)
+	}
+	if messages[0].Contents[0].Text != tempFiles[0] {
+		t.Errorf("content path = %q, want %q", messages[0].Contents[0].Text, tempFiles[0])
 	}
 }
 

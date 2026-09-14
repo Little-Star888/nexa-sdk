@@ -227,7 +227,12 @@ func buildVLMMessages(c *gin.Context, param ChatCompletionRequest) (messages []g
 						Text: file,
 					})
 				case "input_audio":
-					file, err := utils.SaveURIToTempFile(ct.GetInputAudio().Data)
+					audio := ct.GetInputAudio()
+					data := audio.Data
+					if !strings.HasPrefix(data, "data:") {
+						data = "data:audio/" + audio.Format + ";base64," + data
+					}
+					file, err := utils.SaveURIToTempFile(data)
 					slog.Debug("Saved audio file", "file", file)
 					if err != nil {
 						c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
