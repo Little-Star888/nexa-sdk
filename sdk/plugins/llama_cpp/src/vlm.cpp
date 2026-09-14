@@ -108,8 +108,9 @@ int32_t LlamaVlm::create(const geniex_VlmCreateInput* input) {
             mparams.use_gpu = true;
             mparams.device  = vision_device;
         }
-        mparams.print_timings = false;
-        mparams.n_threads     = 4;
+        mparams.print_timings   = false;
+        mparams.n_threads       = cpar.n_threads;
+        mparams.flash_attn_type = cpar.flash_attn_type;
         // Zack TODO: elegant fix this error:  no member named 'verbosity' in 'mtmd_context_params'
         // mparams.verbosity           = GGML_LOG_LEVEL_ERROR;
 
