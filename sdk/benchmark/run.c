@@ -57,7 +57,7 @@ static bool on_token(const char* token, void* user_data) {
 static void fill_sampler(geniex_SamplerConfig* s, const options_t* o) {
     memset(s, 0, sizeof(*s));
     s->temperature        = o->temperature;
-    s->top_p              = 1.0f;
+    s->top_p              = o->top_p;
     s->top_k              = 0;
     s->min_p              = 0.0f;
     s->repetition_penalty = 1.0f;

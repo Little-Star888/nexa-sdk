@@ -81,6 +81,7 @@ typedef struct {
     int32_t      prompt_count;
     int32_t      max_new_tokens;
     float        temperature;
+    float        top_p;
     int32_t      seed;
     int32_t      warmup;
     int32_t      repeat;

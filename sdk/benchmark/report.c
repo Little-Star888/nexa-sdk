@@ -109,12 +109,14 @@ int write_cell_json(const options_t* o, const device_t* dev, int64_t model_size_
     fprintf(f, "    \"params\": {\n");
     fprintf(f,
         "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
-        "      \"temperature\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, \"n_gpu_layers\": %d",
+        "      \"temperature\": %.6f, \"top_p\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, "
+        "\"n_gpu_layers\": %d",
         o->warmup,
         o->repeat,
         o->n_prompt,
         o->max_new_tokens,
         (double)o->temperature,
+        (double)o->top_p,
         o->seed,
         o->n_ctx,
         o->n_threads,
