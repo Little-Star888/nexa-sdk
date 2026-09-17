@@ -110,7 +110,9 @@ pub enum Error {
     #[error("invalid file name: '{0}' (must be relative, no '..', no NUL)")]
     InvalidFileName(String),
 
-    #[error("could not infer manifest from directory: {0}")]
+    /// Sources are a local directory or a remote repo listing, so the message
+    /// stays neutral about which.
+    #[error("could not infer a model manifest: {0}")]
     ManifestInferenceFailed(String),
 }
 

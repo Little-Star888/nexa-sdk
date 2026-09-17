@@ -90,8 +90,8 @@ pub fn infer_manifest_from_names(
 
     if ggufs.is_empty() && onnx_files.is_empty() && geniex_files.is_empty() {
         return Err(Error::ManifestInferenceFailed(format!(
-            "no recognizable model files found for '{}'",
-            name
+            "'{name}' has no model files GenieX can load; supported formats \
+             are GGUF (llama.cpp) and QAIRT (Qualcomm AI Hub)"
         )));
     }
 
@@ -856,6 +856,28 @@ mod tests {
     fn rejects_empty_dir() {
         let (names, sizes) = sizes_of(&[]);
         assert!(infer_manifest_from_names("Org/X", &names, &sizes, Default::default()).is_err());
+    }
+
+    #[test]
+    fn safetensors_only_repo_names_the_supported_formats() {
+        // openai/gpt-oss-safeguard-20b layout: safetensors + tokenizer, no GGUF.
+        let (names, sizes) = sizes_of(&[
+            ("config.json", 1000),
+            ("model-00001-of-00002.safetensors", 8_000_000),
+            ("model-00002-of-00002.safetensors", 8_000_000),
+            ("tokenizer.json", 2000),
+        ]);
+        let err = infer_manifest_from_names(
+            "openai/gpt-oss-safeguard-20b",
+            &names,
+            &sizes,
+            Default::default(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("openai/gpt-oss-safeguard-20b"), "{err}");
+        assert!(err.contains("GGUF"), "{err}");
+        assert!(err.contains("QAIRT"), "{err}");
     }
 
     // -- modality classifier ------------------------------------------

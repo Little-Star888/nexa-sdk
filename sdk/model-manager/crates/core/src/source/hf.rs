@@ -277,6 +277,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn plan_rejects_safetensors_only_repo_with_a_format_hint() {
+        // openai/gpt-oss-safeguard-20b: safetensors + tokenizer, no GGUF. The
+        // failure has to name the formats we accept.
+        let server = MockServer::start().await;
+        let api_body = r#"{
+          "siblings": [
+            {"rfilename": "config.json", "size": 128},
+            {"rfilename": "model-00001-of-00002.safetensors", "size": 1024},
+            {"rfilename": "tokenizer.json", "size": 256}
+          ]
+        }"#;
+        let repo = "openai/gpt-oss-safeguard-20b";
+        mount_file(&server, &format!("/api/models/{repo}"), api_body).await;
+        mount_file(
+            &server,
+            &format!("/{repo}/resolve/main/config.json"),
+            r#"{"architectures":["GptOssForCausalLM"]}"#,
+        )
+        .await;
+        Mock::given(method("HEAD"))
+            .and(path(format!("/{repo}/resolve/main/geniex.json")))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let src = HfSource::with_endpoint_and_transport(
+            repo.to_string(),
+            &server.uri(),
+            None,
+            fast_transport(),
+            ManifestHint::default(),
+        )
+        .unwrap();
+        let err = src.plan().await.unwrap_err();
+        assert!(matches!(err, Error::ManifestInferenceFailed(_)), "{err:?}");
+        let msg = err.to_string();
+        assert!(msg.contains(repo), "{msg}");
+        assert!(msg.contains("GGUF"), "{msg}");
+        assert!(msg.contains("QAIRT"), "{msg}");
+    }
+
+    #[tokio::test]
     async fn plan_classifies_vlm_via_config_json() {
         // #17 — HF repo with safetensors + config.json carrying
         // `vision_config` is classified as VLM without any mmproj file.
