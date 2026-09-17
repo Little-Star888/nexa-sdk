@@ -514,8 +514,8 @@ func pullModel(ctx context.Context, name, quant string) error {
 			}
 		}
 		if bar == nil {
-			bar = render.NewProgressBar(total, downloaded, "downloading")
 			fmt.Println(render.GetTheme().Info.Sprint("   Press Ctrl+C to cancel — progress is saved, not discarded."))
+			bar = render.NewProgressBar(total, downloaded, "downloading")
 		}
 		bar.Set(downloaded)
 		return ctx.Err() == nil
