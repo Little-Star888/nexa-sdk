@@ -114,9 +114,10 @@ typedef enum {
 
 /**
  * Unified HTP power/clock-management mode, shared by the qairt and
- * llama_cpp plugins (see geniex_resolve_power_mode). Ordered lowest to
- * highest power; values match llama.cpp's htp_power_mode so the
- * llama_cpp plugin can pass them through without a remap table.
+ * llama_cpp plugins (each plugin resolves its own --power-mode alias
+ * string into this enum; see sdk/include/power_mode_alias.h). Ordered
+ * lowest to highest power; values match llama.cpp's htp_power_mode so
+ * the llama_cpp plugin can pass them through without a remap table.
  */
 typedef enum {
     GENIEX_POWER_MODE_LOW_POWER_SAVER            = 0,
@@ -400,30 +401,6 @@ typedef struct {
  */
 GENIEX_API int32_t geniex_resolve_device(const geniex_ResolveDeviceInput* input, geniex_ResolveDeviceOutput* output);
 
-/**
- * @brief Resolve a user-facing power-mode alias into a geniex_PowerMode.
- *
- * `mode` is one of "low_power_saver", "power_saver", "high_power_saver",
- * "low_balanced", "balanced", "high_performance",
- * "sustained_high_performance", "burst", or "default" (an alias for
- * "burst", which is also what NULL / "" resolve to). Matching is
- * case-insensitive; surrounding whitespace is trimmed.
- *
- * This is the single source of truth for the power-mode alias table.
- * Language bindings (Go CLI, Python, Android/JNI) should call this
- * instead of reimplementing the mapping locally.
- *
- * @param mode[in]  User-facing alias; NULL / "" / "default" -> burst.
- * @param out[out]  Non-NULL pointer to receive the resolved mode.
- *
- * @return GENIEX_SUCCESS on success. Returns GENIEX_ERROR_COMMON_INVALID_INPUT
- *         if `out` is NULL, or if `mode` is a non-empty string that is not
- *         a documented alias.
- *
- * @thread_safety: Thread-safe (pure function).
- */
-GENIEX_API int32_t geniex_resolve_power_mode(const char* mode, geniex_PowerMode* out);
-
 /* ====================  Data Structures  ==================================== */
 
 /** Profile data structure for performance metrics */
@@ -522,8 +499,8 @@ typedef struct {
     float       spec_p_min;        // min greedy draft probability (0 = llama.cpp default)
 
     // HTP power/clock-management mode, shared by qairt and llama_cpp (ignored
-    // by cpu/gpu). NULL / "" / "default" resolves to burst; see
-    // geniex_resolve_power_mode.
+    // by cpu/gpu). NULL / "" / "default" resolves to burst; each plugin
+    // resolves this alias string itself (see sdk/include/power_mode_alias.h).
     const char* power_mode;
 } geniex_ModelConfig;
 

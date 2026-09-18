@@ -16,15 +16,6 @@ to `burst`. It's a no-op (logged, not an error) on `cpu` / `gpu`.
 int main(int argc, char** argv) {
     if (argc < 3) return 2;
 
-    /* Validate the alias up front so a typo fails fast with a clear message
-     * instead of surfacing later as a model-load error. geniex_llm_create
-     * re-resolves it internally either way -- this call is optional. */
-    geniex_PowerMode mode;
-    if (geniex_resolve_power_mode(argv[1], &mode) != GENIEX_SUCCESS) {
-        fprintf(stderr, "unknown power mode: %s\n", argv[1]);
-        return 1;
-    }
-
     if (geniex_init() != GENIEX_SUCCESS) return 1;
 
     geniex_LlmCreateInput in;

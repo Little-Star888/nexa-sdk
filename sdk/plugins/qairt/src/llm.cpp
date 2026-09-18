@@ -26,6 +26,7 @@
 #include "logging.h"
 #include "metadata_utils.h"
 #include "pipeline/llm_pipeline.h"
+#include "power_mode_alias.h"
 #include "power_mode_utils.h"
 #include "qnn_runtime_utils.h"
 #include "sampler_config_utils.h"
@@ -62,7 +63,7 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
     // instead of forcing burst and silently overriding it.
     const bool       has_power_mode = input->config.power_mode && input->config.power_mode[0] != '\0';
     geniex_PowerMode power_mode     = GENIEX_POWER_MODE_BURST;
-    if (has_power_mode && geniex_resolve_power_mode(input->config.power_mode, &power_mode) != GENIEX_SUCCESS) {
+    if (has_power_mode && !geniex::power_mode::resolve(input->config.power_mode, &power_mode)) {
         GENIEX_LOG_ERROR("invalid power_mode '{}'", input->config.power_mode);
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }

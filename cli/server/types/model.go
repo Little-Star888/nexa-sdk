@@ -7,7 +7,7 @@ package types
 // NCtx / NGpuLayers are llama_cpp-only; DeviceID is the compute unit resolved by
 // the SDK (empty = the SDK's own default). PowerMode is passed through
 // unresolved (empty = the SDK's own default of burst) — both plugins resolve
-// it themselves via geniex_resolve_power_mode.
+// and validate it themselves.
 type ModelParam struct {
 	NCtx        int32
 	NGpuLayers  int32

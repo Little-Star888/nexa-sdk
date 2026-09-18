@@ -160,10 +160,6 @@ func infer() *cobra.Command {
 			return err
 		}
 
-		if err := geniex_sdk.ResolvePowerMode(powerMode); err != nil {
-			return err
-		}
-
 		// Runs before device resolution so --verbose and the SDK see the same alias.
 		computeUnit, ubatch = config.ChipsetDefaults(computeUnit, ubatch, store.Get().ResolveChipset(true))
 

@@ -16,6 +16,7 @@
 #include "htp_session.h"
 #include "logging.h"
 #include "params.h"
+#include "power_mode_alias.h"
 #include "profiler.h"
 
 namespace geniex {
@@ -40,7 +41,7 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
     llama_model_params        mpar   = build_model_params(config, device);
 
     geniex_PowerMode power_mode;
-    if (geniex_resolve_power_mode(config.power_mode, &power_mode) != GENIEX_SUCCESS) {
+    if (!geniex::power_mode::resolve(config.power_mode, &power_mode)) {
         GENIEX_LOG_ERROR("invalid power_mode '{}'", config.power_mode ? config.power_mode : "");
         return GENIEX_ERROR_COMMON_INVALID_INPUT;
     }

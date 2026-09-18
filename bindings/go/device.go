@@ -133,19 +133,4 @@ func ResolveDevice(input ResolveDeviceInput) (*ResolveDeviceOutput, error) {
 	return &output, nil
 }
 
-// ResolvePowerMode validates a user-facing power-mode alias via
-// `geniex_resolve_power_mode`. A non-nil error means mode was neither empty,
-// "default", nor one of the documented aliases.
-func ResolvePowerMode(mode string) error {
-	cMode := cStringIfSet(mode)
-	defer cFreeIfSet(unsafe.Pointer(cMode))
-
-	var out C.geniex_PowerMode
-	res := C.geniex_resolve_power_mode(cMode, &out)
-	if res != C.GENIEX_SUCCESS {
-		return fmt.Errorf("invalid power mode %q, must be one of: low_power_saver, power_saver, high_power_saver, low_balanced, balanced, high_performance, sustained_high_performance, burst, default", mode)
-	}
-	return nil
-}
-
 // LCOV_EXCL_STOP

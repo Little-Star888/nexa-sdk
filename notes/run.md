@@ -55,9 +55,11 @@ is NPU-only, so a device list gets coerced to `NPU` with a warning.
 
 ## Power mode
 
-Like compute-unit aliases, the power-mode alias table lives in the **SDK**:
-[`sdk/src/device.cpp`](../sdk/src/device.cpp) exposes
-`geniex_resolve_power_mode` via `sdk/include/geniex.h`. It's a single
+Unlike compute-unit aliases, the power-mode alias table is **not** behind a
+public SDK API: [`sdk/include/power_mode_alias.h`](../sdk/include/power_mode_alias.h)
+is a header-only table that the qairt and llama_cpp plugins each `#include`
+directly and resolve on their own (they're separate shared libraries and
+don't call into each other or into `libgeniex` for this). It's a single
 unified knob for both runtimes' HTP DCVS/HMX power/clock-management, set via
 `geniex_ModelConfig.power_mode` (`--power-mode` on `geniex infer` / `run` /
 `serve` and `geniex-bench`; a JSON `power_mode` field on `geniex serve`

@@ -78,11 +78,6 @@ func serve() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if err := geniex_sdk.ResolvePowerMode(viper.GetString("powermode")); err != nil {
-			common.PrintError(err)
-			os.Exit(1)
-		}
-
 		server.Serve()
 
 		geniex_sdk.DeInit()
