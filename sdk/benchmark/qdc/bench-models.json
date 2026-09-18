@@ -157,6 +157,14 @@
     "url": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_0.gguf"
   },
   {
+    "name": "Qwen3.5-4B",
+    "plugin": "llama_cpp",
+    "devices": ["cpu", "npu"],
+    "model_id": "unsloth/Qwen3.5-4B-GGUF:Q4_0",
+    "hub": "hf",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_0.gguf"
+  },
+  {
     "name": "Ministral-3-3B-Instruct-2512",
     "plugin": "llama_cpp",
     "devices": ["cpu", "npu"],
