@@ -19,6 +19,7 @@
 
 #include <geniex.h>
 #include <geniex_model.h>
+#include <power_mode_alias.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

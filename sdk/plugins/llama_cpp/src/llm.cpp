@@ -16,7 +16,6 @@
 #include "htp_session.h"
 #include "logging.h"
 #include "params.h"
-#include "power_mode_alias.h"
 #include "profiler.h"
 
 namespace geniex {
@@ -40,12 +39,6 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
     const geniex_ModelConfig& config = input->config;
     llama_model_params        mpar   = build_model_params(config, device);
 
-    geniex_PowerMode power_mode;
-    if (!geniex::power_mode::resolve(config.power_mode, &power_mode)) {
-        GENIEX_LOG_ERROR("invalid power_mode '{}'", config.power_mode ? config.power_mode : "");
-        return GENIEX_ERROR_COMMON_INVALID_INPUT;
-    }
-
     // MoE override + null terminator; must outlive the load_from_file call below.
     llama_model_tensor_buft_override tensor_overrides[2];
 
@@ -56,8 +49,8 @@ int32_t LlamaLlm::create(const geniex_LlmCreateInput* input) {
     {
         if (htp::htp_backend_present()) {
             if (device == Device::NPU) {
-                htp::set_power_mode(power_mode);
-            } else if (config.power_mode && config.power_mode[0] != '\0') {
+                htp::set_power_mode(config.power_mode);
+            } else if (config.power_mode != GENIEX_POWER_MODE_BURST) {
                 GENIEX_LOG_WARN("power_mode is only meaningful on the NPU device; ignoring on this device");
             }
             htp::reacquire_before_load();

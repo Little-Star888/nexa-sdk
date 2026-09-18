@@ -114,10 +114,11 @@ typedef enum {
 
 /**
  * Unified HTP power/clock-management mode, shared by the qairt and
- * llama_cpp plugins (each plugin resolves its own --power-mode alias
- * string into this enum; see sdk/include/power_mode_alias.h). Ordered
- * lowest to highest power; values match llama.cpp's htp_power_mode so
- * the llama_cpp plugin can pass them through without a remap table.
+ * llama_cpp plugins. Callers resolve their own --power-mode alias string
+ * into this enum before crossing the C ABI (geniex_ModelConfig.power_mode);
+ * the plugins consume it as-is. Ordered lowest to highest power; values
+ * match llama.cpp's htp_power_mode so the llama_cpp plugin can pass them
+ * through without a remap table.
  */
 typedef enum {
     GENIEX_POWER_MODE_LOW_POWER_SAVER            = 0,
@@ -499,9 +500,13 @@ typedef struct {
     float       spec_p_min;        // min greedy draft probability (0 = llama.cpp default)
 
     // HTP power/clock-management mode, shared by qairt and llama_cpp (ignored
-    // by cpu/gpu). NULL / "" / "default" resolves to burst; each plugin
-    // resolves this alias string itself (see sdk/include/power_mode_alias.h).
-    const char* power_mode;
+    // by cpu/gpu). Callers resolve their own --power-mode alias string into
+    // this enum (see sdk/include/power_mode_alias.h for C/C++ callers; Go /
+    // Python / Android resolve natively). No implicit default: this field is
+    // GENIEX_POWER_MODE_LOW_POWER_SAVER (0) if left zero-initialized, so set
+    // it explicitly -- GENIEX_POWER_MODE_BURST when the user hasn't asked
+    // for a specific mode.
+    geniex_PowerMode power_mode;
 } geniex_ModelConfig;
 
 /* ====================  LLM Handle  ======================================== */

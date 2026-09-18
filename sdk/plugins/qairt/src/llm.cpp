@@ -26,7 +26,6 @@
 #include "logging.h"
 #include "metadata_utils.h"
 #include "pipeline/llm_pipeline.h"
-#include "power_mode_alias.h"
 #include "power_mode_utils.h"
 #include "qnn_runtime_utils.h"
 #include "sampler_config_utils.h"
@@ -57,17 +56,6 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
         return GENIEX_ERROR_COMMON_PARAM_NOT_SUPPORTED;
     }
 
-    // NULL/empty means the caller never touched --power-mode: leave
-    // model_cfg.perf_profile unset (std::nullopt) below so resolveHtpPerfConfig
-    // falls back to whatever the bundle's htp_backend_ext_config.json sets,
-    // instead of forcing burst and silently overriding it.
-    const bool       has_power_mode = input->config.power_mode && input->config.power_mode[0] != '\0';
-    geniex_PowerMode power_mode     = GENIEX_POWER_MODE_BURST;
-    if (has_power_mode && !geniex::power_mode::resolve(input->config.power_mode, &power_mode)) {
-        GENIEX_LOG_ERROR("invalid power_mode '{}'", input->config.power_mode);
-        return GENIEX_ERROR_COMMON_INVALID_INPUT;
-    }
-
     // Parse model_path to get model directory
     fs::path model_path(input->model_path);
     fs::path model_dir = model_path.parent_path();
@@ -91,7 +79,7 @@ int32_t QairtLlm::create(const geniex_LlmCreateInput* input) {
         GENIEX_LOG_ERROR("Failed to resolve QAIRT bundle layout in {}: {}", model_dir.string(), e.what());
         return GENIEX_ERROR_COMMON_FILE_NOT_FOUND;
     }
-    if (has_power_mode) qairt::apply_power_mode(power_mode, model_cfg);
+    qairt::apply_power_mode(input->config.power_mode, model_cfg);
 
     GENIEX_LOG_DEBUG("Found {} model shards in {}", model_cfg.model_paths.size(), model_dir.string());
 

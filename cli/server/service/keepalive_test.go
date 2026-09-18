@@ -74,16 +74,24 @@ func TestResolveModelParam_NonLlamaCppZeroesNCtx(t *testing.T) {
 	}
 }
 
-// TestResolveModelParam_PowerModePassesThrough verifies a power_mode alias is
-// passed through unresolved and unvalidated — each plugin resolves and
-// validates its own --power-mode string.
-func TestResolveModelParam_PowerModePassesThrough(t *testing.T) {
+// TestResolveModelParam_PowerModeResolves verifies a power_mode alias is
+// resolved to the geniex_PowerMode the SDK expects.
+func TestResolveModelParam_PowerModeResolves(t *testing.T) {
 	got, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 4096, -1, "npu", "", "sustained_high_performance", "", types.SpecParam{})
 	if err != nil {
 		t.Fatalf("ResolveModelParam: %v", err)
 	}
-	if got.PowerMode != "sustained_high_performance" {
-		t.Errorf("PowerMode = %q, want sustained_high_performance", got.PowerMode)
+	if got.PowerMode != geniex_sdk.PowerModeSustainedHighPerformance {
+		t.Errorf("PowerMode = %v, want PowerModeSustainedHighPerformance", got.PowerMode)
+	}
+}
+
+// TestResolveModelParam_InvalidPowerMode verifies an unknown power_mode alias
+// fails fast rather than reaching the plugin.
+func TestResolveModelParam_InvalidPowerMode(t *testing.T) {
+	_, err := ResolveModelParam(geniex_sdk.RuntimeLlamaCpp, "some-model", 4096, -1, "npu", "", "turbo", "", types.SpecParam{})
+	if err == nil {
+		t.Fatal("ResolveModelParam: want error for invalid power_mode, got nil")
 	}
 }
 

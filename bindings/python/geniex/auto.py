@@ -33,6 +33,35 @@ _ALIAS_OWNERS = {
     'npu': PLUGIN_QAIRT,
 }
 
+# Unified HTP power-mode aliases, shared by qairt and llama_cpp. Values match
+# geniex_PowerMode in sdk/include/geniex.h. There's no exported C function to
+# resolve these (see sdk/include/power_mode_alias.h's comment): Python
+# resolves its own strings natively, mirroring bindings/go/device.go.
+_POWER_MODE_ALIASES = {
+    'low_power_saver': 0,
+    'power_saver': 1,
+    'high_power_saver': 2,
+    'low_balanced': 3,
+    'balanced': 4,
+    'high_performance': 5,
+    'sustained_high_performance': 6,
+    'burst': 7,
+}
+_POWER_MODE_BURST = _POWER_MODE_ALIASES['burst']
+
+
+def _resolve_power_mode(mode: str | None) -> int:
+    """Maps a user-facing power-mode alias to the geniex_PowerMode value the
+    SDK expects. None / "" / "default" resolve to burst. Matching is
+    case-insensitive; surrounding whitespace is trimmed.
+    """
+    alias = (mode or '').strip().lower()
+    if not alias or alias == 'default':
+        return _POWER_MODE_BURST
+    if alias in _POWER_MODE_ALIASES:
+        return _POWER_MODE_ALIASES[alias]
+    raise ValueError(f"invalid power mode {mode!r}, must be one of: {', '.join(_POWER_MODE_ALIASES)}, default")
+
 
 def _apply_plugin_hint(device_map: str, plugin_id: str | None) -> str:
     """Bind a bare alias to the manifest's plugin so ``device_map='npu'`` on a
@@ -220,7 +249,8 @@ def _build_model_config(plugin_id: str | None, n_ctx: int, n_gpu_layers: int, **
         if n_ctx != _QAIRT_SILENT_NCTX:
             _logger.warning('qairt runtime does not consume n_ctx=%d; forcing 0', n_ctx)
             n_ctx = 0
-    cfg = geniex_ModelConfig(n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
+    power_mode = _resolve_power_mode(kwargs.pop('power_mode', None))
+    cfg = geniex_ModelConfig(n_ctx=n_ctx, n_gpu_layers=n_gpu_layers, power_mode=power_mode)
     _int_fields = {
         'n_threads',
         'n_threads_batch',
@@ -232,7 +262,7 @@ def _build_model_config(plugin_id: str | None, n_ctx: int, n_gpu_layers: int, **
     }
     _bool_fields = {'enable_thinking'}
     _float_fields = {'spec_p_min'}
-    _str_fields = {'chat_template_path', 'chat_template_content', 'spec_type', 'spec_draft_model', 'power_mode'}
+    _str_fields = {'chat_template_path', 'chat_template_content', 'spec_type', 'spec_draft_model'}
     for k, v in kwargs.items():
         if k in _int_fields:
             setattr(cfg, k, int(v))

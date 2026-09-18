@@ -160,6 +160,11 @@ func infer() *cobra.Command {
 			return err
 		}
 
+		resolvedPowerMode, err := geniex_sdk.ResolvePowerMode(powerMode)
+		if err != nil {
+			return err
+		}
+
 		// Runs before device resolution so --verbose and the SDK see the same alias.
 		computeUnit, ubatch = config.ChipsetDefaults(computeUnit, ubatch, store.Get().ResolveChipset(true))
 
@@ -172,9 +177,9 @@ func infer() *cobra.Command {
 
 		switch effectiveType {
 		case geniex_sdk.ModelTypeLLM:
-			err = inferLLM(cmd.Context(), paths)
+			err = inferLLM(cmd.Context(), paths, resolvedPowerMode)
 		case geniex_sdk.ModelTypeVLM:
-			err = inferVLM(paths)
+			err = inferVLM(paths, resolvedPowerMode)
 		default:
 			geniex_sdk.DeInit()
 			return fmt.Errorf("unsupported model type: %s", paths.ModelType)
@@ -342,7 +347,7 @@ func resolveModelParams(runtimeID, modelName string) (deviceID string, resolvedN
 	return
 }
 
-func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
+func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths, resolvedPowerMode geniex_sdk.PowerMode) error {
 	samplerConfig := &geniex_sdk.SamplerConfig{
 		Temperature:       temperature,
 		TopP:              topP,
@@ -400,7 +405,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 			SpecNMax:       draftTokens,
 			SpecNMin:       draftMin,
 			SpecPMin:       draftPMin,
-			PowerMode:      powerMode,
+			PowerMode:      resolvedPowerMode,
 		},
 	})
 	spin.Stop()
@@ -525,7 +530,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 	return processor.Process()
 }
 
-func inferVLM(paths *geniex_sdk.ModelPaths) error {
+func inferVLM(paths *geniex_sdk.ModelPaths, resolvedPowerMode geniex_sdk.PowerMode) error {
 	samplerConfig := &geniex_sdk.SamplerConfig{
 		Temperature:       temperature,
 		TopP:              topP,
@@ -560,7 +565,7 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 			NCtx:       nctxResolved,
 			NUbatch:    ubatch,
 			NGpuLayers: nglResolved,
-			PowerMode:  powerMode,
+			PowerMode:  resolvedPowerMode,
 		},
 	})
 	spin.Stop()

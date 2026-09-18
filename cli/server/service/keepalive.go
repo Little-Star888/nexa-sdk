@@ -39,14 +39,18 @@ func resolveDraftModelPath(draft string) (string, error) {
 // ResolveModelParam turns the model-load options into the ModelParam the cache
 // keys on. Compute is resolved to a DeviceID by the SDK; nctx/ngl are
 // llama_cpp-only and zeroed for other plugins. power_mode is shared by both
-// plugins and passed through unresolved: each plugin resolves and validates
-// its own --power-mode string.
+// plugins and resolved here, once, into the geniex_PowerMode the SDK expects.
 func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCompute, reqVitCompute, reqPowerMode, chipset string, spec types.SpecParam) (types.ModelParam, error) {
 	// Non-llama_cpp plugins (e.g. qairt) reject non-zero nctx; the SDK zeroes
 	// ngl for them in geniex_resolve_device.
 	nctx, ngl := reqNCtx, reqNgl
 	if runtimeID != geniex_sdk.RuntimeLlamaCpp {
 		nctx = 0
+	}
+
+	resolvedPowerMode, err := geniex_sdk.ResolvePowerMode(reqPowerMode)
+	if err != nil {
+		return types.ModelParam{}, err
 	}
 
 	// Runs before the SDK's npu fallback; chipset comes from the caller so this
@@ -72,7 +76,7 @@ func ResolveModelParam(runtimeID, modelName string, reqNCtx, reqNgl int32, reqCo
 		NGpuLayers:  resolved.Ngl,
 		DeviceID:    resolved.DeviceID,
 		VitDeviceID: reqVitCompute,
-		PowerMode:   reqPowerMode,
+		PowerMode:   resolvedPowerMode,
 	}
 	// Spec is llama_cpp-only; leave it zero (disabled) for other plugins.
 	if runtimeID == geniex_sdk.RuntimeLlamaCpp {

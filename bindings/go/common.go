@@ -164,7 +164,7 @@ type ModelConfig struct {
 	SpecNMax            int32
 	SpecNMin            int32
 	SpecPMin            float32
-	PowerMode           string
+	PowerMode           PowerMode
 }
 
 // fillC writes mc into an embedded C struct; pair with freeCModelConfig to
@@ -186,7 +186,7 @@ func (mc ModelConfig) fillC(out *C.geniex_ModelConfig) {
 		spec_n_max:            C.int32_t(mc.SpecNMax),
 		spec_n_min:            C.int32_t(mc.SpecNMin),
 		spec_p_min:            C.float(mc.SpecPMin),
-		power_mode:            cStringIfSet(mc.PowerMode),
+		power_mode:            C.geniex_PowerMode(mc.PowerMode),
 	}
 }
 
@@ -198,7 +198,6 @@ func freeCModelConfig(c *C.geniex_ModelConfig) {
 	cFreeIfSet(unsafe.Pointer(c.chat_template_content))
 	cFreeIfSet(unsafe.Pointer(c.spec_type))
 	cFreeIfSet(unsafe.Pointer(c.spec_draft_model))
-	cFreeIfSet(unsafe.Pointer(c.power_mode))
 }
 
 // LCOV_EXCL_STOP
