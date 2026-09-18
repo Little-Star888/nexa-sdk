@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include <cstdint>
-#include <string_view>
 
 #include "geniex.h"   // geniex_LogLevel, geniex_log_callback
 #include "logging.h"  // SDK-side global sink: `geniex_log`
@@ -22,13 +21,12 @@ void geniex_set_log_callback(LogCallback cb);
 namespace geniex {
 namespace {
 
-// The qairt core prefixes every QNN-originated log line with this marker
-constexpr std::string_view kQnnPrefix = "[QNN]";
-
-bool shouldSuppress(const char* msg) noexcept {
-    if (msg == nullptr) return false;
-    return std::string_view(msg).find(kQnnPrefix) != std::string_view::npos;
-}
+// Bridges the qairt core's own log callback (used for both plugin-internal
+// GENIEX_LOG_* calls and QNN-originated "[QNN] ..." lines) into the SDK's
+// `geniex_log` sink, converting the core's LogLevel to the SDK's
+// geniex_LogLevel on the way. Once forwarded, the embedder's existing
+// --log/GENIEX_LOG threshold decides what actually surfaces, same as every
+// other SDK log line.
 
 geniex_LogLevel toSdkLevel(LogLevel lvl) noexcept {
     switch (lvl) {
@@ -47,7 +45,6 @@ geniex_LogLevel toSdkLevel(LogLevel lvl) noexcept {
 }
 
 void filteringSink(LogLevel level, const char* message) {
-    if (shouldSuppress(message)) return;
     if (::geniex_log != nullptr && message != nullptr) {
         ::geniex_log(toSdkLevel(level), message);
     }
