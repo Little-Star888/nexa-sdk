@@ -14,7 +14,8 @@
 #include <string>
 #include <vector>
 
-#include "geniex.h"  // geniex_get_qairt_runtime_path
+#include "geniex.h"   // geniex_get_qairt_runtime_path
+#include "logging.h"  // geniex_log
 #include "types.h"
 
 namespace geniex::qairt::runtime {
@@ -158,6 +159,8 @@ inline QnnRuntimeConfig make_qnn_runtime_config(const std::filesystem::path& mod
     namespace fs = std::filesystem;
 
     QnnRuntimeConfig runtime_cfg{};
+
+    runtime_cfg.log_level = (::geniex_log != nullptr) ? QNN_LOG_LEVEL_DEBUG : QNN_LOG_LEVEL_ERROR;
 
     const char* source       = "geniex_set_qairt_runtime_path";
     fs::path    qnn_lib_root = path_from_utf8(geniex_get_qairt_runtime_path());
