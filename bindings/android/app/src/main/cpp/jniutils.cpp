@@ -11,6 +11,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "power_mode_alias.h"
 #define TAG "GenieXSdk"
 #define LOGi(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGe(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -264,6 +266,17 @@ geniex_ModelConfig extract_model_config(JNIEnv* env, jobject configObj) {
     // spec_p_min
     fid               = env->GetFieldID(cls, "spec_p_min", "F");
     config.spec_p_min = env->GetFloatField(configObj, fid);
+
+    // power_mode
+    fid  = env->GetFieldID(cls, "power_mode", "Ljava/lang/String;");
+    jstr = (jstring)env->GetObjectField(configObj, fid);
+    {
+        const std::string power_mode_str = jstr ? jstring2str(env, jstr) : "";
+        if (!geniex_power_mode_from_alias(power_mode_str.c_str(), &config.power_mode)) {
+            LOGe("invalid power_mode '%s', falling back to burst", power_mode_str.c_str());
+            config.power_mode = GENIEX_POWER_MODE_BURST;
+        }
+    }
 
     return config;
 }

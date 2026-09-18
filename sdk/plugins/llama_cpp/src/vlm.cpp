@@ -47,6 +47,11 @@ int32_t LlamaVlm::create(const geniex_VlmCreateInput* input) {
     // any llama.cpp load walks the registry's device list and a stale session
     // pointer left from a prior release will crash the load on cpu / gpu too.
     if (htp::htp_backend_present()) {
+        if (device == Device::NPU) {
+            htp::set_power_mode(config.power_mode);
+        } else if (config.power_mode != GENIEX_POWER_MODE_BURST) {
+            GENIEX_LOG_WARN("power_mode is only meaningful on the NPU device; ignoring on this device");
+        }
         htp::reacquire_before_load();
     }
 

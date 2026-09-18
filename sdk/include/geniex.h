@@ -112,6 +112,25 @@ typedef enum {
     GENIEX_LOG_LEVEL_ERROR  /* Error messages */
 } geniex_LogLevel;
 
+/**
+ * Unified HTP power/clock-management mode, shared by the qairt and
+ * llama_cpp plugins. Callers resolve their own --power-mode alias string
+ * into this enum before crossing the C ABI (geniex_ModelConfig.power_mode);
+ * the plugins consume it as-is. Ordered lowest to highest power; values
+ * match llama.cpp's htp_power_mode so the llama_cpp plugin can pass them
+ * through without a remap table.
+ */
+typedef enum {
+    GENIEX_POWER_MODE_LOW_POWER_SAVER            = 0,
+    GENIEX_POWER_MODE_POWER_SAVER                = 1,
+    GENIEX_POWER_MODE_HIGH_POWER_SAVER           = 2,
+    GENIEX_POWER_MODE_LOW_BALANCED               = 3,
+    GENIEX_POWER_MODE_BALANCED                   = 4,
+    GENIEX_POWER_MODE_HIGH_PERFORMANCE           = 5,
+    GENIEX_POWER_MODE_SUSTAINED_HIGH_PERFORMANCE = 6,
+    GENIEX_POWER_MODE_BURST                      = 7
+} geniex_PowerMode;
+
 /** Logging callback function type */
 typedef void (*geniex_log_callback)(geniex_LogLevel, const char*);
 
@@ -479,6 +498,15 @@ typedef struct {
     int32_t     spec_n_max;        // max draft tokens per step (0 = plugin default of 3)
     int32_t     spec_n_min;        // min draft tokens per step (0 = llama.cpp default)
     float       spec_p_min;        // min greedy draft probability (0 = llama.cpp default)
+
+    // HTP power/clock-management mode, shared by qairt and llama_cpp (ignored
+    // by cpu/gpu). Callers resolve their own --power-mode alias string into
+    // this enum (see sdk/include/power_mode_alias.h for C/C++ callers; Go /
+    // Python / Android resolve natively). No implicit default: this field is
+    // GENIEX_POWER_MODE_LOW_POWER_SAVER (0) if left zero-initialized, so set
+    // it explicitly -- GENIEX_POWER_MODE_BURST when the user hasn't asked
+    // for a specific mode.
+    geniex_PowerMode power_mode;
 } geniex_ModelConfig;
 
 /* ====================  LLM Handle  ======================================== */

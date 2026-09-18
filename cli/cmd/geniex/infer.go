@@ -48,6 +48,7 @@ var (
 	draftTokens    int32
 	draftMin       int32
 	draftPMin      float32
+	powerMode      string
 
 	// sampler config
 	temperature       float32
@@ -101,6 +102,7 @@ var (
 		llmFlags.Int32VarP(&draftTokens, "draft-tokens", "", 3, "max draft tokens per step for speculative decoding (llama_cpp only)")
 		llmFlags.Int32VarP(&draftMin, "draft-min", "", 0, "min draft tokens per step (0 = llama.cpp default) (llama_cpp only)")
 		llmFlags.Float32VarP(&draftPMin, "draft-p-min", "", 0.0, "min greedy draft probability (0 = llama.cpp default) (llama_cpp only)")
+		llmFlags.StringVarP(&powerMode, "power-mode", "", "", "HTP power/clock-management mode: low_power_saver, power_saver, high_power_saver, low_balanced, balanced, high_performance, sustained_high_performance, burst (default: burst)")
 		return llmFlags
 	}()
 	vlmFlags = func() *pflag.FlagSet {
@@ -158,6 +160,11 @@ func infer() *cobra.Command {
 			return err
 		}
 
+		resolvedPowerMode, err := geniex_sdk.ResolvePowerMode(powerMode)
+		if err != nil {
+			return err
+		}
+
 		// Runs before device resolution so --verbose and the SDK see the same alias.
 		computeUnit, ubatch = config.ChipsetDefaults(computeUnit, ubatch, store.Get().ResolveChipset(true))
 
@@ -170,9 +177,9 @@ func infer() *cobra.Command {
 
 		switch effectiveType {
 		case geniex_sdk.ModelTypeLLM:
-			err = inferLLM(cmd.Context(), paths)
+			err = inferLLM(cmd.Context(), paths, resolvedPowerMode)
 		case geniex_sdk.ModelTypeVLM:
-			err = inferVLM(paths)
+			err = inferVLM(paths, resolvedPowerMode)
 		default:
 			geniex_sdk.DeInit()
 			return fmt.Errorf("unsupported model type: %s", paths.ModelType)
@@ -340,7 +347,7 @@ func resolveModelParams(runtimeID, modelName string) (deviceID string, resolvedN
 	return
 }
 
-func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
+func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths, resolvedPowerMode geniex_sdk.PowerMode) error {
 	samplerConfig := &geniex_sdk.SamplerConfig{
 		Temperature:       temperature,
 		TopP:              topP,
@@ -398,6 +405,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 			SpecNMax:       draftTokens,
 			SpecNMin:       draftMin,
 			SpecPMin:       draftPMin,
+			PowerMode:      resolvedPowerMode,
 		},
 	})
 	spin.Stop()
@@ -522,7 +530,7 @@ func inferLLM(ctx context.Context, paths *geniex_sdk.ModelPaths) error {
 	return processor.Process()
 }
 
-func inferVLM(paths *geniex_sdk.ModelPaths) error {
+func inferVLM(paths *geniex_sdk.ModelPaths, resolvedPowerMode geniex_sdk.PowerMode) error {
 	samplerConfig := &geniex_sdk.SamplerConfig{
 		Temperature:       temperature,
 		TopP:              topP,
@@ -557,6 +565,7 @@ func inferVLM(paths *geniex_sdk.ModelPaths) error {
 			NCtx:       nctxResolved,
 			NUbatch:    ubatch,
 			NGpuLayers: nglResolved,
+			PowerMode:  resolvedPowerMode,
 		},
 	})
 	spin.Stop()
