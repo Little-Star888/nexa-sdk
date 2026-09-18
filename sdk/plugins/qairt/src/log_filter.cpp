@@ -21,13 +21,6 @@ void geniex_set_log_callback(LogCallback cb);
 namespace geniex {
 namespace {
 
-// Bridges the qairt core's own log callback (used for both plugin-internal
-// GENIEX_LOG_* calls and QNN-originated "[QNN] ..." lines) into the SDK's
-// `geniex_log` sink, converting the core's LogLevel to the SDK's
-// geniex_LogLevel on the way. Once forwarded, the embedder's existing
-// --log/GENIEX_LOG threshold decides what actually surfaces, same as every
-// other SDK log line.
-
 geniex_LogLevel toSdkLevel(LogLevel lvl) noexcept {
     switch (lvl) {
         case LogLevel::Trace:

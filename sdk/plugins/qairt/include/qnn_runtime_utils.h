@@ -160,12 +160,6 @@ inline QnnRuntimeConfig make_qnn_runtime_config(const std::filesystem::path& mod
 
     QnnRuntimeConfig runtime_cfg{};
 
-    // QNN only computes what it's asked to. Nothing is listening by default
-    // (geniex_log is null unless the embedder opted into logging, e.g. --log
-    // != none), so keep the default ERROR-only floor. Once something is
-    // listening, ask for full verbosity -- the existing --log/GENIEX_LOG
-    // threshold (which now also reaches QNN-originated lines, see
-    // log_filter.cpp) decides what actually surfaces.
     runtime_cfg.log_level = (::geniex_log != nullptr) ? QNN_LOG_LEVEL_DEBUG : QNN_LOG_LEVEL_ERROR;
 
     const char* source       = "geniex_set_qairt_runtime_path";
