@@ -1,8 +1,8 @@
 diff --git a/ggml/src/ggml-hexagon/ggml-hexagon.cpp b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
-index 3f1495645..972f627d3 100644
+index 58806e37f..5d8249f7a 100644
 --- a/ggml/src/ggml-hexagon/ggml-hexagon.cpp
 +++ b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
-@@ -91,6 +91,41 @@ static int    opt_etm     = 0;
+@@ -96,6 +96,42 @@ static int    opt_etm     = 0;
  static int    opt_verbose = 0;
  static int    opt_profile = 0; // profiling mode (0-disabled, 1-basic, 2-pmu)
  static bool   opt_hostbuf = false;
@@ -41,10 +41,11 @@ index 3f1495645..972f627d3 100644
 +    }
 +    return "unknown";
 +}
++
+ static bool   opt_dma64   = false;
  
- static int    opt_mm_select = 3; // 3 = HMX -> Tiled -> Flat -> CPU, 2 = Tiled -> Flat -> CPU, 1 = Flat -> CPU
- static int    opt_fa_select = 2; // 2 = HMX -> HVX -> CPU, 1 = HVX -> CPU, 0 = CPU (unsupported)
-@@ -3871,12 +3906,13 @@ void ggml_hexagon_session::allocate(const ggml_hexagon_device_config & config) n
+ static int    opt_mm_select = 2; // 2 = HMX -> HVX -> CPU, 1 = HVX -> CPU, 0 = CPU (unsupported)
+@@ -4008,12 +4044,13 @@ void ggml_hexagon_session::allocate(const ggml_hexagon_device_config & config) n
      this->op_batch = new ggml_hexagon_opbatch(this, opt_opbatch, this->max_vmem);
  
      // Start dspqueue/opbatch processing
@@ -59,15 +60,15 @@ index 3f1495645..972f627d3 100644
  
      if (opt_profile) {
          htp_iface_pmu_conf pmu_conf{};
-@@ -7208,6 +7306,7 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
-     const char * str_mbuf     = getenv("GGML_HEXAGON_MBUF");
+@@ -7774,6 +7811,7 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
      const char * str_optrace  = getenv("GGML_HEXAGON_OPTRACE");
      const char * str_hostbuf  = getenv("GGML_HEXAGON_HOSTBUF");
+     const char * str_dma64    = getenv("GGML_HEXAGON_DMA64");
 +    const char * str_power_mode = getenv("GGML_HEXAGON_POWER_MODE");
  
      // Init Arch first since it affects other defaults
      if (!str_arch) {
-@@ -7247,6 +7346,14 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
+@@ -7814,6 +7852,14 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
      opt_opfusion  = str_opfusion ? atoi(str_opfusion)                     : opt_opfusion;
      opt_profile   = str_profile  ? atoi(str_profile)                      : 0;
      opt_etm       = str_etm      ? atoi(str_etm)                          : 0;
@@ -83,10 +84,10 @@ index 3f1495645..972f627d3 100644
      opt_nhmx      = str_nhmx     ? atoi(str_nhmx)                         : opt_nhmx;
      opt_mm_select = str_mm_select ? atoi(str_mm_select)                   : opt_mm_select;
 diff --git a/ggml/src/ggml-hexagon/htp/htp-ops.h b/ggml/src/ggml-hexagon/htp/htp-ops.h
-index 53c95f28d..085758b04 100644
+index ee5b92441..47ef7aae5 100644
 --- a/ggml/src/ggml-hexagon/htp/htp-ops.h
 +++ b/ggml/src/ggml-hexagon/htp/htp-ops.h
-@@ -171,6 +171,20 @@ enum htp_profiler_mode {
+@@ -185,6 +185,20 @@ enum htp_profiler_mode {
      HTP_PROF_TRACE    = 3,
  };
  
@@ -108,7 +109,7 @@ index 53c95f28d..085758b04 100644
      HTP_TRACE_EVT_DMA                 = 0,
      HTP_TRACE_EVT_L2FLUSH             = 1,
 diff --git a/ggml/src/ggml-hexagon/htp/htp_iface.idl b/ggml/src/ggml-hexagon/htp/htp_iface.idl
-index 47693d8b8..c9fbfbd78 100644
+index b46e25296..303dbfb0a 100644
 --- a/ggml/src/ggml-hexagon/htp/htp_iface.idl
 +++ b/ggml/src/ggml-hexagon/htp/htp_iface.idl
 @@ -11,7 +11,7 @@ struct htp_iface_pmu_conf {
@@ -118,13 +119,13 @@ index 47693d8b8..c9fbfbd78 100644
 -    AEEResult start(in uint32 sess_id, in uint64 dsp_queue_id, in uint32 n_hvx, in uint32 n_hmx, in uint64 max_vmem);
 +    AEEResult start(in uint32 sess_id, in uint64 dsp_queue_id, in uint32 n_hvx, in uint32 n_hmx, in uint64 max_vmem, in uint32 power_mode);
      AEEResult stop();
-     AEEResult mmap(in uint32 fd, in uint32 size);
+     AEEResult mmap(in uint32 fd, in uint64 size);
      AEEResult munmap(in uint32 fd);
 diff --git a/ggml/src/ggml-hexagon/htp/main.c b/ggml/src/ggml-hexagon/htp/main.c
-index 27d1dedcd..6aad19124 100644
+index b4b352b20..f7e3301ca 100644
 --- a/ggml/src/ggml-hexagon/htp/main.c
 +++ b/ggml/src/ggml-hexagon/htp/main.c
-@@ -318,12 +318,91 @@ static void htp_main_thread(void * context);
+@@ -363,12 +363,91 @@ static void htp_main_thread(void * context);
  static void htp_packet_callback(dspqueue_t queue, int error, void * context);
  static void htp_error_callback(dspqueue_t queue, int error, void * context);
  
@@ -217,7 +218,7 @@ index 27d1dedcd..6aad19124 100644
      if (h->ctx) {
          FARF(ERROR, "Queue already open");
          return AEE_EITEMBUSY;
-@@ -456,17 +535,17 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
+@@ -499,17 +578,17 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
  
          request.type                              = HAP_power_set_DCVS_v3;
          request.dcvs_v3.set_dcvs_enable           = TRUE;
@@ -243,7 +244,7 @@ index 27d1dedcd..6aad19124 100644
  
  #if (__HEXAGON_ARCH__ >= 79)
          HAP_set_dcvs_v3_protected_bus_corners(&request, 1);
-@@ -494,10 +573,10 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
+@@ -537,10 +616,10 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
          request.hmx_v2.set_power     = TRUE;
          request.hmx_v2.power_up      = TRUE;
          request.hmx_v2.set_clock     = TRUE;
