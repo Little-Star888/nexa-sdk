@@ -29,6 +29,7 @@ type blockingBody struct {
 			} `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
+	Timings timings `json:"timings"`
 }
 
 // A tool call must not cost the text around it, nor the reasoning: both used to be
@@ -83,7 +84,7 @@ func TestWriteBlockingResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
-			profile := geniex_sdk.ProfileData{StopReason: "eos"}
+			profile := geniex_sdk.ProfileData{StopReason: "eos", PromptTokens: 5, PrefillSpeed: 10, GeneratedTokens: 3, DecodingSpeed: 20}
 			writeBlockingResponse(c, tt.content, tt.reasoning, profile, tt.parseTool)
 
 			var got blockingBody
@@ -92,6 +93,9 @@ func TestWriteBlockingResponse(t *testing.T) {
 			}
 			if len(got.Choices) != 1 {
 				t.Fatalf("choices = %d, want 1", len(got.Choices))
+			}
+			if got.Timings.PromptPerSecond != 10 || got.Timings.PredictedPerSecond != 20 {
+				t.Errorf("timings = %+v, want prompt_per_second=10 predicted_per_second=20", got.Timings)
 			}
 			choice := got.Choices[0]
 			if choice.FinishReason != tt.wantFinish {

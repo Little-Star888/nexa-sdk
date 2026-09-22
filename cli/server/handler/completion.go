@@ -230,6 +230,7 @@ func Completions(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return
 		}
+		logProfile(out.ProfileData)
 		writeCompletionResponse(c, echo+out.FullText, out.ProfileData)
 	}
 }
@@ -246,6 +247,7 @@ type completionStreamChunk struct {
 	Object  string                   `json:"object"`
 	Choices []completionStreamChoice `json:"choices"`
 	Usage   *openai.CompletionUsage  `json:"usage,omitempty"`
+	Timings *timings                 `json:"timings,omitempty"`
 }
 
 const completionObject = "text_completion"
@@ -264,8 +266,8 @@ func completionFinishChunk(reason string) completionStreamChunk {
 	}
 }
 
-func completionUsageChunk(u openai.CompletionUsage) completionStreamChunk {
-	return completionStreamChunk{Object: completionObject, Choices: []completionStreamChoice{}, Usage: &u}
+func completionUsageChunk(u openai.CompletionUsage, t timings) completionStreamChunk {
+	return completionStreamChunk{Object: completionObject, Choices: []completionStreamChoice{}, Usage: &u, Timings: &t}
 }
 
 // profile is read only after wait() returns, when generation has filled it.
@@ -288,9 +290,10 @@ func streamCompletion(c *gin.Context, dataCh <-chan string, wait func() error, i
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
+		logProfile(*profile)
 		c.SSEvent("", completionFinishChunk(mapFinishReason(profile.StopReason)))
 		if includeUsage {
-			c.SSEvent("", completionUsageChunk(profile2Usage(*profile)))
+			c.SSEvent("", completionUsageChunk(profile2Usage(*profile), profile2Timings(*profile)))
 		}
 		c.SSEvent("", "[DONE]")
 		return false
@@ -309,6 +312,7 @@ type completionResponse struct {
 	Object  string                 `json:"object"`
 	Choices []completionChoice     `json:"choices"`
 	Usage   openai.CompletionUsage `json:"usage"`
+	Timings timings                `json:"timings"`
 }
 
 func writeCompletionResponse(c *gin.Context, text string, profile geniex_sdk.ProfileData) {
@@ -318,7 +322,8 @@ func writeCompletionResponse(c *gin.Context, text string, profile geniex_sdk.Pro
 			Text:         text,
 			FinishReason: mapFinishReason(profile.StopReason),
 		}},
-		Usage: profile2Usage(profile),
+		Usage:   profile2Usage(profile),
+		Timings: profile2Timings(profile),
 	})
 }
 

@@ -385,6 +385,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 			c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return
 		}
+		logProfile(profile)
 		writeBlockingResponse(c, content.String(), reasoning.String(), profile, parseTool)
 	}
 }
