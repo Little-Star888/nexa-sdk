@@ -3,7 +3,6 @@
 
 /* Usage text and argv parsing. */
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -55,8 +54,6 @@ static void usage(const char* argv0) {
         "                         clear error otherwise.\n"
         "  -n, --n-gen N          tokens to generate per run; default 128\n"
         "  -c, --ctx-size N       model n_ctx (0 = from model, default 0)\n"
-        "  --ubatch-size N        llama_cpp physical batch limit (0 = SDK default);\n"
-        "                         reduce to lower temporary memory requirements\n"
         "  -t, --threads N        generation threads (0 = SDK default)\n"
         "  -ngl, --n-gpu-layers N llama_cpp layers to offload; overrides the\n"
         "                         device alias default (-1 = all layers)\n"
@@ -378,16 +375,6 @@ void parse_args(int argc, char** argv, options_t* o) {
             o->logits_top_n = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-c") == 0 || strcmp(a, "--ctx-size") == 0) {
             o->n_ctx = atoi(arg_value(argc, argv, &i, a));
-        } else if (strcmp(a, "--ubatch-size") == 0) {
-            const char* value = arg_value(argc, argv, &i, a);
-            char*       end;
-            errno       = 0;
-            long parsed = strtol(value, &end, 10);
-            if (errno == ERANGE || end == value || *end != '\0' || parsed < 0 || parsed > INT32_MAX) {
-                fprintf(stderr, "ERROR: --ubatch-size must be an integer between 0 and %d\n", INT32_MAX);
-                exit(2);
-            }
-            o->n_ubatch = (int32_t)parsed;
         } else if (strcmp(a, "-t") == 0 || strcmp(a, "--threads") == 0) {
             o->n_threads = atoi(arg_value(argc, argv, &i, a));
         } else if (strcmp(a, "-ngl") == 0 || strcmp(a, "--n-gpu-layers") == 0) {

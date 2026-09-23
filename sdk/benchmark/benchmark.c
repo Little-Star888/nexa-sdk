@@ -105,6 +105,8 @@ static int run_one_cell(options_t* o) {
         o->n_ctx = 0;
     }
 
+    apply_chipset_defaults(o, &dev);
+
     bool is_vlm = (o->mmproj_path != NULL) || o->force_vlm;
 
     /* --logits is a prefill-only forward pass, not a timing run: it skips the

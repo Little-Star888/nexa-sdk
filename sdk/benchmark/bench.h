@@ -201,6 +201,7 @@ void parse_args(int argc, char** argv, options_t* o);
 
 /* Distinguishes a filesystem path from a model-manager id. */
 bool looks_like_path(const char* s);
+void apply_chipset_defaults(options_t* o, const device_t* dev);
 /* Reads metadata.json's genie.supports_vision; false on any read/parse miss. */
 bool local_bundle_is_vlm(const char* model_path);
 /* If `path` is a directory, return a heap path to a regular file inside it

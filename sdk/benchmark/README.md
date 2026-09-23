@@ -112,11 +112,6 @@ geniex-bench \
   --plugin llama_cpp --device gpu \
   -m /path/to/Qwen3-4B-Q4_K_M.gguf
 
-# Limit the llama_cpp physical batch independently of the context length
-geniex-bench \
-  --plugin llama_cpp --device gpu \
-  -m /path/to/Qwen3-0.6B-Q4_0.gguf -c 512 --ubatch-size 256 -p 128 -n 32
-
 # Customise: prompt, sample count, output files
 geniex-bench \
   --plugin llama_cpp --device hybrid \
@@ -159,13 +154,15 @@ build\benchmark\geniex-bench.exe --plugin qairt --device npu `
 
 Run `geniex-bench --help` for the full flag list.
 
-For `llama_cpp`, `--ubatch-size N` sets the maximum physical batch size through
-the SDK's existing `n_ubatch` setting. Smaller batches can reduce temporary memory
-requirements and affect throughput without changing `--ctx-size`. The default
-`0` preserves the SDK default; negative, non-integer, and out-of-range values are
-rejected. This option applies to LLM, VLM, and logits runs, and is shared across
-cells in matrix mode. QAIRT does not use this setting. Timing JSON reports record the
-requested value in `params.n_ubatch`, with `0` meaning the SDK default.
+On QCS6490 (RB3 Gen 2), `llama_cpp` GPU runs automatically use `n_ubatch=256`,
+matching `geniex infer`. The default GPU batch of 512 can exceed the Adreno 643's
+256 MiB single-allocation limit. Host detection is offline and works with local
+model paths as well as model-manager IDs; `--chipset` only selects model downloads.
+The cap is applied per resolved GPU cell, including VLM and logits runs, without
+changing `--ctx-size`. CPU, NPU, hybrid, QAIRT, and other chipsets retain SDK batch
+defaults. Timing JSON records the selected value in `params.n_ubatch`; logits JSON
+records `n_ubatch`. A value of `0` means SDK defaults. Unrecognized hosts keep the
+SDK defaults; detection errors are logged.
 
 ## Defaults
 

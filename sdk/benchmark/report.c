@@ -208,6 +208,7 @@ int write_logits_json(const options_t* o, const device_t* dev, const geniex_LlmF
     json_field_str(f, "device_id", dev->id, false);
     json_field_str(f, "model_path", o->model_path, false);
     json_field_i64(f, "n_gpu_layers", dev->ngl, false);
+    json_field_i64(f, "n_ubatch", o->n_ubatch, false);
     json_field_i64(f, "n_prompt", fin->input_ids_count, false);
     fprintf(f, "    \"all_positions\": %s,\n", fin->all_positions ? "true" : "false");
     json_field_i64(f, "n_rows", fout->n_rows, false);
