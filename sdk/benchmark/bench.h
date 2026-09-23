@@ -102,6 +102,7 @@ typedef struct {
     int32_t logits_top_n;            /* per row, emit only the top-N (token_id, logit) pairs */
     int32_t token_callback_delay_us; /* per-token busy-wait in on_token; 0 = no-op */
     int32_t n_ctx;
+    int32_t n_ubatch;
     int32_t n_threads;
     int32_t ngl_override; /* -1 = use resolved alias default; >=0 overrides */
 

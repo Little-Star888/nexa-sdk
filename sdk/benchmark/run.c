@@ -81,6 +81,7 @@ static void fill_gen_config(geniex_GenerationConfig* g, geniex_SamplerConfig* s,
 static void fill_model_config(geniex_ModelConfig* c, const options_t* o, int32_t ngl) {
     memset(c, 0, sizeof(*c));
     c->n_ctx            = o->n_ctx;
+    c->n_ubatch         = o->n_ubatch;
     c->n_threads        = o->n_threads;
     c->n_gpu_layers     = ngl;
     c->spec_type        = o->spec_type;   /* may be NULL */

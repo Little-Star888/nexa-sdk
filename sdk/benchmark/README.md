@@ -112,6 +112,11 @@ geniex-bench \
   --plugin llama_cpp --device gpu \
   -m /path/to/Qwen3-4B-Q4_K_M.gguf
 
+# Limit the llama_cpp physical batch independently of the context length
+geniex-bench \
+  --plugin llama_cpp --device gpu \
+  -m /path/to/Qwen3-0.6B-Q4_0.gguf -c 512 --ubatch-size 256 -p 128 -n 32
+
 # Customise: prompt, sample count, output files
 geniex-bench \
   --plugin llama_cpp --device hybrid \
@@ -153,6 +158,14 @@ build\benchmark\geniex-bench.exe --plugin qairt --device npu `
 ```
 
 Run `geniex-bench --help` for the full flag list.
+
+For `llama_cpp`, `--ubatch-size N` sets the maximum physical batch size through
+the SDK's existing `n_ubatch` setting. Smaller batches can reduce temporary memory
+requirements and affect throughput without changing `--ctx-size`. The default
+`0` preserves the SDK default; negative, non-integer, and out-of-range values are
+rejected. This option applies to LLM, VLM, and logits runs, and is shared across
+cells in matrix mode. QAIRT does not use this setting. Timing JSON reports record the
+requested value in `params.n_ubatch`, with `0` meaning the SDK default.
 
 ## Defaults
 
