@@ -121,7 +121,8 @@ pub fn infer_manifest_from_names(
         shard_extras.extend_from_slice(&files[1..]);
     }
 
-    // MMProj: 0 -> try single onnx/geniex; 1 -> use; >1 -> largest.
+    // MMProj: 0 -> try single onnx/geniex; 1 -> use; >1 -> prefer FP16 over
+    // BF16/F32/etc, then largest.
     let mmproj_file = match mmprojs.len() {
         0 => {
             if onnx_files.len() == 1 {
@@ -136,7 +137,12 @@ pub fn infer_manifest_from_names(
         _ => {
             let chosen = mmprojs
                 .iter()
-                .max_by_key(|n| sizes.get(n.as_str()).copied().unwrap_or(0))
+                .max_by_key(|n| {
+                    (
+                        is_preferred_mmproj_precision(n),
+                        sizes.get(n.as_str()).copied().unwrap_or(0),
+                    )
+                })
                 .unwrap();
             file_info(chosen, sizes)
         }
@@ -333,6 +339,14 @@ fn is_mmproj_filename(lname: &str) -> bool {
         || stem.ends_with("_mmproj")
         || stem.contains("-mmproj-")
         || stem.contains("_mmproj_")
+}
+
+/// True when a projector filename's precision tag is FP16/F16 — the
+/// native intermediate float format for vision encoders. Repos with
+/// multiple mmproj candidates (e.g. F16/BF16/F32) should prefer this one
+/// over a same-or-larger BF16/F32 copy.
+fn is_preferred_mmproj_precision(name: &str) -> bool {
+    matches!(extract_quant(name).as_deref(), Some("F16") | Some("FP16"))
 }
 
 /// True for a `.gguf` holding weights — not a vision projector, not an MTP
@@ -806,6 +820,34 @@ mod tests {
         assert!(m.model_file.contains_key("Q4_K_M"));
         assert_eq!(m.mmproj_file.name, "mmproj-F16.gguf");
         assert_eq!(m.model_name, "Repo");
+    }
+
+    #[test]
+    fn mmproj_prefers_fp16_over_larger_bf16_and_f32() {
+        // BF16 has no native HTP kernel support; F16 is the vision encoder's
+        // native intermediate float format, so it should win even though the
+        // repo also ships a larger BF16 or F32 copy (#1650).
+        let (names, sizes) = sizes_of(&[
+            ("model-Q4_K_M.gguf", 1_000_000),
+            ("mmproj-F16.gguf", 990_000_000),
+            ("mmproj-BF16.gguf", 992_000_000),
+            ("mmproj-F32.gguf", 1_910_000_000),
+        ]);
+        let m =
+            infer_manifest_from_names("Org/Repo-GGUF", &names, &sizes, Default::default()).unwrap();
+        assert_eq!(m.mmproj_file.name, "mmproj-F16.gguf");
+    }
+
+    #[test]
+    fn mmproj_falls_back_to_largest_without_fp16_candidate() {
+        let (names, sizes) = sizes_of(&[
+            ("model-Q4_K_M.gguf", 1_000_000),
+            ("mmproj-BF16.gguf", 992_000_000),
+            ("mmproj-F32.gguf", 1_910_000_000),
+        ]);
+        let m =
+            infer_manifest_from_names("Org/Repo-GGUF", &names, &sizes, Default::default()).unwrap();
+        assert_eq!(m.mmproj_file.name, "mmproj-F32.gguf");
     }
 
     #[test]
