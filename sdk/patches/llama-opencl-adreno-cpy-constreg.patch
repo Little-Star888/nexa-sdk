@@ -37,3 +37,59 @@ index adbd2e766..89aeb1cca 100644
      int tpr = min(ne00, lsz);          // threads per row
      int rpw = lsz / tpr;               // rows per workgroup
      int lid = get_local_id(0);
+diff --git a/ggml/src/ggml-opencl/ggml-opencl.cpp b/ggml/src/ggml-opencl/ggml-opencl.cpp
+--- a/ggml/src/ggml-opencl/ggml-opencl.cpp
++++ b/ggml/src/ggml-opencl/ggml-opencl.cpp
+@@ -4267,6 +4267,10 @@
+     {
+         std::string CL_gemv_compile_opts = std::string("-cl-std=") + opencl_c_std +
+                                        " -cl-mad-enable ";
++        if (backend_ctx->gpu_family == GPU_FAMILY::ADRENO &&
++            std::regex_search(backend_ctx->device_name, std::regex(R"(\b643\b)"))) {
++            CL_gemv_compile_opts += " -DADRENO_643_Q4K_CONSTREG_WORKAROUND=1";
++        }
+         if (backend_ctx->has_vector_subgroup_broadcast) {
+             CL_gemv_compile_opts += " -DVECTOR_SUB_GROUP_BROADCAST ";
+         }
+diff --git a/ggml/src/ggml-opencl/kernels/gemv_noshuffle_q4_k_f32.cl b/ggml/src/ggml-opencl/kernels/gemv_noshuffle_q4_k_f32.cl
+--- a/ggml/src/ggml-opencl/kernels/gemv_noshuffle_q4_k_f32.cl
++++ b/ggml/src/ggml-opencl/kernels/gemv_noshuffle_q4_k_f32.cl
+@@ -240,7 +240,12 @@
+     uint LINE_STRIDE_A  = M / 2;
+     // Physical per-K-block stride in the packed image: 8 uints/block-row-pair *
+     // (M/2) row-pairs = 4*M uints. This is a layout constant, not tied to nsg.
++#ifdef ADRENO_643_Q4K_CONSTREG_WORKAROUND
++    volatile uint block_stride_v = 4 * M;
++    uint BLOCK_STRIDE_A = block_stride_v;
++#else
+     uint BLOCK_STRIDE_A = 4 * M;
++#endif
+     uint scales_per_row = (K / QK_K) * 12;
+ 
+     // The x-grid is padded to CEIL_DIV(ne01/2,64)*64, so when ne01 % 128 != 0 the
+@@ -405,7 +410,12 @@
+     uint M = ne01;
+ 
+     uint LINE_STRIDE_A  = M / 2;
++#ifdef ADRENO_643_Q4K_CONSTREG_WORKAROUND
++    volatile uint block_stride_v = 4 * M;
++    uint BLOCK_STRIDE_A = block_stride_v;
++#else
+     uint BLOCK_STRIDE_A = 4 * M;
++#endif
+ 
+     private uint4  regA;
+     private half2  regS, regM;
+@@ -520,7 +530,12 @@
+     uint K = ne00;
+     uint M = ne01;
+     uint LINE_STRIDE_A  = M / 2;
++#ifdef ADRENO_643_Q4K_CONSTREG_WORKAROUND
++    volatile uint block_stride_v = 4 * M;
++    uint BLOCK_STRIDE_A = block_stride_v;
++#else
+     uint BLOCK_STRIDE_A = 4 * M;      // physical, independent of the K-split
++#endif
+ 
+     private uint4  regA;
+     private half2  regS, regM;
