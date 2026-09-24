@@ -36,6 +36,7 @@ type streamChunk struct {
 	Object  string                  `json:"object"`
 	Choices []streamChoice          `json:"choices"`
 	Usage   *openai.CompletionUsage `json:"usage,omitempty"`
+	Timings *timings                `json:"timings,omitempty"`
 }
 
 const streamChunkObject = "chat.completion.chunk"
@@ -57,8 +58,8 @@ func finishChunk(reason string) streamChunk {
 	}
 }
 
-func usageChunk(u openai.CompletionUsage) streamChunk {
-	return streamChunk{Object: streamChunkObject, Choices: []streamChoice{}, Usage: &u}
+func usageChunk(u openai.CompletionUsage, t timings) streamChunk {
+	return streamChunk{Object: streamChunkObject, Choices: []streamChoice{}, Usage: &u, Timings: &t}
 }
 
 func toolCallChunk(index int, call openai.ChatCompletionMessageFunctionToolCallFunction) streamChunk {
@@ -97,9 +98,10 @@ func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, in
 			c.SSEvent("", map[string]any{"error": err.Error(), "code": geniex_sdk.SDKErrorCode(err)})
 			return false
 		}
+		logProfile(*profile)
 		c.SSEvent("", finishChunk(mapFinishReason(profile.StopReason)))
 		if includeUsage {
-			c.SSEvent("", usageChunk(profile2Usage(*profile)))
+			c.SSEvent("", usageChunk(profile2Usage(*profile), profile2Timings(*profile)))
 		}
 		c.SSEvent("", "[DONE]")
 		return false
@@ -151,13 +153,14 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 			c.SSEvent("", toolCallChunk(sent, call))
 			sent++
 		}
+		logProfile(*profile)
 		finishReason := mapFinishReason(profile.StopReason)
 		if sent > 0 {
 			finishReason = "tool_calls"
 		}
 		c.SSEvent("", finishChunk(finishReason))
 		if includeUsage {
-			c.SSEvent("", usageChunk(profile2Usage(*profile)))
+			c.SSEvent("", usageChunk(profile2Usage(*profile), profile2Timings(*profile)))
 		}
 		c.SSEvent("", "[DONE]")
 		return false
