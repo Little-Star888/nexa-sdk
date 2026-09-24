@@ -110,7 +110,7 @@ int write_cell_json(const options_t* o, const device_t* dev, int64_t model_size_
     fprintf(f,
         "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
         "      \"temperature\": %.6f, \"top_p\": %.6f, \"seed\": %d, \"n_ctx\": %d, \"n_threads\": %d, "
-        "\"n_gpu_layers\": %d",
+        "\"n_ubatch\": %d, \"n_gpu_layers\": %d",
         o->warmup,
         o->repeat,
         o->n_prompt,
@@ -120,6 +120,7 @@ int write_cell_json(const options_t* o, const device_t* dev, int64_t model_size_
         o->seed,
         o->n_ctx,
         o->n_threads,
+        o->n_ubatch,
         dev->ngl);
     if (o->spec_type) {
         fprintf(f, ",\n      \"spec_type\": ");
@@ -207,6 +208,7 @@ int write_logits_json(const options_t* o, const device_t* dev, const geniex_LlmF
     json_field_str(f, "device_id", dev->id, false);
     json_field_str(f, "model_path", o->model_path, false);
     json_field_i64(f, "n_gpu_layers", dev->ngl, false);
+    json_field_i64(f, "n_ubatch", o->n_ubatch, false);
     json_field_i64(f, "n_prompt", fin->input_ids_count, false);
     fprintf(f, "    \"all_positions\": %s,\n", fin->all_positions ? "true" : "false");
     json_field_i64(f, "n_rows", fout->n_rows, false);

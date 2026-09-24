@@ -288,6 +288,7 @@ void parse_args(int argc, char** argv, options_t* o) {
     o->logits_top_n            = 20;
     o->token_callback_delay_us = 0;
     o->n_ctx                   = 0;
+    o->n_ubatch                = 0;
     o->n_threads               = 0;
     o->ngl_override            = -1;
     o->spec_type               = NULL;
