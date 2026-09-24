@@ -100,7 +100,7 @@
     "model_id": "unsloth/gemma-4-E4B-it-GGUF:Q4_0",
     "hub": "hf",
     "url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf",
-    "mmproj_url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/mmproj-BF16.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/mmproj-F16.gguf",
     "vlm": true,
     "image": true
   },
@@ -111,7 +111,7 @@
     "model_id": "unsloth/gemma-4-E2B-it-GGUF:Q4_0",
     "hub": "hf",
     "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_0.gguf",
-    "mmproj_url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-BF16.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf",
     "vlm": true,
     "image": true
   },
