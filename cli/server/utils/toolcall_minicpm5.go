@@ -5,6 +5,8 @@ package utils
 
 import (
 	"encoding/xml"
+	"errors"
+	"io"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -17,10 +19,14 @@ import (
 // Parameter values can be multiline and, for special characters, wrapped in a
 // CDATA block. encoding/xml handles both forms and decodes XML entities before
 // the values are re-encoded as the JSON object OpenAI-compatible clients expect.
-const miniCPM5FunctionOpen = "<function name="
+const (
+	miniCPM5FunctionOpen  = "<function name="
+	miniCPM5FunctionClose = "</function>"
+)
 
 type miniCPM5ToolCall struct {
-	begin markerScan
+	begin     markerScan
+	closeFrom int // first byte where an untried possible end may begin
 }
 
 func newMiniCPM5ToolCall() *miniCPM5ToolCall {
@@ -32,6 +38,7 @@ func (t *miniCPM5ToolCall) parse(s string) []toolCallFn { return parseMiniCPM5To
 func (t *miniCPM5ToolCall) feed(all string, from int) (int, int) {
 	if from > t.begin.start {
 		t.begin.reset(from)
+		t.closeFrom = from
 	}
 	t.begin.feed(all)
 	if t.begin.done == 0 {
@@ -41,10 +48,34 @@ func (t *miniCPM5ToolCall) feed(all string, from int) (int, int) {
 		return -1, -1
 	}
 	at := t.begin.done - len(miniCPM5FunctionOpen)
-	if _, end, ok := decodeMiniCPM5Function(all[at:]); ok {
-		return at, at + end
+	t.closeFrom = max(t.closeFrom, t.begin.done)
+	for {
+		closeAt := strings.Index(all[t.closeFrom:], miniCPM5FunctionClose)
+		selfAt := strings.Index(all[t.closeFrom:], "/>")
+		if closeAt < 0 && selfAt < 0 {
+			// Keep only the suffix that could start an end marker across chunks.
+			t.closeFrom = max(t.closeFrom, len(all)-len(miniCPM5FunctionClose)+1)
+			return at, -1
+		}
+		marker := miniCPM5FunctionClose
+		if selfAt >= 0 && (closeAt < 0 || selfAt < closeAt) {
+			closeAt, marker = selfAt, "/>"
+		}
+		t.closeFrom += closeAt + len(marker)
+		_, end, err := decodeMiniCPM5Function(all[at:t.closeFrom])
+		if err == nil {
+			return at, at + end
+		}
+		var syntax *xml.SyntaxError
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+			(errors.As(err, &syntax) && strings.HasPrefix(syntax.Msg, "unexpected EOF")) {
+			// A closer inside CDATA or a self-closed param may not end the function.
+			continue
+		}
+		// A syntax error cannot become valid by appending tokens. Give the
+		// rejected prefix back as text so later calls do not wait for Tail.
+		return at, at + max(end, len(miniCPM5FunctionOpen))
 	}
-	return at, -1
 }
 
 type miniCPM5Function struct {
@@ -58,13 +89,11 @@ type miniCPM5Param struct {
 	Value string `xml:",chardata"`
 }
 
-func decodeMiniCPM5Function(s string) (miniCPM5Function, int, bool) {
+func decodeMiniCPM5Function(s string) (miniCPM5Function, int, error) {
 	var fn miniCPM5Function
 	decoder := xml.NewDecoder(strings.NewReader(s))
-	if err := decoder.Decode(&fn); err != nil {
-		return fn, 0, false
-	}
-	return fn, int(decoder.InputOffset()), true
+	err := decoder.Decode(&fn)
+	return fn, int(decoder.InputOffset()), err
 }
 
 // parseMiniCPM5ToolCalls returns every complete, well-formed MiniCPM5 function
@@ -79,8 +108,8 @@ func parseMiniCPM5ToolCalls(s string) []toolCallFn {
 		}
 		s = s[i:]
 
-		fn, end, ok := decodeMiniCPM5Function(s)
-		if !ok {
+		fn, end, err := decodeMiniCPM5Function(s)
+		if err != nil {
 			s = s[len(miniCPM5FunctionOpen):]
 			continue
 		}
