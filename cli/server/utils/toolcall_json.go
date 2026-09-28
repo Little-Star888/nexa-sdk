@@ -19,6 +19,8 @@ type jsonToolCall struct {
 	walk braceWalk
 }
 
+func newJsonToolCall() *jsonToolCall { return &jsonToolCall{} }
+
 func (t *jsonToolCall) parse(s string) []toolCallFn { return parseJSONToolCalls(s) }
 
 func (t *jsonToolCall) feed(all string, from int) (int, int) {

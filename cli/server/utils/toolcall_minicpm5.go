@@ -20,28 +20,30 @@ import (
 const miniCPM5FunctionOpen = "<function name="
 
 type miniCPM5ToolCall struct {
-	pos int // bytes searched, except a possible opener prefix at the tail
+	begin markerScan
 }
 
-func newMiniCPM5ToolCall() *miniCPM5ToolCall { return &miniCPM5ToolCall{} }
+func newMiniCPM5ToolCall() *miniCPM5ToolCall {
+	return &miniCPM5ToolCall{begin: markerScan{marker: miniCPM5FunctionOpen}}
+}
 
 func (t *miniCPM5ToolCall) parse(s string) []toolCallFn { return parseMiniCPM5ToolCalls(s) }
 
 func (t *miniCPM5ToolCall) feed(all string, from int) (int, int) {
-	at, openEnd := findMarker(all, miniCPM5FunctionOpen, max(from, t.pos))
-	if at < 0 {
-		t.pos = max(from, len(all)-len(miniCPM5FunctionOpen)+1)
+	if from > t.begin.start {
+		t.begin.reset(from)
+	}
+	t.begin.feed(all)
+	if t.begin.done == 0 {
+		if t.begin.start < len(all) {
+			return t.begin.start, -1
+		}
 		return -1, -1
 	}
-	if openEnd == 0 {
-		t.pos = at
-		return at, -1
-	}
+	at := t.begin.done - len(miniCPM5FunctionOpen)
 	if _, end, ok := decodeMiniCPM5Function(all[at:]); ok {
-		t.pos = at // report the same completed region until the scanner consumes it
 		return at, at + end
 	}
-	t.pos = at
 	return at, -1
 }
 
