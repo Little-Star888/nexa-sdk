@@ -42,6 +42,11 @@ func (r *streamRecorder) CloseNotify() <-chan bool { return r.gone }
 
 func runStreamToolCall(t *testing.T, class tokenClass, tokens ...string) []streamChoice {
 	t.Helper()
+	return runStreamToolCallWithTools(t, class, "", tokens...)
+}
+
+func runStreamToolCallWithTools(t *testing.T, class tokenClass, tools string, tokens ...string) []streamChoice {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := &streamRecorder{httptest.NewRecorder(), make(chan bool)}
 	c, _ := gin.CreateTestContext(w)
@@ -53,7 +58,7 @@ func runStreamToolCall(t *testing.T, class tokenClass, tokens ...string) []strea
 	}
 	close(dataCh)
 	profile := geniex_sdk.ProfileData{StopReason: "eos"}
-	streamToolCall(c, dataCh, func() error { return nil }, false, &profile, class)
+	streamToolCall(c, dataCh, func() error { return nil }, false, &profile, class, tools)
 	return sseDeltas(t, w.Body.String())
 }
 
@@ -87,6 +92,28 @@ func TestStreamToolCallSeparatesReasoning(t *testing.T) {
 		t.Errorf("content = %q", content.String())
 	}
 	if len(calls) != 1 || calls[0] != (toolCallDelta{0, "f", `{"city":"Beijing"}`}) {
+		t.Errorf("calls = %+v", calls)
+	}
+	if reason := got[len(got)-1].FinishReason; reason == nil || *reason != "tool_calls" {
+		t.Errorf("finish_reason = %v, want tool_calls", reason)
+	}
+}
+
+func TestStreamMiniCPM5TypedArguments(t *testing.T) {
+	const tools = `[{"type":"function","function":{"name":"set","parameters":{"type":"object","properties":{"count":{"type":"integer"},"label":{"type":"string"}}}}}]`
+	got := runStreamToolCallWithTools(t, plainClass, tools,
+		"<function", ` name="set">`, "<param", ` name="count">5`, "</param>",
+		"<param", ` name="label">5`, "</param>", "</function>")
+	var calls []toolCallDelta
+	for _, ch := range got {
+		if ch.Delta.Content != "" {
+			t.Errorf("XML leaked into content: %q", ch.Delta.Content)
+		}
+		for _, tc := range ch.Delta.ToolCalls {
+			calls = append(calls, toolCallDelta{int(tc.Index), tc.Function.Name, tc.Function.Arguments})
+		}
+	}
+	if len(calls) != 1 || calls[0] != (toolCallDelta{0, "set", `{"count":5,"label":"5"}`}) {
 		t.Errorf("calls = %+v", calls)
 	}
 	if reason := got[len(got)-1].FinishReason; reason == nil || *reason != "tool_calls" {

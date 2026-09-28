@@ -44,6 +44,7 @@ func TestWriteBlockingResponse(t *testing.T) {
 		content       string
 		reasoning     string
 		parseTool     bool
+		tools         string
 		wantContent   string
 		wantReasoning string
 		wantFinish    string
@@ -70,6 +71,17 @@ func TestWriteBlockingResponse(t *testing.T) {
 			wantContent: "x ", wantFinish: "tool_calls", wantCalls: [][2]string{{"f", `{"a":1}`}},
 		},
 		{
+			name: "MiniCPM5 typed arguments", content: `<function name="set"><param name="count">5</param><param name="label">5</param></function>`,
+			parseTool: true, tools: `[{"type":"function","function":{"name":"set","parameters":{"type":"object","properties":{"count":{"type":"integer"},"label":{"type":"string"}}}}}]`,
+			wantFinish: "tool_calls", wantCalls: [][2]string{{"set", `{"count":5,"label":"5"}`}},
+		},
+		{
+			name: "MiniCPM5 unsupported schema leaves valid types intact", content: `<function name="set"><param name="count">5</param><param name="disabled">false</param></function>`,
+			parseTool: true, tools: `[{"type":"function","function":{"name":"set","parameters":{"type":"object","properties":{"count":{"type":"integer"},"disabled":false}}}},
+				{"type":"function","function":{"name":"other","parameters":{"type":"object","properties":{"disabled":false}}}}]`,
+			wantFinish: "tool_calls", wantCalls: [][2]string{{"set", `{"count":5,"disabled":"false"}`}},
+		},
+		{
 			name: "reasoning with a call", content: "sure " + call, reasoning: "let me check",
 			parseTool: true, wantContent: "sure ", wantReasoning: "let me check",
 			wantFinish: "tool_calls", wantCalls: [][2]string{weather},
@@ -82,10 +94,19 @@ func TestWriteBlockingResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tools := tt.tools
+			if tools != "" {
+				_, request := bindRequest(t, `{"model":"m","messages":[{"role":"user","content":"test"}],"tools":`+tools+`}`)
+				_, encoded, err := parseTools(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tools = encoded
+			}
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			profile := geniex_sdk.ProfileData{StopReason: "eos", PromptTokens: 5, PrefillSpeed: 10, GeneratedTokens: 3, DecodingSpeed: 20}
-			writeBlockingResponse(c, tt.content, tt.reasoning, profile, tt.parseTool)
+			writeBlockingResponse(c, tt.content, tt.reasoning, profile, tt.parseTool, tools)
 
 			var got blockingBody
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {

@@ -156,7 +156,7 @@ func TestGptOssHeaderInOneChunk(t *testing.T) {
 		`commentary to=functions.f<|message|>{"x":1}<|call|>`,
 	} {
 		t.Run(resp, func(t *testing.T) {
-			text, calls := NewToolCallScanner().Parse(resp)
+			text, calls := NewToolCallScanner(nil).Parse(resp)
 			if text != "" {
 				t.Errorf("text = %q, want empty", text)
 			}

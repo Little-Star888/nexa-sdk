@@ -7,9 +7,11 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"math/big"
 	"strings"
 
 	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/ast"
 )
 
 // MiniCPM5 emits one XML element for each call, without an outer wrapper:
@@ -27,13 +29,14 @@ const (
 type miniCPM5ToolCall struct {
 	begin     markerScan
 	closeFrom int // first byte where an untried possible end may begin
+	types     map[string]map[string]string
 }
 
-func newMiniCPM5ToolCall() *miniCPM5ToolCall {
-	return &miniCPM5ToolCall{begin: markerScan{marker: miniCPM5FunctionOpen}}
+func newMiniCPM5ToolCall(types map[string]map[string]string) *miniCPM5ToolCall {
+	return &miniCPM5ToolCall{begin: markerScan{marker: miniCPM5FunctionOpen}, types: types}
 }
 
-func (t *miniCPM5ToolCall) parse(s string) []toolCallFn { return parseMiniCPM5ToolCalls(s) }
+func (t *miniCPM5ToolCall) parse(s string) []toolCallFn { return parseMiniCPM5ToolCalls(s, t.types) }
 
 func (t *miniCPM5ToolCall) feed(all string, from int) (int, int) {
 	if from > t.begin.start {
@@ -99,7 +102,7 @@ func decodeMiniCPM5Function(s string) (miniCPM5Function, int, error) {
 // parseMiniCPM5ToolCalls returns every complete, well-formed MiniCPM5 function
 // element in s. Invalid XML is deliberately not repaired: treating malformed
 // model text as an executable call would be unsafe.
-func parseMiniCPM5ToolCalls(s string) []toolCallFn {
+func parseMiniCPM5ToolCalls(s string, types map[string]map[string]string) []toolCallFn {
 	var calls []toolCallFn
 	for {
 		i := strings.Index(s, miniCPM5FunctionOpen)
@@ -118,12 +121,12 @@ func parseMiniCPM5ToolCalls(s string) []toolCallFn {
 			continue
 		}
 
-		args := miniCPM5Arguments(fn.Params)
+		args := miniCPM5Arguments(fn.Params, types[fn.Name])
 		calls = append(calls, toolCallFn{Name: fn.Name, Arguments: args})
 	}
 }
 
-func miniCPM5Arguments(params []miniCPM5Param) string {
+func miniCPM5Arguments(params []miniCPM5Param, types map[string]string) string {
 	var b strings.Builder
 	b.WriteByte('{')
 	for _, param := range params {
@@ -134,11 +137,50 @@ func miniCPM5Arguments(params []miniCPM5Param) string {
 			b.WriteByte(',')
 		}
 		name, _ := sonic.MarshalString(param.Name)
-		value, _ := sonic.MarshalString(param.Value)
 		b.WriteString(name)
 		b.WriteByte(':')
-		b.WriteString(value)
+		b.WriteString(miniCPM5ArgumentValue(param.Value, types[param.Name]))
 	}
 	b.WriteByte('}')
 	return b.String()
+}
+
+func miniCPM5ArgumentValue(value, kind string) string {
+	switch kind {
+	case "integer", "number", "boolean", "object", "array", "null":
+	default:
+		quoted, _ := sonic.MarshalString(value)
+		return quoted
+	}
+	raw := strings.TrimSpace(value)
+	if sonic.ValidString(raw) {
+		parsed, err := sonic.GetFromString(raw)
+		if err == nil {
+			matches := false
+			switch kind {
+			case "integer":
+				matches = parsed.TypeSafe() == ast.V_NUMBER && isIntegerJSON(raw)
+			case "number":
+				matches = parsed.TypeSafe() == ast.V_NUMBER
+			case "boolean":
+				matches = parsed.TypeSafe() == ast.V_TRUE || parsed.TypeSafe() == ast.V_FALSE
+			case "object":
+				matches = parsed.TypeSafe() == ast.V_OBJECT
+			case "array":
+				matches = parsed.TypeSafe() == ast.V_ARRAY
+			case "null":
+				matches = parsed.TypeSafe() == ast.V_NULL
+			}
+			if matches {
+				return raw
+			}
+		}
+	}
+	quoted, _ := sonic.MarshalString(value)
+	return quoted
+}
+
+func isIntegerJSON(raw string) bool {
+	r, ok := new(big.Rat).SetString(raw)
+	return ok && r.IsInt()
 }

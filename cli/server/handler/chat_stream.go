@@ -110,8 +110,8 @@ func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, in
 
 // Streams the text that cannot be part of a tool call as it arrives, and each
 // tool call as soon as it is complete.
-func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, profile *geniex_sdk.ProfileData, class tokenClass) {
-	scanner := utils.NewToolCallScanner()
+func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, profile *geniex_sdk.ProfileData, class tokenClass, tools string) {
+	scanner := utils.NewToolCallScanner(utils.ToolParameterTypesFromTools(tools))
 	sent := 0 // the delta index, which has to keep rising across chunks
 	c.Stream(func(w io.Writer) bool {
 		r, ok := <-dataCh

@@ -48,8 +48,96 @@ line <two> & three]]></param><param name="label">A &amp; B</param></function>`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := parseMiniCPM5ToolCalls(tt.resp); !callsEqual(got, tt.want) {
+			if got := parseMiniCPM5ToolCalls(tt.resp, nil); !callsEqual(got, tt.want) {
 				t.Errorf("parsed %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToolParameterTypesFromToolsWithMiniCPM5(t *testing.T) {
+	const tools = `[
+		{"type":"function","function":{"name":"typed","parameters":{"type":"object","properties":{
+			"count":{"type":"integer"},"price":{"type":"number"},"flag":{"type":"boolean"},
+			"object":{"type":"object"},"list":{"type":"array"},"nothing":{"type":"null"},
+			"label":{"type":"string"},"badCount":{"type":"integer"},"badKind":{"type":"integer"},
+			"badFraction":{"type":"integer"},
+			"badFlag":{"type":"boolean"},"unknown":{"type":["integer","string"]}
+		}}}},
+		{"type":"function","function":{"name":"other","parameters":{"type":"object","properties":{
+			"count":{"type":"string"}
+		}}}}
+	]`
+	const resp = `<function name="typed">` +
+		`<param name="count">1e0</param><param name="price">1.5</param><param name="flag">true</param>` +
+		`<param name="object">{"x":1}</param><param name="list">[1,2]</param><param name="nothing">null</param>` +
+		`<param name="label">5</param><param name="badCount">abc</param><param name="badKind">true</param>` +
+		`<param name="badFraction">1.5</param>` +
+		`<param name="badFlag">yes</param><param name="unknown">5</param><param name="noSchema">5</param>` +
+		`</function><function name="other"><param name="count">5</param></function>`
+	want := []toolCallFn{
+		{Name: "typed", Arguments: `{"count":1e0,"price":1.5,"flag":true,"object":{"x":1},"list":[1,2],"nothing":null,"label":"5","badCount":"abc","badKind":"true","badFraction":"1.5","badFlag":"yes","unknown":"5","noSchema":"5"}`},
+		{Name: "other", Arguments: `{"count":"5"}`},
+	}
+	types := ToolParameterTypesFromTools(tools)
+	if types["typed"]["count"] != "integer" || types["other"]["count"] != "string" {
+		t.Fatalf("incorrect per-function schema types: %+v", types)
+	}
+	if text, got := NewToolCallScanner(types).Parse(resp); text != "" || !callsEqual(got, want) {
+		t.Errorf("blocking: text=%q, calls=%+v, want %+v", text, got, want)
+	}
+	for size := 1; size <= 8; size++ {
+		s := NewToolCallScanner(types)
+		var text string
+		var calls []toolCallFn
+		for i := 0; i < len(resp); i += size {
+			out, got := s.Push(resp[i:min(i+size, len(resp))])
+			text += out
+			calls = append(calls, got...)
+		}
+		tail, got := s.Tail()
+		text += tail
+		calls = append(calls, got...)
+		if text != "" || !callsEqual(calls, want) {
+			t.Errorf("size %d: text=%q, calls=%+v, want %+v", size, text, calls, want)
+		}
+	}
+	if got := ToolParameterTypesFromTools("not JSON"); got != nil {
+		t.Errorf("invalid tools types = %+v, want nil", got)
+	}
+}
+
+func TestToolParameterTypesFromToolsIgnoresUnsupportedProperties(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		tools string
+	}{
+		{
+			name: "same tool",
+			tools: `[{"type":"function","function":{"name":"typed","parameters":{"type":"object","properties":{
+				"count":{"type":"integer"},"disabled":false,"optional":true
+			}}}}]`,
+		},
+		{
+			name: "another tool",
+			tools: `[{"type":"function","function":{"name":"typed","parameters":{"type":"object","properties":{"count":{"type":"integer"}}}}},
+				{"type":"function","function":{"name":"other","parameters":{"type":"object","properties":{"disabled":false}}}}]`,
+		},
+		{
+			name: "another tool with unsupported parameters",
+			tools: `[{"type":"function","function":{"name":"typed","parameters":{"type":"object","properties":{"count":{"type":"integer"}}}}},
+				{"type":"function","function":{"name":"other","parameters":false}}]`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			types := ToolParameterTypesFromTools(tt.tools)
+			if types["typed"]["count"] != "integer" {
+				t.Fatalf("lost recognized type after unsupported schema: %+v", types)
+			}
+			const resp = `<function name="typed"><param name="count">5</param><param name="disabled">false</param></function>`
+			want := []toolCallFn{{Name: "typed", Arguments: `{"count":5,"disabled":"false"}`}}
+			if text, got := NewToolCallScanner(types).Parse(resp); text != "" || !callsEqual(got, want) {
+				t.Errorf("text=%q, calls=%+v, want %+v", text, got, want)
 			}
 		})
 	}
@@ -131,7 +219,7 @@ func TestMiniCPM5InvalidXMLDoesNotHoldLaterOutput(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for size := 1; size <= 8; size++ {
-				s := NewToolCallScanner()
+				s := NewToolCallScanner(nil)
 				var text string
 				var calls []toolCallFn
 				resp := invalid + tt.after
@@ -156,7 +244,7 @@ func TestMiniCPM5InvalidXMLDoesNotHoldLaterOutput(t *testing.T) {
 }
 
 func TestMiniCPM5PartialEntityWaitsForDecision(t *testing.T) {
-	s := NewToolCallScanner()
+	s := NewToolCallScanner(nil)
 	const prefix = `<function name="bad"><param name="x">A &`
 	if text, calls := s.Push(prefix); text != "" || len(calls) != 0 {
 		t.Fatalf("partial entity: text=%q, calls=%+v; want buffered", text, calls)
@@ -173,7 +261,7 @@ func TestMiniCPM5IncompleteXMLWaitsForCompletion(t *testing.T) {
 	const prefix = `<function name="good"><param name="x"><![CDATA[A </function> & B`
 	const suffix = `]]></param></function>`
 	for size := 1; size <= 8; size++ {
-		s := NewToolCallScanner()
+		s := NewToolCallScanner(nil)
 		var calls []toolCallFn
 		for i := 0; i < len(prefix); i += size {
 			out, got := s.Push(prefix[i:min(i+size, len(prefix))])
@@ -232,7 +320,7 @@ func TestMiniCPM5StreamAgreesWithParse(t *testing.T) {
 	} {
 		t.Run(resp, func(t *testing.T) {
 			_, got := stream(resp, 1)
-			if want := parseMiniCPM5ToolCalls(resp); !callsEqual(got, want) {
+			if want := parseMiniCPM5ToolCalls(resp, nil); !callsEqual(got, want) {
 				t.Errorf("streamed %+v, parsed %+v", got, want)
 			}
 		})

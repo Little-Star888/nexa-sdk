@@ -23,7 +23,7 @@ func callsEqual(got, want []toolCallFn) bool {
 // stream feeds resp in chunks of size and returns everything emitted as content
 // plus every call reported, in order.
 func stream(resp string, size int) (string, []toolCallFn) {
-	s := NewToolCallScanner()
+	s := NewToolCallScanner(nil)
 	text := ""
 	var calls []toolCallFn
 	for i := 0; i < len(resp); i += size {
@@ -265,7 +265,7 @@ func TestParseMatchesStream(t *testing.T) {
 	for _, resp := range responses {
 		t.Run(resp, func(t *testing.T) {
 			wantText, wantCalls := stream(resp, 1)
-			text, calls := NewToolCallScanner().Parse(resp)
+			text, calls := NewToolCallScanner(nil).Parse(resp)
 			if text != wantText {
 				t.Errorf("text = %q, want %q", text, wantText)
 			}
@@ -282,7 +282,7 @@ func TestTailIsTerminal(t *testing.T) {
 		"here is code {\n\tf(a, b)",
 		`<tool_call>{"name":"f","arguments":{}}`,
 	} {
-		s := NewToolCallScanner()
+		s := NewToolCallScanner(nil)
 		s.Push(resp)
 		s.Tail()
 		if text, calls := s.Tail(); text != "" || len(calls) > 0 {
@@ -314,7 +314,7 @@ func TestFeedOffsetsStayAhead(t *testing.T) {
 
 	for _, resp := range corpus {
 		for size := 1; size <= 3; size++ {
-			formats := NewToolCallScanner().formats
+			formats := NewToolCallScanner(nil).formats
 			from := 0
 			for j := min(size, len(resp)); ; j = min(j+size, len(resp)) {
 				for { // Push steps until nothing closes, so from can move several times
@@ -427,7 +427,7 @@ func BenchmarkToolCallScanner(b *testing.B) {
 		b.Run(bb.name, func(b *testing.B) {
 			b.SetBytes(int64(len(bb.resp)))
 			for b.Loop() {
-				s := NewToolCallScanner()
+				s := NewToolCallScanner(nil)
 				for i := 0; i < len(bb.resp); i += 4 {
 					s.Push(bb.resp[i:min(i+4, len(bb.resp))])
 				}
