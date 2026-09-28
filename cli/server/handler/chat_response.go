@@ -83,12 +83,12 @@ type chatCompletionWithTimings struct {
 	Timings timings `json:"timings"`
 }
 
-func writeBlockingResponse(c *gin.Context, content, reasoning string, profile geniex_sdk.ProfileData, parseTool bool) {
+func writeBlockingResponse(c *gin.Context, content, reasoning string, profile geniex_sdk.ProfileData, parseTool bool, tools string) {
 	finishReason := mapFinishReason(profile.StopReason)
 	var toolCalls []openai.ChatCompletionMessageToolCallUnion
 	if parseTool {
 		// Parse keeps the text around a call: that is content, not part of it.
-		text, calls := utils.NewToolCallScanner().Parse(content)
+		text, calls := utils.NewToolCallScanner(utils.ToolParameterTypesFromTools(tools)).Parse(content)
 		content = text
 		if len(calls) > 0 {
 			finishReason = "tool_calls"

@@ -353,7 +353,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 			class = reasoningClass()
 		}
 		if parseTool {
-			streamToolCall(c, dataCh, wait, includeUsage, &profile, class)
+			streamToolCall(c, dataCh, wait, includeUsage, &profile, class, tools)
 		} else {
 			streamPlainText(c, dataCh, wait, includeUsage, &profile, render(class))
 		}
@@ -386,7 +386,7 @@ func runChat[T, M any](c *gin.Context, param ChatCompletionRequest, modelParam t
 			return
 		}
 		logProfile(profile)
-		writeBlockingResponse(c, content.String(), reasoning.String(), profile, parseTool)
+		writeBlockingResponse(c, content.String(), reasoning.String(), profile, parseTool, tools)
 	}
 }
 

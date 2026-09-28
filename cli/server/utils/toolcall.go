@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/bytedance/sonic"
 	"github.com/openai/openai-go/v3"
 )
 
@@ -106,16 +107,52 @@ type ToolCallScanner struct {
 }
 
 // NewToolCallScanner registers the formats most specific first, since bare JSON
-// matches inside anything.
-func NewToolCallScanner() *ToolCallScanner {
+// matches inside anything. Only MiniCPM5 uses request tool property types.
+func NewToolCallScanner(types map[string]map[string]string) *ToolCallScanner {
 	return &ToolCallScanner{formats: []toolCallFormat{
 		newGemma4ToolCall(),
+		newMiniCPM5ToolCall(types),
 		newQwen3ToolCall(),
 		newQwen35ToolCall(),
 		newGptOssToolCall(),
 		newLFM2ToolCall(),
-		&jsonToolCall{},
+		newJsonToolCall(),
 	}}
+}
+
+// ToolParameterTypesFromTools reads top-level property types from the JSON
+// tools sent to the model template. Missing or unsupported schemas fall back to
+// strings without losing recognized types in other properties or tools.
+func ToolParameterTypesFromTools(tools string) map[string]map[string]string {
+	var definitions []map[string]any
+	if err := sonic.UnmarshalString(tools, &definitions); err != nil {
+		return nil
+	}
+	types := make(map[string]map[string]string, len(definitions))
+	for _, definition := range definitions {
+		function, ok := definition["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, ok := function["name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+		params := make(map[string]string)
+		parameters, _ := function["parameters"].(map[string]any)
+		properties, _ := parameters["properties"].(map[string]any)
+		for paramName, schema := range properties {
+			property, ok := schema.(map[string]any)
+			if !ok {
+				continue
+			}
+			if kind, ok := property["type"].(string); ok {
+				params[paramName] = kind
+			}
+		}
+		types[name] = params
+	}
+	return types
 }
 
 // Push appends a chunk and returns the text safe to emit plus the calls that finished.
